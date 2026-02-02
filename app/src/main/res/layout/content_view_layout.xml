@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:background="@color/white"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?attr/selectableItemBackground"
+        android:id="@+id/linearLayoutBack"
+        android:layout_marginStart="15sp"
+        android:layout_marginTop="15sp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content">
+
+        <ImageView
+            android:src="@drawable/back_icon"
+            android:layout_width="24dp"
+            android:layout_height="24dp">
+
+        </ImageView>
+
+        <TextView
+            android:fontFamily="@font/montserrat_bold"
+            android:textSize="15sp"
+            android:textAlignment="center"
+            android:layout_gravity="center"
+            android:textColor="@color/black"
+            android:textStyle="bold"
+            android:text="BACK"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content">
+
+        </TextView>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvPartName"
+        android:layout_marginBottom="15dp"
+        android:layout_gravity="center"
+        android:layout_marginTop="0dp"
+        android:fontFamily="@font/montserrat_bold"
+        android:textSize="24sp"
+        android:textAlignment="center"
+        android:textColor="@color/black"
+        android:textStyle="bold"
+        android:text="Part Name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content">
+
+    </TextView>
+
+    <TextView
+        android:id="@+id/tvContent"
+        android:layout_margin="15dp"
+        android:layout_marginTop="0dp"
+        android:fontFamily="@font/montserrat_bold"
+        android:textSize="15sp"
+        android:textColor="@color/black"
+        android:textStyle="bold"
+        android:text="Part Name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content">
+
+    </TextView>
+</LinearLayout>
