@@ -1,3 +1,4 @@
+# Android / Gradle / Sceneform project
 # Built application files
 *.apk
 *.aab
@@ -51,6 +52,15 @@ google-services.json
 
 # Mac
 .DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# Android Studio / IDE
+*.hprof
+.externalNativeBuild/
+.out/
 
 # Gradle Wrapper
 !/gradle/wrapper/gradle-wrapper.jar

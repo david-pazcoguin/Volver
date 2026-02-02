@@ -91,7 +91,7 @@ public class SettingActivity extends AppCompatActivity {
                     public void onClick(View view) {
                         dialog.dismiss();
 
-                        SharedPreferences settings = getSharedPreferences("AnatoSphere", Context.MODE_PRIVATE);
+                        SharedPreferences settings = getSharedPreferences("Volver", Context.MODE_PRIVATE);
                         settings.edit().clear().commit();
 
                         finishAffinity();
