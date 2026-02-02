@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:background="@color/white"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:id="@+id/linearLayoutBrachialis"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <TextView
+            android:layout_margin="15dp"
+            android:fontFamily="@font/montserrat_bold"
+            android:textSize="15sp"
+            android:textAlignment="center"
+            android:textColor="@color/black"
+            android:textStyle="bold"
+            android:text="Brachialis"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content">
+
+        </TextView>
+    </LinearLayout>
+
+    <View
+        android:background="@color/silver"
+        android:layout_width="match_parent"
+        android:layout_height="1dp">
+
+    </View>
+
+    <LinearLayout
+        android:id="@+id/linearLayoutBrachioradialis"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <TextView
+            android:layout_margin="15dp"
+            android:fontFamily="@font/montserrat_bold"
+            android:textSize="15sp"
+            android:textAlignment="center"
+            android:textColor="@color/black"
+            android:textStyle="bold"
+            android:text="Brachioradialis"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content">
+
+        </TextView>
+    </LinearLayout>
+
+    <View
+        android:background="@color/silver"
+        android:layout_width="match_parent"
+        android:layout_height="1dp">
+
+    </View>
+
+    <LinearLayout
+        android:id="@+id/linearLayoutDeltoid"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <TextView
+            android:layout_margin="15dp"
+            android:fontFamily="@font/montserrat_bold"
+            android:textSize="15sp"
+            android:textAlignment="center"
+            android:textColor="@color/black"
+            android:textStyle="bold"
+            android:text="Deltoid"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content">
+
+        </TextView>
+    </LinearLayout>
+
+    <View
+        android:background="@color/silver"
+        android:layout_width="match_parent"
+        android:layout_height="1dp">
+
+    </View>
+
+    <LinearLayout
+        android:id="@+id/linearLayoutExtensorDigutorumLongus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <TextView
+            android:layout_margin="15dp"
+            android:fontFamily="@font/montserrat_bold"
+            android:textSize="15sp"
+            android:textAlignment="center"
+            android:textColor="@color/black"
+            android:textStyle="bold"
+            android:text="ExtensorDigutorumLongus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content">
+
+        </TextView>
+    </LinearLayout>
+
+    <View
+        android:background="@color/silver"
+        android:layout_width="match_parent"
+        android:layout_height="1dp">
+
+    </View>
+
+    <LinearLayout
+        android:id="@+id/linearLayoutFibulasLongus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <TextView
+            android:layout_margin="15dp"
+            android:fontFamily="@font/montserrat_bold"
+            android:textSize="15sp"
+            android:textAlignment="center"
+            android:textColor="@color/black"
+            android:textStyle="bold"
+            android:text="FibulasLongus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content">
+
+        </TextView>
+    </LinearLayout>
+
+</LinearLayout>
