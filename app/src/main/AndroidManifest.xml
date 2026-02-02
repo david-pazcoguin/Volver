@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?> <!--This file is using utf-8 -->
     <!-- Everything contained within the manifest is what android will be expected for the app-->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.wheic.arapp">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- extensible markup language namespace, the link is the id string for the name space-->
     <!-- this is to get the prefix "android that will be used below-->
     <!-- and package is the app unique id, so for this app, com.wheic.arapp is this apps unique id-->
