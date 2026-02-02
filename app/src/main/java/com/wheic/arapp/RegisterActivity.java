@@ -27,6 +27,12 @@ import org.json.JSONObject;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * This activity handles user registration.
+ * It allows new users to create an account by providing their first name, last name, a unique username, and a password.
+ * The activity performs validation to ensure that all fields are filled and that the entered passwords match.
+ * It also communicates with a server to verify the uniqueness of the username and to submit the registration details.
+ */
 public class RegisterActivity extends AppCompatActivity {
 
     LinearLayout linearLayoutBack;
@@ -227,6 +233,11 @@ public class RegisterActivity extends AppCompatActivity {
         });
     }
 
+    /**
+     * This method monitors the input fields for the registration form.
+     * It enables or disables the register button based on whether all the required fields have been filled.
+     * If any field is empty, the register button is made inactive.
+     */
     void RegisterButtonWatcher()
     {
         if(txtUsername.getText().toString().isEmpty() ||
@@ -249,6 +260,11 @@ public class RegisterActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * This method handles the actual registration process.
+     * It sends the user's registration details (username, password, first name, last name) to the server.
+     * Upon a successful response from the server, it closes the registration activity.
+     */
     void Register()
     {
         String url = URLDatabase.URL_REGISTER;
