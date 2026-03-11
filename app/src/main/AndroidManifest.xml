@@ -68,6 +68,12 @@
             android:name=".ARActivity"
             android:exported="false" />
         <activity
+            android:name=".WalletSetupActivity"
+            android:exported="false" />
+        <activity
+            android:name=".NFTClaimActivity"
+            android:exported="false" />
+        <activity
             android:name=".LoginActivity"
             android:exported="true">
             <!-- this is exported as true because this is the entry point of our app -->

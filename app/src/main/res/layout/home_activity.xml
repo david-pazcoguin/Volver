@@ -69,6 +69,58 @@
 
     </View>
 
+    <!-- Mission progress counter -->
+    <TextView
+        android:id="@+id/tvProgressLabel"
+        android:layout_marginStart="15dp"
+        android:layout_marginEnd="15dp"
+        android:layout_marginTop="10dp"
+        android:textSize="13sp"
+        android:textColor="#888888"
+        android:fontFamily="@font/montserrat_regular"
+        android:visibility="gone"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content" />
+
+    <!-- NFT claim banner (visible only when all missions complete) -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/cardNFTClaim"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="15dp"
+        android:layout_marginEnd="15dp"
+        android:layout_marginTop="10dp"
+        android:visibility="gone"
+        app:cardCornerRadius="10dp"
+        app:cardBackgroundColor="#8B4513"
+        app:cardElevation="4dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="All missions complete!"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="#FFFFFF"
+                android:fontFamily="@font/montserrat_bold" />
+
+            <TextView
+                android:id="@+id/tvNFTClaimStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Tap to claim your Walled City Key NFT →"
+                android:textSize="12sp"
+                android:textColor="#FFD9B3"
+                android:layout_marginTop="2dp" />
+        </LinearLayout>
+    </androidx.cardview.widget.CardView>
+
     <TextView
         android:layout_margin="15dp"
         android:fontFamily="@font/montserrat_bold"

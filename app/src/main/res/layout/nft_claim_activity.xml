@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FAFAF8"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="28dp"
+        android:gravity="center_horizontal">
+
+        <!-- Back -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="20dp">
+
+            <ImageView
+                android:id="@+id/imgBack"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/back_icon"
+                android:contentDescription="Back" />
+        </LinearLayout>
+
+        <!-- Congratulations heading -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="You Did It!"
+            android:textSize="30sp"
+            android:textStyle="bold"
+            android:textColor="#1A1A1A"
+            android:fontFamily="@font/montserrat_bold"
+            android:gravity="center" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="All 5 Intramuros missions complete.\nYour passport NFT awaits."
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:gravity="center"
+            android:lineSpacingMultiplier="1.4"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="28dp" />
+
+        <!-- NFT artwork placeholder -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="240dp"
+            android:layout_height="240dp"
+            android:layout_marginBottom="24dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="6dp"
+            xmlns:app="http://schemas.android.com/apk/res-auto">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#8B4513">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:text="INTRAMUROS\nPASSPORT"
+                    android:textSize="20sp"
+                    android:textStyle="bold"
+                    android:textColor="#FFFFFF"
+                    android:fontFamily="@font/montserrat_bold"
+                    android:gravity="center" />
+            </FrameLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- NFT name -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Walled City Key"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="#1A1A1A"
+            android:fontFamily="@font/montserrat_bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ERC-721 · Polygon"
+            android:textSize="12sp"
+            android:textColor="#888888"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Wallet address display -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            app:cardCornerRadius="10dp"
+            app:cardElevation="1dp"
+            app:cardBackgroundColor="#F0EDE8"
+            xmlns:app="http://schemas.android.com/apk/res-auto">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Recipient wallet"
+                    android:textSize="11sp"
+                    android:textAllCaps="true"
+                    android:textColor="#888888"
+                    android:letterSpacing="0.1"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:id="@+id/tvWalletAddress"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="0x..."
+                    android:textSize="13sp"
+                    android:textColor="#333333"
+                    android:fontFamily="monospace" />
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Mint button -->
+        <Button
+            android:id="@+id/btnMintNFT"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="Mint My Passport NFT"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#8B4513"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Status / transaction hash -->
+        <TextView
+            android:id="@+id/tvMintStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textSize="13sp"
+            android:textColor="#444444"
+            android:gravity="center"
+            android:lineSpacingMultiplier="1.4"
+            android:visibility="gone" />
+
+        <!-- Progress bar (shown while minting) -->
+        <ProgressBar
+            android:id="@+id/progressMint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Gas fees on Polygon are typically under $0.01"
+            android:textSize="11sp"
+            android:textColor="#AAAAAA"
+            android:layout_marginTop="16dp"
+            android:gravity="center" />
+
+    </LinearLayout>
+</ScrollView>

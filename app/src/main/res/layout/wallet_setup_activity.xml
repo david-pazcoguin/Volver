@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FAFAF8"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="28dp">
+
+        <!-- Back arrow -->
+        <ImageView
+            android:id="@+id/imgBack"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/back_icon"
+            android:contentDescription="Back"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Header -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Set Up Your Wallet"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:textColor="#1A1A1A"
+            android:fontFamily="@font/montserrat_bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="You need a Polygon wallet to receive your Intramuros Passport NFT."
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="32dp"
+            android:lineSpacingMultiplier="1.4" />
+
+        <!-- ─── STEP 1: Choose wallet type ─────────────────────── -->
+        <LinearLayout
+            android:id="@+id/layoutChoose"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- Option A: Connect existing wallet -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/cardConnectWallet"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="#FFFFFF"
+                xmlns:app="http://schemas.android.com/apk/res-auto">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="I already have a wallet"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="#1A1A1A" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Connect MetaMask or any Polygon-compatible wallet by entering your address."
+                        android:textSize="13sp"
+                        android:textColor="#888888"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingMultiplier="1.3" />
+                </LinearLayout>
+            </androidx.cardview.widget.CardView>
+
+            <!-- Option B: Create new embedded wallet -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/cardCreateWallet"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="#FFFFFF"
+                xmlns:app="http://schemas.android.com/apk/res-auto">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Create a new wallet"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="#1A1A1A" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Generate a Polygon wallet inside the app. You must save your private key — it cannot be recovered."
+                        android:textSize="13sp"
+                        android:textColor="#888888"
+                        android:layout_marginTop="4dp"
+                        android:lineSpacingMultiplier="1.3" />
+                </LinearLayout>
+            </androidx.cardview.widget.CardView>
+        </LinearLayout>
+
+        <!-- ─── STEP 2a: Connect existing wallet ──────────────── -->
+        <LinearLayout
+            android:id="@+id/layoutConnectForm"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Enter your Polygon wallet address"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="#1A1A1A"
+                android:layout_marginBottom="12dp" />
+
+            <EditText
+                android:id="@+id/etWalletAddress"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="0x..."
+                android:textSize="14sp"
+                android:inputType="text"
+                android:background="@android:drawable/edit_text"
+                android:padding="12dp"
+                android:layout_marginBottom="12dp" />
+
+            <Button
+                android:id="@+id/btnScanQR"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="Scan QR Code Instead"
+                android:textColor="#555555"
+                android:backgroundTint="#EEEEEE"
+                android:layout_marginBottom="16dp" />
+
+            <Button
+                android:id="@+id/btnConfirmAddress"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:text="Confirm Wallet"
+                android:backgroundTint="#8B4513"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnBackFromConnect"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="← Back"
+                android:backgroundTint="@android:color/transparent"
+                android:textColor="#888888"
+                android:layout_marginTop="8dp" />
+        </LinearLayout>
+
+        <!-- ─── STEP 2b: Create embedded wallet ───────────────── -->
+        <LinearLayout
+            android:id="@+id/layoutCreateWallet"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Your new wallet"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="#1A1A1A"
+                android:layout_marginBottom="8dp" />
+
+            <!-- Address box -->
+            <TextView
+                android:id="@+id/tvGeneratedAddress"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Generating..."
+                android:textSize="13sp"
+                android:textColor="#1A1A1A"
+                android:background="#F0EDE8"
+                android:padding="12dp"
+                android:layout_marginBottom="16dp" />
+
+            <!-- Private key warning + box -->
+            <androidx.cardview.widget.CardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardCornerRadius="8dp"
+                app:cardBackgroundColor="#FFF3CD"
+                xmlns:app="http://schemas.android.com/apk/res-auto">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="14dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="⚠ SAVE YOUR PRIVATE KEY"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textColor="#856404"
+                        android:layout_marginBottom="6dp" />
+
+                    <TextView
+                        android:id="@+id/tvPrivateKey"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="..."
+                        android:textSize="12sp"
+                        android:textColor="#333333"
+                        android:fontFamily="monospace" />
+
+                    <Button
+                        android:id="@+id/btnCopyPrivKey"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:text="Copy"
+                        android:textSize="12sp"
+                        android:backgroundTint="#856404"
+                        android:textColor="#FFFFFF"
+                        android:layout_marginTop="8dp" />
+                </LinearLayout>
+            </androidx.cardview.widget.CardView>
+
+            <CheckBox
+                android:id="@+id/checkSavedKey"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="I have saved my private key in a safe place"
+                android:textSize="14sp"
+                android:textColor="#333333"
+                android:layout_marginBottom="16dp" />
+
+            <Button
+                android:id="@+id/btnConfirmCreated"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:text="Continue"
+                android:backgroundTint="#8B4513"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:enabled="false" />
+
+            <Button
+                android:id="@+id/btnBackFromCreate"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="← Back"
+                android:backgroundTint="@android:color/transparent"
+                android:textColor="#888888"
+                android:layout_marginTop="8dp" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>
