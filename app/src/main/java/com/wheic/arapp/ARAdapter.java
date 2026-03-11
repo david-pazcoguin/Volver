@@ -72,17 +72,20 @@ public class ARAdapter extends RecyclerView.Adapter<ARAdapter.ViewHolder>
         holder.cardView.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                Intent intent= new Intent(context, ARActivity.class);
+                Intent intent = new Intent(context, ARActivity.class);
 
                 Bundle bundle = new Bundle();
-                bundle.putString("MissionName", ARHelper.getMissionName());
-                bundle.putString("Content", ARHelper.getContent());
-                bundle.putDouble("Latitude", ARHelper.getLatitude());
-                bundle.putDouble("Longitude", ARHelper.getLongitude());
+                bundle.putString("MissionName",      ARHelper.getMissionName());
+                bundle.putString("Content",          ARHelper.getContent());
+                bundle.putDouble("Latitude",         ARHelper.getLatitude());
+                bundle.putDouble("Longitude",        ARHelper.getLongitude());
+                bundle.putString("MissionId",        ARHelper.getMissionId());
+                bundle.putString("CharacterName",    ARHelper.getCharacterName());
+                bundle.putString("CharacterDialogue",ARHelper.getCharacterDialogue());
+                bundle.putString("ModelFileName",    ARHelper.getModelFileName());
 
                 intent.putExtras(bundle);
-
-                ((Activity)context).startActivity(intent);
+                ((Activity) context).startActivity(intent);
             }
         });
     }
