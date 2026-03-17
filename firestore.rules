@@ -2,7 +2,8 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users can only access their own profile document
+    // User profile document rules.
+    // Every user can only access the document whose ID matches their auth UID.
     match /users/{uid} {
       allow read: if request.auth != null
                   && request.auth.uid == uid;
@@ -10,44 +11,42 @@ service cloud.firestore {
       allow create: if request.auth != null
                     && request.auth.uid == uid;
 
+      // Allow updates only for the owner and only for mutable profile/progress fields.
+      // This blocks clients from writing protected/system-managed fields.
       allow update: if request.auth != null
                     && request.auth.uid == uid
                     && request.resource.data.keys().hasOnly([
                         'username',
                         'firstName',
                         'lastName',
-                        'email',
                         'walletAddress',
                         'allComplete',
-                        'whitelisted',
-                        'whitelistedAt',
-                        'createdAt'
+                        'whitelisted'
                        ]);
 
-      // Nobody can delete user documents
+      // Never allow profile deletes from clients.
       allow delete: if false;
 
-      // Missions subcollection
-      // Users can only access their own missions
+      // Mission completion records for each user.
       match /missions/{missionId} {
+        // Users can only read their own mission records.
         allow read: if request.auth != null
                     && request.auth.uid == uid;
 
-        // Can only create if completed is true
-        // Prevents fake mission completions
+        // Mission records are append-only and only valid when marked completed.
+        // Requires missionId field to be a string for predictable schema.
         allow create: if request.auth != null
                       && request.auth.uid == uid
                       && request.resource.data.completed == true
                       && request.resource.data.missionId is string;
 
-        // Cannot update or delete missions once completed
-        // This prevents users from undoing completions
+        // Missions cannot be edited or removed once written.
         allow update: if false;
         allow delete: if false;
       }
     }
 
-    // Deny everything else
+    // Deny all access outside explicitly allowed paths above.
     match /{document=**} {
       allow read, write: if false;
     }

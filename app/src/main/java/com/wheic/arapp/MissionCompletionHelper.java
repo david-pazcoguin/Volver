@@ -2,14 +2,11 @@ package com.wheic.arapp;
 
 import android.content.Context;
 
-import com.android.volley.Request;
-import com.android.volley.RequestQueue;
-import com.android.volley.toolbox.StringRequest;
-import com.android.volley.toolbox.Volley;
-
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.firestore.FieldValue;
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.functions.FirebaseFunctions;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -26,6 +23,8 @@ import java.util.Set;
  *   - whitelist_wallet.php
  */
 public class MissionCompletionHelper {
+
+    private static final int TOTAL_LANDMARKS = 5;
 
     public interface CompletionCallback {
         void onSuccess();
@@ -48,47 +47,71 @@ public class MissionCompletionHelper {
     /** Mark a single mission as complete for the current user. */
     public static void completeMission(Context context, String username, String missionId,
                                        CompletionCallback callback) {
-        postRequest(context, URLDatabase.URL_COMPLETE_MISSION, callback, params -> {
-            params.put("username",   username);
-            params.put("mission_id", missionId);
-        });
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) {
+            callback.onError("Network error");
+            return;
+        }
+
+        FirebaseFirestore db = FirebaseFirestore.getInstance();
+        db.runTransaction(transaction -> {
+            com.google.firebase.firestore.DocumentReference missionRef = db
+                    .collection("users")
+                    .document(user.getUid())
+                    .collection("missions")
+                    .document(missionId);
+
+            com.google.firebase.firestore.DocumentSnapshot existing = transaction.get(missionRef);
+            Boolean alreadyCompleted = existing.getBoolean("completed");
+
+            if (existing.exists() && Boolean.TRUE.equals(alreadyCompleted)) {
+                return null;
+            }
+
+            Map<String, Object> missionData = new HashMap<>();
+            missionData.put("completed", true);
+            missionData.put("completedAt", FieldValue.serverTimestamp());
+            missionData.put("missionId", missionId);
+            transaction.set(missionRef, missionData);
+            return null;
+        }).addOnSuccessListener(unused -> callback.onSuccess())
+                .addOnFailureListener(e -> callback.onError("Network error"));
     }
 
     /** Fetch which missions the user has already finished. */
     public static void getMissionProgress(Context context, String username,
                                           ProgressCallback callback) {
-        RequestQueue queue = Volley.newRequestQueue(context);
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) {
+            callback.onError("Network error");
+            return;
+        }
 
-        StringRequest req = new StringRequest(Request.Method.POST,
-                URLDatabase.URL_GET_MISSIONS,
-                response -> {
-                    try {
-                        JSONObject json = new JSONObject(response);
-                        if ("success".equals(json.getString("status"))) {
-                            Set<String> completed = new HashSet<>();
-                            JSONArray arr = json.getJSONArray("completed_missions");
-                            for (int i = 0; i < arr.length(); i++) {
-                                completed.add(arr.getString(i));
-                            }
-                            boolean allComplete = json.optBoolean("all_complete", false);
-                            callback.onResult(completed, allComplete);
-                        } else {
-                            callback.onError(json.optString("message", "Unknown error"));
-                        }
-                    } catch (JSONException e) {
-                        callback.onError("Parse error: " + e.getMessage());
+        FirebaseFirestore db = FirebaseFirestore.getInstance();
+        db.collection("users")
+                .document(user.getUid())
+                .collection("missions")
+                .whereEqualTo("completed", true)
+                .get()
+                .addOnSuccessListener(querySnapshot -> {
+                    Set<String> completed = new HashSet<>();
+                    querySnapshot.getDocuments().forEach(doc -> {
+                        String id = doc.getString("missionId");
+                        completed.add(id != null ? id : doc.getId());
+                    });
+
+                    boolean allComplete = completed.size() == TOTAL_LANDMARKS;
+                    if (allComplete) {
+                        db.collection("users")
+                                .document(user.getUid())
+                                .update("allComplete", true)
+                                .addOnSuccessListener(unused -> callback.onResult(completed, true))
+                                .addOnFailureListener(e -> callback.onError("Network error"));
+                    } else {
+                        callback.onResult(completed, false);
                     }
-                },
-                error -> callback.onError("Network error")) {
-            @Override
-            protected Map<String, String> getParams() {
-                Map<String, String> p = new HashMap<>();
-                p.put("username", username);
-                return p;
-            }
-        };
-
-        queue.add(req);
+                })
+                .addOnFailureListener(e -> callback.onError("Network error"));
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -98,10 +121,18 @@ public class MissionCompletionHelper {
     /** Store the user's Polygon wallet address on the server. */
     public static void saveWalletAddress(Context context, String username, String walletAddress,
                                          CompletionCallback callback) {
-        postRequest(context, URLDatabase.URL_SAVE_WALLET, callback, params -> {
-            params.put("username",       username);
-            params.put("wallet_address", walletAddress);
-        });
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) {
+            callback.onError("Network error");
+            return;
+        }
+
+        FirebaseFirestore.getInstance()
+                .collection("users")
+                .document(user.getUid())
+                .update("walletAddress", walletAddress)
+                .addOnSuccessListener(unused -> callback.onSuccess())
+                .addOnFailureListener(e -> callback.onError("Network error"));
     }
 
     /**
@@ -111,46 +142,20 @@ public class MissionCompletionHelper {
      */
     public static void requestWhitelist(Context context, String username, String walletAddress,
                                         CompletionCallback callback) {
-        postRequest(context, URLDatabase.URL_WHITELIST_WALLET, callback, params -> {
-            params.put("username",       username);
-            params.put("wallet_address", walletAddress);
-        });
-    }
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) {
+            callback.onError("Network error");
+            return;
+        }
 
-    // ──────────────────────────────────────────────────────────────
-    // Private helpers
-    // ──────────────────────────────────────────────────────────────
+        Map<String, Object> data = new HashMap<>();
+        data.put("uid", user.getUid());
+        data.put("walletAddress", walletAddress);
 
-    interface ParamsFiller {
-        void fill(Map<String, String> params);
-    }
-
-    private static void postRequest(Context context, String url,
-                                    CompletionCallback callback, ParamsFiller filler) {
-        RequestQueue queue = Volley.newRequestQueue(context);
-
-        StringRequest req = new StringRequest(Request.Method.POST, url,
-                response -> {
-                    try {
-                        JSONObject json = new JSONObject(response);
-                        if ("success".equals(json.getString("status"))) {
-                            callback.onSuccess();
-                        } else {
-                            callback.onError(json.optString("message", "Unknown error"));
-                        }
-                    } catch (JSONException e) {
-                        callback.onError("Parse error: " + e.getMessage());
-                    }
-                },
-                error -> callback.onError("Network error")) {
-            @Override
-            protected Map<String, String> getParams() {
-                Map<String, String> params = new HashMap<>();
-                filler.fill(params);
-                return params;
-            }
-        };
-
-        queue.add(req);
+        FirebaseFunctions.getInstance()
+                .getHttpsCallable("whitelistWallet")
+                .call(data)
+                .addOnSuccessListener(httpsCallableResult -> callback.onSuccess())
+                .addOnFailureListener(e -> callback.onError("Network error"));
     }
 }

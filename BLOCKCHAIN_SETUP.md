@@ -10,94 +10,101 @@ No prior blockchain experience required.
 ```
 User completes 5 AR missions
          ↓
-App reports each completion to your PHP server
+App writes each completion to Firestore (users/{uid}/missions/{missionId})
          ↓
 User sets up their Polygon wallet (in-app)
          ↓
-App tells server: "this wallet finished all missions"
+App calls the whitelistWallet Cloud Function
          ↓
-Server calls the smart contract: "whitelist this wallet"
+Cloud Function verifies all 5 missions → calls the smart contract → whitelists the wallet
          ↓
 User taps "Mint NFT" → pays a tiny gas fee (~$0.01) → NFT appears in their wallet
 ```
 
 ---
 
-## PART 1 — Set Up the PHP Backend
+## PART 1 — Set Up the Firebase Backend
 
-These PHP scripts need to be uploaded to your server at `https://jstnagls.shop/volver/`.
+The app uses **Firebase** for all backend services. No PHP or SQL is needed.
 
-### Step 1.1 — Add the database table for mission tracking
+### Step 1.1 — Create a Firebase project
 
-Log into your server's phpMyAdmin (or MySQL client) and run this SQL:
+1. Go to https://console.firebase.google.com
+2. Click **Add project** and follow the wizard
+3. Enable **Google Analytics** if desired
 
-```sql
--- Table that records which missions each user has completed
-CREATE TABLE mission_completions (
-    id           INT AUTO_INCREMENT PRIMARY KEY,
-    username     VARCHAR(100) NOT NULL,
-    mission_id   VARCHAR(50)  NOT NULL,
-    completed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY unique_completion (username, mission_id)
-);
-```
+### Step 1.2 — Register the Android app
 
-The `UNIQUE KEY` makes it safe to call `complete_mission.php` multiple times —
-it will never double-count a mission.
+1. In your Firebase project, click **Add app** → **Android**
+2. Package name: `com.wheic.arapp`
+3. Download the generated `google-services.json` and place it in `app/`
 
-### Step 1.2 — Add the wallet address column to your users table
+### Step 1.3 — Enable Firebase Authentication
 
-```sql
--- Adds a column to store each user's Polygon wallet address
-ALTER TABLE users
-ADD COLUMN wallet_address VARCHAR(42) DEFAULT NULL;
-```
+1. In the Firebase console, go to **Authentication** → **Sign-in method**
+2. Enable **Email/Password** provider
+3. The app uses the pattern `username@volver.app` as the email for each user
 
-> If your users table has a different name, replace `users` with the correct name.
+### Step 1.4 — Create the Firestore database
 
-### Step 1.3 — Open each PHP file and fill in your database credentials
+1. Go to **Firestore Database** → **Create database**
+2. Choose a location close to your users (e.g. `asia-southeast1` for Philippines)
+3. Start in **production mode** — the security rules are already defined in `firestore.rules`
 
-All four PHP files have these four lines near the top. Fill them in:
-
-```php
-$host = 'localhost';
-$db   = 'your_database_name';   // ← the name of your MySQL database
-$user = 'your_db_user';         // ← your MySQL username
-$pass = 'your_db_password';     // ← your MySQL password
-```
-
-The four files are:
-- `backend/complete_mission.php`
-- `backend/get_missions.php`
-- `backend/save_wallet.php`
-- `backend/whitelist_wallet.php`
-
-### Step 1.4 — Upload the PHP files to your server
-
-Upload all four files from the `backend/` folder to:
+Firestore data model:
 
 ```
-https://jstnagls.shop/volver/
+users/{uid}
+  ├─ username       (string)
+  ├─ firstName      (string)
+  ├─ lastName       (string)
+  ├─ email          (string)
+  ├─ walletAddress  (string, optional)
+  ├─ allComplete    (boolean)
+  ├─ whitelisted    (boolean)
+  └─ createdAt      (timestamp)
+  └── missions/{missionId}
+        ├─ completed   (boolean)
+        ├─ completedAt (timestamp)
+        └─ missionId   (string)
 ```
 
-After uploading, the URLs should be accessible:
-- `https://jstnagls.shop/volver/complete_mission.php`
-- `https://jstnagls.shop/volver/get_missions.php`
-- `https://jstnagls.shop/volver/save_wallet.php`
-- `https://jstnagls.shop/volver/whitelist_wallet.php`
-
-### Step 1.5 — Install web3.php on your server (for whitelist_wallet.php)
-
-`whitelist_wallet.php` needs a PHP library to talk to the blockchain.
-Run this on your server via SSH:
+### Step 1.5 — Deploy Firestore security rules
 
 ```bash
-cd /path/to/your/volver/folder
-composer require sc0vu/web3.php
+firebase deploy --only firestore:rules
 ```
 
-> If you don't have Composer, install it first: https://getcomposer.org/download/
-> If your host doesn't allow SSH, ask your hosting provider for help running Composer.
+The rules in `firestore.rules` enforce:
+- Users can only read/write their own profile and missions
+- Mission documents are append-only (no edits or deletes)
+- Only allowed fields can be updated on the user profile
+
+### Step 1.6 — Deploy the Cloud Function
+
+The `whitelistWallet` Cloud Function handles blockchain whitelisting.
+
+```bash
+cd functions
+npm install
+cd ..
+firebase deploy --only functions
+```
+
+### Step 1.7 — Set Cloud Function secrets
+
+The Cloud Function needs your Polygon contract owner key and contract address:
+
+```bash
+firebase functions:config:set \
+  polygon.owner_key="0xYOUR_OWNER_PRIVATE_KEY" \
+  polygon.contract_address="0xYOUR_CONTRACT_ADDRESS" \
+  polygon.rpc_url="https://rpc-amoy.polygon.technology"
+```
+
+> ⚠️ **IMPORTANT SECURITY NOTE**
+> Never commit these secrets to source control.
+> `functions.config()` stores them securely in the Firebase environment.
 
 ---
 
@@ -194,32 +201,31 @@ with:
 public static final String NFT_CONTRACT_ADDRESS = "0xAbCd..."; // your actual address
 ```
 
-### Step 2.10 — Update whitelist_wallet.php with the contract address
+### Step 2.10 — Update the Cloud Function with the contract address
 
-Open `backend/whitelist_wallet.php` and fill in:
+After deployment, set the contract address in your Firebase config:
 
-```php
-define('CONTRACT_ADDRESS',  '0xAbCd...');          // ← your contract address from Step 2.8
-define('OWNER_PRIVATE_KEY', '0xYourPrivateKey');   // ← see Step 2.11 below
+```bash
+firebase functions:config:set polygon.contract_address="0xAbCd..."
 ```
 
-### Step 2.11 — Get your owner private key (for the backend)
+### Step 2.11 — Set your owner private key in Firebase config
 
-The backend needs to sign transactions as the contract owner to whitelist users.
+The Cloud Function needs to sign transactions as the contract owner to whitelist users.
 
 1. Open MetaMask
 2. Click the three dots next to your account → **"Account Details"**
 3. Click **"Show Private Key"** → enter your password → copy the key
-4. Paste it into `whitelist_wallet.php` as `OWNER_PRIVATE_KEY`
+4. Set it in Firebase config:
+
+```bash
+firebase functions:config:set polygon.owner_key="0xYourPrivateKey"
+```
 
 > ⚠️ **IMPORTANT SECURITY NOTE**
 > Never commit your private key to GitHub or share it publicly.
-> For production, store it in a `.env` file:
-> ```
-> OWNER_PRIVATE_KEY=0xYourKeyHere
-> ```
-> And read it in PHP with `getenv('OWNER_PRIVATE_KEY')`.
-> Add `.env` to your `.gitignore`.
+> `functions.config()` stores secrets securely in the Firebase environment.
+> Re-deploy functions after changing config: `firebase deploy --only functions`
 
 ---
 
@@ -382,11 +388,11 @@ public static final String  RPC_URL  = "https://polygon-rpc.com";
 public static final long    CHAIN_ID = 137L;
 ```
 
-### Step 5.5 — Update whitelist_wallet.php for mainnet
+### Step 5.5 — Update Cloud Function config for mainnet
 
-```php
-define('RPC_URL',  'https://polygon-rpc.com');
-define('CHAIN_ID', 137);
+```bash
+firebase functions:config:set polygon.rpc_url="https://polygon-rpc.com"
+firebase deploy --only functions
 ```
 
 ---
@@ -397,14 +403,14 @@ Before publishing the app, test the full flow:
 
 1. **Log in** to the app with a test account
 2. **Visit all 5 AR locations** (or temporarily lower `ACTIVATION_RADIUS_METERS` in `ARActivity.java` to `10000.0f` so any location triggers it during testing)
-3. **Place each character model** — check that the server records the completion
+3. **Place each character model** — check that Firestore records the completion
 4. **Set up a wallet** — try both "paste address" and "create new wallet"
 5. **Tap "Claim NFT"** on the home screen
 6. **Mint the NFT** — check the transaction on https://amoy.polygonscan.com
 
-To verify mission completions were saved, run this SQL on your server:
-```sql
-SELECT * FROM mission_completions WHERE username = 'your_test_username';
+To verify mission completions were saved, check **Firestore** in the Firebase console:
+```
+users/{uid}/missions/ → should show 5 documents with completed: true
 ```
 
 To verify the whitelist transaction worked, go to Polygonscan, search your contract address,
@@ -416,12 +422,10 @@ and check the **"Events"** tab for an `AddressWhitelisted` event.
 
 | File | What to fill in |
 |---|---|
-| `backend/complete_mission.php` | DB host, name, user, password |
-| `backend/get_missions.php` | DB host, name, user, password |
-| `backend/save_wallet.php` | DB host, name, user, password |
-| `backend/whitelist_wallet.php` | DB credentials + contract address + owner private key |
+| `app/google-services.json` | Firebase project config (download from Firebase console) |
 | `contracts/IntramurosNFT.sol` | `PASSPORT_URI` (IPFS metadata CID) — before deploying |
 | `PolygonService.java` | `NFT_CONTRACT_ADDRESS` after deploying the contract |
+| Firebase config (CLI) | `polygon.owner_key`, `polygon.contract_address`, `polygon.rpc_url` |
 
 ---
 
@@ -431,16 +435,17 @@ and check the **"Events"** tab for an `AddressWhitelisted` event.
 → The `.glb` file isn't in `res/raw/` or the filename doesn't match exactly.
 
 **"Complete all 5 Intramuros missions first" when minting**
-→ The wallet isn't whitelisted yet. Check that `whitelist_wallet.php` ran successfully
-and that all 5 missions are in the `mission_completions` table.
+→ The wallet isn't whitelisted yet. Check that the `whitelistWallet` Cloud Function
+ran successfully and that all 5 missions exist in `users/{uid}/missions/` in Firestore.
 
 **MetaMask doesn't open when tapping Mint (external wallet)**
 → MetaMask isn't installed on the device. The app will show the deep link as text instead.
 
-**`whitelist_wallet.php` returns "Transaction signing failed"**
-→ Double-check `OWNER_PRIVATE_KEY` starts with `0x` and has 66 characters total.
-Also confirm `CONTRACT_ADDRESS` is the correct deployed address.
+**Cloud Function returns "Transaction signing failed"**
+→ Double-check `polygon.owner_key` starts with `0x` and has 66 characters total.
+Also confirm `polygon.contract_address` is the correct deployed address.
+Verify with: `firebase functions:config:get`
 
 **Gas price too low / transaction stuck**
-→ In `whitelist_wallet.php`, increase the gasPrice value:
-`'gasPrice' => '0x' . dechex(50000000000)` (50 gwei instead of 30)
+→ This is handled automatically by ethers.js in the Cloud Function.
+If needed, you can adjust gas settings in `functions/index.js`.

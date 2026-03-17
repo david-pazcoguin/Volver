@@ -29,8 +29,13 @@ import android.widget.Toast;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
 import com.google.ar.core.Anchor;
+import com.google.ar.core.Config;
+import com.google.ar.core.Earth;
+import com.google.ar.core.GeospatialPose;
 import com.google.ar.core.HitResult;
 import com.google.ar.core.Plane;
+import com.google.ar.core.Session;
+import com.google.ar.core.TrackingState;
 import com.google.ar.sceneform.AnchorNode;
 import com.google.ar.sceneform.math.Vector3;
 import com.google.ar.sceneform.rendering.ModelRenderable;
@@ -60,8 +65,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
     private double targetLatitude;
     private double targetLongitude;
+    private double targetAltitude;
     private boolean isTargetReached = false;
     private boolean hasGreeted      = false; // play dialogue only once per visit
+    private boolean geospatialConfigured = false;
 
     // ── Mission / character data ────────────────────────────────────
     private String missionId;
@@ -106,6 +113,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         if (extras != null) {
             targetLatitude   = extras.getDouble("Latitude",  14.6495872);
             targetLongitude  = extras.getDouble("Longitude", 121.0032413);
+            targetAltitude   = extras.getDouble("Altitude", Double.NaN);
             missionId        = extras.getString("MissionId",        "unknown");
             characterName    = extras.getString("CharacterName",    "Guide");
             characterDialogue= extras.getString("CharacterDialogue","Welcome.");
@@ -131,6 +139,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     @Override
     protected void onResume() {
         super.onResume();
+        configureGeospatialMode();
         // Start periodic location check when screen is visible
         locationHandler.post(locationRunnable);
     }
@@ -202,6 +211,37 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     }
 
     private void getLocationAndCheckTarget() {
+        if (isGeospatialAvailable()) {
+            Session session = arCam != null ? arCam.getArSceneView().getSession() : null;
+            Earth earth = session != null ? session.getEarth() : null;
+
+            if (earth != null && earth.getTrackingState() == TrackingState.TRACKING) {
+                GeospatialPose cameraPose = earth.getCameraGeospatialPose();
+                if (cameraPose.getHorizontalAccuracy() < 10f) {
+                    float[] results = new float[1];
+                    Location.distanceBetween(
+                            cameraPose.getLatitude(), cameraPose.getLongitude(),
+                            targetLatitude, targetLongitude, results);
+                    float distance = results[0];
+
+                    if (distance <= ACTIVATION_RADIUS_METERS) {
+                        onTargetReached();
+                    } else {
+                        String msg = String.format("Move closer to %s. You are %dm away.",
+                                characterName, (int) distance);
+                        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+                    }
+                    return;
+                }
+                Toast.makeText(this, "Waiting for precise geospatial accuracy...", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            Toast.makeText(this, "Waiting for geospatial tracking...", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Fallback: keep legacy fused location check when geospatial is unavailable.
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) return;
 
@@ -272,7 +312,11 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             }
             if (modelFuture.isDone() && !modelFuture.isCompletedExceptionally()) {
                 try {
-                    Anchor anchor = hitResult.createAnchor();
+                    Anchor anchor = createMissionAnchor();
+                    if (anchor == null) {
+                        Toast.makeText(this, "Geospatial anchor is not ready yet.", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
                     placeModel(anchor, modelFuture.get());
                     hasPlacedModel = true;
                     onMissionModelPlaced();
@@ -283,6 +327,59 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 Toast.makeText(this, "Model still loading — please wait.", Toast.LENGTH_SHORT).show();
             }
         });
+    }
+
+    private void configureGeospatialMode() {
+        if (geospatialConfigured || arCam == null || arCam.getArSceneView() == null) {
+            return;
+        }
+
+        Session session = arCam.getArSceneView().getSession();
+        if (session == null || !isGeospatialAvailable()) {
+            return;
+        }
+
+        Config config = session.getConfig();
+        config.setGeospatialMode(Config.GeospatialMode.ENABLED);
+        session.configure(config);
+        geospatialConfigured = true;
+    }
+
+    private boolean isGeospatialAvailable() {
+        if (arCam == null || arCam.getArSceneView() == null) {
+            return false;
+        }
+
+        Session session = arCam.getArSceneView().getSession();
+        if (session == null) {
+            return false;
+        }
+
+        try {
+            return session.isGeospatialModeSupported(Config.GeospatialMode.ENABLED);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private Anchor createMissionAnchor() {
+        if (!isGeospatialAvailable()) {
+            return null;
+        }
+
+        Session session = arCam.getArSceneView().getSession();
+        Earth earth = session != null ? session.getEarth() : null;
+        if (earth == null || earth.getTrackingState() != TrackingState.TRACKING) {
+            return null;
+        }
+
+        GeospatialPose cameraPose = earth.getCameraGeospatialPose();
+        if (cameraPose.getHorizontalAccuracy() >= 10f) {
+            return null;
+        }
+
+        double altitude = Double.isNaN(targetAltitude) ? cameraPose.getAltitude() : targetAltitude;
+        return earth.createAnchor(targetLatitude, targetLongitude, altitude, 0f, 0f, 0f, 1f);
     }
 
     private void placeModel(Anchor anchor, ModelRenderable renderable) {

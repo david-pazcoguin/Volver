@@ -1,32 +1,125 @@
-/**
- * Import function triggers from their respective submodules:
- *
- * const {onCall} = require("firebase-functions/v2/https");
- * const {onDocumentWritten} = require("firebase-functions/v2/firestore");
- *
- * See a full list of supported triggers at https://firebase.google.com/docs/functions
- */
+// SECURITY: Never commit real values of owner_key to source control
+// Set via: firebase functions:config:set polygon.owner_key="YOUR_KEY"
 
-const {setGlobalOptions} = require("firebase-functions");
-const {onRequest} = require("firebase-functions/https");
-const logger = require("firebase-functions/logger");
+const functions = require("firebase-functions");
+const admin = require("firebase-admin");
+const { ethers } = require("ethers");
 
-// For cost control, you can set the maximum number of containers that can be
-// running at the same time. This helps mitigate the impact of unexpected
-// traffic spikes by instead downgrading performance. This limit is a
-// per-function limit. You can override the limit for each function using the
-// `maxInstances` option in the function's options, e.g.
-// `onRequest({ maxInstances: 5 }, (req, res) => { ... })`.
-// NOTE: setGlobalOptions does not apply to functions using the v1 API. V1
-// functions should each use functions.runWith({ maxInstances: 10 }) instead.
-// In the v1 API, each function can only serve one request per container, so
-// this will be the maximum concurrent request count.
-setGlobalOptions({ maxInstances: 10 });
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
 
-// Create and deploy your first functions
-// https://firebase.google.com/docs/functions/get-started
+const REQUIRED_MISSIONS = 5;
 
-// exports.helloWorld = onRequest((request, response) => {
-//   logger.info("Hello logs!", {structuredData: true});
-//   response.send("Hello from Firebase!");
-// });
+exports.whitelistWallet = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Authentication is required."
+    );
+  }
+
+  const uid = data && data.uid;
+  const walletAddress = data && data.walletAddress;
+
+  if (typeof uid !== "string" || uid.trim().length === 0) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "uid must be a non-empty string."
+    );
+  }
+
+  if (typeof walletAddress !== "string" || walletAddress.trim().length === 0) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "walletAddress must be a non-empty string."
+    );
+  }
+
+  if (uid !== context.auth.uid) {
+    throw new functions.https.HttpsError(
+      "permission-denied",
+      "UID mismatch for authenticated caller."
+    );
+  }
+
+  if (!ethers.isAddress(walletAddress)) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "walletAddress is not a valid address."
+    );
+  }
+
+  const db = admin.firestore();
+  const userRef = db.collection("users").doc(uid);
+
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) {
+    throw new functions.https.HttpsError(
+      "not-found",
+      "User profile not found."
+    );
+  }
+
+  const userData = userSnap.data() || {};
+  if (userData.allComplete !== true) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "All missions must be completed before whitelisting."
+    );
+  }
+
+  const missionsSnap = await userRef
+    .collection("missions")
+    .where("completed", "==", true)
+    .get();
+
+  if (missionsSnap.size < REQUIRED_MISSIONS) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      `Only ${missionsSnap.size} of ${REQUIRED_MISSIONS} missions are completed.`
+    );
+  }
+
+  const polygonConfig = functions.config().polygon || {};
+  const ownerKey = polygonConfig.owner_key;
+  const contractAddress = polygonConfig.contract_address;
+  const rpcUrl = polygonConfig.rpc_url;
+
+  if (!ownerKey || !contractAddress || !rpcUrl) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Missing polygon config. Set owner_key, contract_address, and rpc_url."
+    );
+  }
+
+  if (!ethers.isAddress(contractAddress)) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Configured contract_address is invalid."
+    );
+  }
+
+  try {
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+    const signer = new ethers.Wallet(ownerKey, provider);
+    const abi = ["function whitelistAddress(address wallet) external"];
+    const contract = new ethers.Contract(contractAddress, abi, signer);
+
+    const tx = await contract.whitelistAddress(walletAddress);
+    await tx.wait();
+
+    await userRef.update({
+      whitelisted: true,
+      whitelistedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error("whitelistWallet failed", { uid, error: error && error.message ? error.message : error });
+    throw new functions.https.HttpsError(
+      "internal",
+      "Failed to whitelist wallet on-chain."
+    );
+  }
+});
