@@ -15,11 +15,10 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.android.volley.Request;
-import com.android.volley.RequestQueue;
-import com.android.volley.VolleyError;
-import com.android.volley.toolbox.StringRequest;
-import com.android.volley.toolbox.Volley;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.firestore.FieldValue;
+import com.google.firebase.firestore.FirebaseFirestore;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -182,48 +181,19 @@ public class RegisterActivity extends AppCompatActivity {
             {
                 if(txtPassword.getText().toString().equals(txtConfirmPassword.getText().toString()))
                 {
-                    String url = URLDatabase.URL_CHECK_ACCOUNT;
-
-                    RequestQueue queue = Volley.newRequestQueue(RegisterActivity.this);
-
-                    StringRequest request = new StringRequest(Request.Method.POST, url, new com.android.volley.Response.Listener<String>() {
-                        @Override
-                        public void onResponse(String response) {
-                            try {
-                                JSONObject jsonObject = new JSONObject(response);
-                                if (jsonObject.getString("user_id").equals("null") || jsonObject.getString("user_id").equals(""))
-                                {
+                    String enteredUsername = txtUsername.getText().toString().trim();
+                    FirebaseFirestore.getInstance()
+                            .collection("users")
+                            .whereEqualTo("username", enteredUsername)
+                            .get()
+                            .addOnSuccessListener(queryDocumentSnapshots -> {
+                                if (queryDocumentSnapshots != null && !queryDocumentSnapshots.isEmpty()) {
+                                    Toast.makeText(RegisterActivity.this, "Your username is already existing in the database.", Toast.LENGTH_SHORT).show();
+                                } else {
                                     Register();
                                 }
-                                else
-                                {
-                                    Toast.makeText(RegisterActivity.this, "Your username is already existing in the database.", Toast.LENGTH_SHORT).show();
-                                }
-                            } catch (JSONException e) {
-                                e.printStackTrace();
-                            }
-                        }
-                    }, new com.android.volley.Response.ErrorListener() {
-                        @Override
-                        public void onErrorResponse(VolleyError error)
-                        {
-                            Toast.makeText(RegisterActivity.this, error.toString(), Toast.LENGTH_SHORT).show();
-                        }
-                    }) {
-                        @Override
-                        public String getBodyContentType() {
-                            return "application/x-www-form-urlencoded; charset=UTF-8";
-                        }
-
-                        @Override
-                        protected Map<String, String> getParams()
-                        {
-                            Map<String, String> params = new HashMap<String, String>();
-                            params.put("username", txtUsername.getText().toString());
-                            return params;
-                        }
-                    };
-                    queue.add(request);
+                            })
+                            .addOnFailureListener(e -> Toast.makeText(RegisterActivity.this, e.toString(), Toast.LENGTH_SHORT).show());
                 }
                 else
                 {
@@ -267,40 +237,41 @@ public class RegisterActivity extends AppCompatActivity {
      */
     void Register()
     {
-        String url = URLDatabase.URL_REGISTER;
+        String username = txtUsername.getText().toString().trim();
+        String email = username + "@volver.app";
+        String password = txtPassword.getText().toString();
 
-        RequestQueue queue = Volley.newRequestQueue(RegisterActivity.this);
+        FirebaseAuth.getInstance()
+                .createUserWithEmailAndPassword(email, password)
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        FirebaseUser user = task.getResult() != null ? task.getResult().getUser() : null;
+                        if (user == null) {
+                            Toast.makeText(RegisterActivity.this, "Invalid credentials.", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
 
-        StringRequest request = new StringRequest(Request.Method.POST, url, new com.android.volley.Response.Listener<String>() {
-            @Override
-            public void onResponse(String response)
-            {
-                finish();
-            }
-        }, new com.android.volley.Response.ErrorListener() {
-            @Override
-            public void onErrorResponse(VolleyError error)
-            {
-                Toast.makeText(RegisterActivity.this, error.toString(), Toast.LENGTH_SHORT).show();
-            }
-        }) {
-            @Override
-            public String getBodyContentType() {
-                return "application/x-www-form-urlencoded; charset=UTF-8";
-            }
+                        Map<String, Object> userData = new HashMap<>();
+                        userData.put("username", username);
+                        userData.put("firstName", txtFirstName.getText().toString());
+                        userData.put("lastName", txtLastName.getText().toString());
+                        userData.put("email", email);
+                        userData.put("createdAt", FieldValue.serverTimestamp());
 
-            @Override
-            protected Map<String, String> getParams()
-            {
-                Map<String, String> params = new HashMap<String, String>();
-                params.put("username", txtUsername.getText().toString());
-                params.put("password", txtPassword.getText().toString());
-                params.put("first_name", txtFirstName.getText().toString());
-                params.put("last_name", txtLastName.getText().toString());
-
-                return params;
-            }
-        };
-        queue.add(request);
+                        FirebaseFirestore.getInstance()
+                                .collection("users")
+                                .document(user.getUid())
+                                .set(userData)
+                                .addOnSuccessListener(unused -> finish())
+                                .addOnFailureListener(e -> Toast.makeText(RegisterActivity.this, e.toString(), Toast.LENGTH_SHORT).show());
+                    } else {
+                        Exception exception = task.getException();
+                        if (exception != null) {
+                            Toast.makeText(RegisterActivity.this, exception.toString(), Toast.LENGTH_SHORT).show();
+                        } else {
+                            Toast.makeText(RegisterActivity.this, "Invalid credentials.", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                });
     }
 }

@@ -20,11 +20,9 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.android.volley.Request;
-import com.android.volley.RequestQueue;
-import com.android.volley.VolleyError;
-import com.android.volley.toolbox.StringRequest;
-import com.android.volley.toolbox.Volley;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException;
+import com.google.firebase.auth.FirebaseAuthInvalidUserException;
 import com.google.ar.core.Anchor;
 import com.google.ar.sceneform.AnchorNode;
 import com.google.ar.sceneform.rendering.ModelRenderable;
@@ -132,58 +130,33 @@ public class LoginActivity extends AppCompatActivity {
             @Override
             public void onClick(View view)
             {
-                String url = URLDatabase.URL_LOGIN;
+                String usernameInput = txtUsername.getText().toString().trim();
+                String authEmail = usernameInput + "@volver.app";
+                String password = txtPassword.getText().toString();
 
-                RequestQueue queue = Volley.newRequestQueue(LoginActivity.this);
-
-                StringRequest request = new StringRequest(Request.Method.POST, url, new com.android.volley.Response.Listener<String>() {
-                    @Override
-                    public void onResponse(String response) {
-                        try {
-                            JSONObject jsonObject = new JSONObject(response);
-                            if (jsonObject.getString("user_id").equals("") || jsonObject.getString("user_id").equals("null"))
-                            {
-                                Toast.makeText(LoginActivity.this, "Invalid credentials.", Toast.LENGTH_SHORT).show();
-                            }
-                            else
-                            {
-                                SharedPreferences sharedPreferences = getSharedPreferences("Volver",MODE_PRIVATE);
-
+                FirebaseAuth.getInstance()
+                        .signInWithEmailAndPassword(authEmail, password)
+                        .addOnCompleteListener(task -> {
+                            if (task.isSuccessful()) {
+                                SharedPreferences sharedPreferences = getSharedPreferences("Volver", MODE_PRIVATE);
                                 SharedPreferences.Editor myEdit = sharedPreferences.edit();
-
                                 myEdit.putString("username", txtUsername.getText().toString());
-
                                 myEdit.commit();
 
-                                Intent intent= new Intent(LoginActivity.this, HomeActivity.class);
+                                Intent intent = new Intent(LoginActivity.this, HomeActivity.class);
                                 startActivity(intent);
+                            } else {
+                                Exception exception = task.getException();
+                                if (exception instanceof FirebaseAuthInvalidUserException
+                                        || exception instanceof FirebaseAuthInvalidCredentialsException) {
+                                    Toast.makeText(LoginActivity.this, "Invalid credentials.", Toast.LENGTH_SHORT).show();
+                                } else if (exception != null) {
+                                    Toast.makeText(LoginActivity.this, exception.toString(), Toast.LENGTH_SHORT).show();
+                                } else {
+                                    Toast.makeText(LoginActivity.this, "Invalid credentials.", Toast.LENGTH_SHORT).show();
+                                }
                             }
-                        } catch (JSONException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }, new com.android.volley.Response.ErrorListener() {
-                    @Override
-                    public void onErrorResponse(VolleyError error)
-                    {
-                        Toast.makeText(LoginActivity.this, error.toString(), Toast.LENGTH_SHORT).show();
-                    }
-                }) {
-                    @Override
-                    public String getBodyContentType() {
-                        return "application/x-www-form-urlencoded; charset=UTF-8";
-                    }
-
-                    @Override
-                    protected Map<String, String> getParams()
-                    {
-                        Map<String, String> params = new HashMap<String, String>();
-                        params.put("username", txtUsername.getText().toString());
-                        params.put("password", txtPassword.getText().toString());
-                        return params;
-                    }
-                };
-                queue.add(request);
+                        });
             }
         });
     }
