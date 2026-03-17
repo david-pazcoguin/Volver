@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users can only access their own profile document
+    match /users/{uid} {
+      allow read: if request.auth != null
+                  && request.auth.uid == uid;
+
+      allow create: if request.auth != null
+                    && request.auth.uid == uid;
+
+      allow update: if request.auth != null
+                    && request.auth.uid == uid
+                    && request.resource.data.keys().hasOnly([
+                        'username',
+                        'firstName',
+                        'lastName',
+                        'email',
+                        'walletAddress',
+                        'allComplete',
+                        'whitelisted',
+                        'whitelistedAt',
+                        'createdAt'
+                       ]);
+
+      // Nobody can delete user documents
+      allow delete: if false;
+
+      // Missions subcollection
+      // Users can only access their own missions
+      match /missions/{missionId} {
+        allow read: if request.auth != null
+                    && request.auth.uid == uid;
+
+        // Can only create if completed is true
+        // Prevents fake mission completions
+        allow create: if request.auth != null
+                      && request.auth.uid == uid
+                      && request.resource.data.completed == true
+                      && request.resource.data.missionId is string;
+
+        // Cannot update or delete missions once completed
+        // This prevents users from undoing completions
+        allow update: if false;
+        allow delete: if false;
+      }
+    }
+
+    // Deny everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
