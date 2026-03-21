@@ -16,11 +16,10 @@ import java.util.Set;
 /**
  * Handles all server-side mission completion tracking and wallet registration.
  *
- * Required PHP scripts (see backend/ folder for implementation):
- *   - complete_mission.php
- *   - get_missions.php
- *   - save_wallet.php
- *   - whitelist_wallet.php
+ * Firebase implementation details:
+ *   - Mission completion/progress are stored in Firestore under users/{uid}/missions.
+ *   - Wallet address is stored on the users/{uid} document.
+ *   - Whitelisting is requested via the callable Cloud Function "whitelistWallet".
  */
 public class MissionCompletionHelper {
 

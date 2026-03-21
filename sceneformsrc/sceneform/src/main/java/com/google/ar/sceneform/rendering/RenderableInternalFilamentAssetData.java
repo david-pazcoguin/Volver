@@ -8,11 +8,12 @@ import com.google.android.filament.IndexBuffer;
 import com.google.android.filament.VertexBuffer;
 import com.google.android.filament.gltfio.MaterialProvider;
 import com.google.android.filament.gltfio.ResourceLoader;
+import com.google.android.filament.gltfio.UbershaderProvider;
 
 
 import com.google.ar.sceneform.math.Vector3;
 import com.google.ar.sceneform.rendering.RenderableInternalData.MeshData;
-import java.nio.Buffer;
+import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
@@ -26,14 +27,14 @@ import java.util.function.Function;
 public class RenderableInternalFilamentAssetData implements IRenderableInternalData {
 
   Context context;
-  Buffer gltfByteBuffer;
+  ByteBuffer gltfByteBuffer;
   ResourceLoader resourceLoader;
   @Nullable Function<String, Uri> urlResolver;
   static MaterialProvider materialProvider;
 
   static MaterialProvider getMaterialProvider() {
     if (materialProvider == null) {
-      materialProvider = new MaterialProvider(EngineInstance.getEngine().getFilamentEngine());
+      materialProvider = new UbershaderProvider(EngineInstance.getEngine().getFilamentEngine());
     }
     return materialProvider;
   }
