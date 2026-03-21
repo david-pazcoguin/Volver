@@ -93,8 +93,11 @@
             android:name="com.google.ar.core"
             android:value="required" />
         <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${MAPS_API_KEY}"/>
+        <meta-data
             android:name="com.google.ar.core.min_apk_version"
-            android:value="191561055" />
+            android:value="240920000" />
         <!-- meta data is a way to show short info, so this meta data this tells ARCore / Google Play
         that this app REQUIRES AR support and devices without ARCore should not be allowed to install/run it. -->
     </application>
