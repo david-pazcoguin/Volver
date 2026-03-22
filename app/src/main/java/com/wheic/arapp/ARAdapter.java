@@ -8,9 +8,9 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.TextView;
 
-import androidx.annotation.NonNull;
 import androidx.cardview.widget.CardView;
 import androidx.recyclerview.widget.RecyclerView;
 import java.util.List;
@@ -34,6 +34,10 @@ public class ARAdapter extends RecyclerView.Adapter<ARAdapter.ViewHolder>
 
         holder.tvMissionName.setText(ARHelper.getMissionName());
 
+        // Set mission image based on mission ID
+        int imageResId = getMissionImageResource(ARHelper.getMissionId());
+        holder.imgView.setImageResource(imageResId);
+
         holder.cardView.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -53,11 +57,6 @@ public class ARAdapter extends RecyclerView.Adapter<ARAdapter.ViewHolder>
                 ((Activity) context).startActivity(intent);
             }
         });
-    }
-
-    @Override
-    public void onViewAttachedToWindow(@NonNull ViewHolder holder) {
-        super.onViewAttachedToWindow(holder);
     }
 
     @Override
@@ -82,13 +81,34 @@ public class ARAdapter extends RecyclerView.Adapter<ARAdapter.ViewHolder>
     {
         TextView tvMissionName;
         CardView cardView;
+        ImageView imgView;
 
         public ViewHolder(View itemView) {
             super(itemView);
 
             tvMissionName = itemView.findViewById(R.id.tvMissionName);
             cardView = itemView.findViewById(R.id.cardView);
+            imgView = itemView.findViewById(R.id.imgView);
+        }
+    }
 
+    /**
+     * Maps mission IDs to their corresponding drawable resources.
+     */
+    private int getMissionImageResource(String missionId) {
+        switch (missionId) {
+            case "fort_santiago":
+                return R.drawable.fort_santiago;
+            case "baluarte_san_diego":
+                return R.drawable.baluarte_san_diego;
+            case "casa_manila":
+                return R.drawable.casa_manila;
+            case "museo_intramuros":
+                return R.drawable.museo_intramuros;
+            case "centro_turismo":
+                return R.drawable.centro_turismo;
+            default:
+                return R.drawable.mission_icon;
         }
     }
 }

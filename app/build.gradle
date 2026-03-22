@@ -4,15 +4,15 @@ plugins {
 }
 
 android {
-    compileSdkVersion 34
+    compileSdk 35
+    namespace 'com.wheic.arapp'
 
     defaultConfig {
         applicationId "com.wheic.arapp"
-        minSdkVersion 24
-        targetSdkVersion 33
+        minSdk 24
+        targetSdk 35
         versionCode 1
         versionName "1.0"
-        multiDexEnabled true
         manifestPlaceholders = [MAPS_API_KEY: project.findProperty("MAPS_API_KEY") ?: ""]
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -26,22 +26,24 @@ android {
     }
     compileOptions {
         coreLibraryDesugaringEnabled true
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
     }
-    namespace 'com.wheic.arapp'
 
-    // Required to avoid META-INF conflicts from Web3j transitive dependencies
-    packagingOptions {
-        exclude 'META-INF/DEPENDENCIES'
-        exclude 'META-INF/LICENSE'
-        exclude 'META-INF/LICENSE.txt'
-        exclude 'META-INF/license.txt'
-        exclude 'META-INF/NOTICE'
-        exclude 'META-INF/NOTICE.txt'
-        exclude 'META-INF/notice.txt'
-        exclude 'META-INF/INDEX.LIST'
-        exclude 'META-INF/*.kotlin_module'
+    packaging {
+        resources {
+            excludes += [
+                'META-INF/DEPENDENCIES',
+                'META-INF/LICENSE',
+                'META-INF/LICENSE.txt',
+                'META-INF/license.txt',
+                'META-INF/NOTICE',
+                'META-INF/NOTICE.txt',
+                'META-INF/notice.txt',
+                'META-INF/INDEX.LIST',
+                'META-INF/*.kotlin_module'
+            ]
+        }
     }
 }
 
@@ -49,30 +51,27 @@ dependencies {
 
     api project(":sceneformux")
     implementation "com.google.ar:core:1.44.0"
-    implementation 'com.google.firebase:firebase-firestore:24.10.3'
-    implementation 'com.google.firebase:firebase-functions:20.4.0'
     implementation platform('com.google.firebase:firebase-bom:34.10.0')
     implementation 'com.google.firebase:firebase-analytics'
     implementation 'com.google.firebase:firebase-auth'
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.9.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'androidx.multidex:multidex:2.0.1'
-    testImplementation 'junit:junit:4.+'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
-    implementation 'com.google.zxing:core:3.4.1'
+    implementation 'com.google.firebase:firebase-firestore'
+    implementation 'com.google.firebase:firebase-functions'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
+    implementation 'com.google.zxing:core:3.5.3'
     implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
-    implementation 'com.google.android.gms:play-services-location:21.0.1'
+    implementation 'com.google.android.gms:play-services-location:21.3.0'
 
-    // Web3j Android — Polygon/Ethereum blockchain interaction
+    // Web3j — Polygon/Ethereum blockchain interaction
     implementation 'org.web3j:core:4.9.8'
 
     // Gson for JSON serialization
-    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'com.google.code.gson:gson:2.11.0'
 
     // Core library desugaring for Java 8+ API on older Android versions
-    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
 }
-
-apply plugin: 'com.google.gms.google-services'
