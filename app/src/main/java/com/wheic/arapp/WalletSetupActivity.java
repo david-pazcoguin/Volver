@@ -6,7 +6,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -50,6 +53,11 @@ public class WalletSetupActivity extends AppCompatActivity {
 
     private WalletManager walletManager;
     private String username;
+    private final Handler clipboardHandler = new Handler(Looper.getMainLooper());
+    private final Runnable clipboardClearRunnable = () -> {
+        ClipboardManager cb = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        cb.setPrimaryClip(ClipData.newPlainText("", ""));
+    };
 
     // ZXing QR scanner launcher
     private final androidx.activity.result.ActivityResultLauncher<ScanOptions> qrLauncher =
@@ -62,6 +70,9 @@ public class WalletSetupActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // Prevent screenshots and screen recording on this screen (private key visible)
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE,
+                WindowManager.LayoutParams.FLAG_SECURE);
         setContentView(R.layout.wallet_setup_activity);
 
         walletManager = WalletManager.getInstance(this);
@@ -150,7 +161,10 @@ public class WalletSetupActivity extends AppCompatActivity {
             ClipboardManager clipboard =
                     (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
             clipboard.setPrimaryClip(ClipData.newPlainText("Private Key", key));
-            Toast.makeText(this, "Copied to clipboard", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Copied — clipboard will be cleared in 30 seconds", Toast.LENGTH_SHORT).show();
+            // Auto-clear clipboard after 30 seconds to prevent key leakage
+            clipboardHandler.removeCallbacks(clipboardClearRunnable);
+            clipboardHandler.postDelayed(clipboardClearRunnable, 30_000);
         });
 
         btnConfirmCreated.setOnClickListener(v -> {
@@ -159,6 +173,12 @@ public class WalletSetupActivity extends AppCompatActivity {
         });
 
         btnBackFromCreate.setOnClickListener(v -> showStep(Step.CHOOSE));
+    }
+
+    @Override
+    protected void onDestroy() {
+        clipboardHandler.removeCallbacks(clipboardClearRunnable);
+        super.onDestroy();
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -183,13 +203,13 @@ public class WalletSetupActivity extends AppCompatActivity {
     // ──────────────────────────────────────────────────────────────
 
     private void saveWalletToServer(String address) {
-        MissionCompletionHelper.saveWalletAddress(this, username, address,
+        MissionCompletionHelper.saveWalletAddress(this, address,
                 new MissionCompletionHelper.CompletionCallback() {
                     @Override
                     public void onSuccess() {
                         // Also request whitelist if all missions are already complete
                         MissionCompletionHelper.requestWhitelist(
-                                WalletSetupActivity.this, username, address,
+                                WalletSetupActivity.this, address,
                                 new MissionCompletionHelper.CompletionCallback() {
                                     @Override public void onSuccess() { proceedToNFTClaim(); }
                                     @Override public void onError(String msg) { proceedToNFTClaim(); }
@@ -200,7 +220,7 @@ public class WalletSetupActivity extends AppCompatActivity {
                     public void onError(String message) {
                         // Still proceed locally even if server call fails
                         Toast.makeText(WalletSetupActivity.this,
-                                "Wallet saved locally. Sync with server failed: " + message,
+                                "Wallet saved locally. Server sync failed.",
                                 Toast.LENGTH_SHORT).show();
                         proceedToNFTClaim();
                     }

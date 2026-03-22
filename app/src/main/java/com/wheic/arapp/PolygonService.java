@@ -15,6 +15,8 @@ import org.web3j.utils.Numeric;
 
 import java.math.BigInteger;
 import java.util.Collections;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Handles all Polygon blockchain interactions.
@@ -27,21 +29,18 @@ import java.util.Collections;
  */
 public class PolygonService {
 
-    // ── Network config ─────────────────────────────────────────────
-    // Testnet (Amoy) — change to mainnet values before release
-    public static final String  RPC_URL  = "https://rpc-amoy.polygon.technology";
-    public static final long    CHAIN_ID = 80002L;
-
-    // Mainnet constants (uncomment and swap when deploying to production):
-    // public static final String  RPC_URL  = "https://polygon-rpc.com";
-    // public static final long    CHAIN_ID = 137L;
+    // ── Network config (injected from build.gradle / gradle.properties) ──
+    public static final String  RPC_URL  = BuildConfig.POLYGON_RPC_URL;
+    public static final long    CHAIN_ID = BuildConfig.POLYGON_CHAIN_ID;
 
     // ── Contract ────────────────────────────────────────────────────
-    /** Replace this with your deployed IntramurosNFT contract address. */
-    public static final String NFT_CONTRACT_ADDRESS = "0xYOUR_CONTRACT_ADDRESS_HERE";
+    public static final String NFT_CONTRACT_ADDRESS = BuildConfig.NFT_CONTRACT_ADDRESS;
 
     /** Gas limit for the claimPassport() call. Adjust after profiling on testnet. */
     private static final BigInteger GAS_LIMIT = BigInteger.valueOf(200_000L);
+
+    /** Single background thread for blockchain operations. */
+    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
 
     // ──────────────────────────────────────────────────────────────
     // Callback interface
@@ -90,7 +89,7 @@ public class PolygonService {
      * Must be called from a background thread (network I/O).
      */
     public static void mintWithEmbeddedWallet(String privateKey, TxCallback callback) {
-        new Thread(() -> {
+        EXECUTOR.execute(() -> {
             Web3j web3j = null;
             try {
                 web3j = Web3j.build(new HttpService(RPC_URL));
@@ -132,6 +131,6 @@ public class PolygonService {
             } finally {
                 if (web3j != null) web3j.shutdown();
             }
-        }).start();
+        });
     }
 }

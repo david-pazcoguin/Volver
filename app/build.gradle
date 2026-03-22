@@ -19,15 +19,28 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField "String", "NFT_CONTRACT_ADDRESS", "\"${project.findProperty('NFT_CONTRACT_ADDRESS') ?: '0x0000000000000000000000000000000000000000'}\""
+            buildConfigField "String", "POLYGON_RPC_URL", "\"${project.findProperty('POLYGON_RPC_URL') ?: 'https://rpc-amoy.polygon.technology'}\""
+            buildConfigField "long", "POLYGON_CHAIN_ID", "${project.findProperty('POLYGON_CHAIN_ID') ?: '80002L'}"
+        }
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            buildConfigField "String", "NFT_CONTRACT_ADDRESS", "\"${project.findProperty('NFT_CONTRACT_ADDRESS') ?: '0x0000000000000000000000000000000000000000'}\""
+            buildConfigField "String", "POLYGON_RPC_URL", "\"${project.findProperty('POLYGON_RPC_URL') ?: 'https://rpc-amoy.polygon.technology'}\""
+            buildConfigField "long", "POLYGON_CHAIN_ID", "${project.findProperty('POLYGON_CHAIN_ID') ?: '80002L'}"
         }
     }
     compileOptions {
         coreLibraryDesugaringEnabled true
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     packaging {

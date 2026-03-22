@@ -44,7 +44,7 @@ public class MissionCompletionHelper {
     // ──────────────────────────────────────────────────────────────
 
     /** Mark a single mission as complete for the current user. */
-    public static void completeMission(Context context, String username, String missionId,
+    public static void completeMission(Context context, String missionId,
                                        CompletionCallback callback) {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) {
@@ -78,7 +78,7 @@ public class MissionCompletionHelper {
     }
 
     /** Fetch which missions the user has already finished. */
-    public static void getMissionProgress(Context context, String username,
+    public static void getMissionProgress(Context context,
                                           ProgressCallback callback) {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) {
@@ -118,7 +118,7 @@ public class MissionCompletionHelper {
     // ──────────────────────────────────────────────────────────────
 
     /** Store the user's Polygon wallet address on the server. */
-    public static void saveWalletAddress(Context context, String username, String walletAddress,
+    public static void saveWalletAddress(Context context, String walletAddress,
                                          CompletionCallback callback) {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) {
@@ -139,7 +139,7 @@ public class MissionCompletionHelper {
      * Should be called after verifying all missions are complete.
      * The backend wallet (owner) pays the tiny gas for the whitelist transaction.
      */
-    public static void requestWhitelist(Context context, String username, String walletAddress,
+    public static void requestWhitelist(Context context, String walletAddress,
                                         CompletionCallback callback) {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) {

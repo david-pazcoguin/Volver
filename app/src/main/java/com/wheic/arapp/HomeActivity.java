@@ -140,6 +140,7 @@ public class HomeActivity extends AppCompatActivity {
 
     private void setupRecyclerView() {
         recyclerView.setHasFixedSize(true);
+        recyclerView.setItemViewCacheSize(arHelpers.size());
         arAdapter = new ARAdapter(arHelpers, this);
         recyclerView.setLayoutManager(
                 new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
@@ -153,7 +154,7 @@ public class HomeActivity extends AppCompatActivity {
     private void loadMissionProgress() {
         if (username.isEmpty()) return;
 
-        MissionCompletionHelper.getMissionProgress(this, username,
+        MissionCompletionHelper.getMissionProgress(this,
                 new MissionCompletionHelper.ProgressCallback() {
                     @Override
                     public void onResult(Set<String> completedIds, boolean allComplete) {

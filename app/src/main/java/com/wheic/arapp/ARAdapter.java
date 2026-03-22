@@ -1,6 +1,5 @@
 package com.wheic.arapp;
 
-import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
@@ -8,8 +7,9 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ImageView;
 import android.widget.TextView;
+
+import com.google.android.material.imageview.ShapeableImageView;
 
 import androidx.cardview.widget.CardView;
 import androidx.recyclerview.widget.RecyclerView;
@@ -24,9 +24,14 @@ public class ARAdapter extends RecyclerView.Adapter<ARAdapter.ViewHolder>
     {
         mAR = ARs;
         context = context2;
+        setHasStableIds(true);
     }
 
-    @SuppressLint("ClickableViewAccessibility")
+    @Override
+    public long getItemId(int position) {
+        return mAR.get(position).getMissionId().hashCode();
+    }
+
     @Override
     public void onBindViewHolder(ARAdapter.ViewHolder holder, int position)
     {
@@ -81,7 +86,7 @@ public class ARAdapter extends RecyclerView.Adapter<ARAdapter.ViewHolder>
     {
         TextView tvMissionName;
         CardView cardView;
-        ImageView imgView;
+        ShapeableImageView imgView;
 
         public ViewHolder(View itemView) {
             super(itemView);

@@ -20,37 +20,49 @@
 
 header('Content-Type: application/json');
 
-$host   = 'localhost';
-$db     = 'your_database_name';   // ← change
-$user   = 'your_db_user';         // ← change
-$pass   = 'your_db_password';     // ← change
+$host   = getenv('DB_HOST')     ?: 'localhost';
+$db     = getenv('DB_NAME')     ?: 'your_database_name';
+$user   = getenv('DB_USER')     ?: 'your_db_user';
+$pass   = getenv('DB_PASSWORD') ?: 'your_db_password';
 
 $conn = new mysqli($host, $user, $pass, $db);
 if ($conn->connect_error) {
-    echo json_encode(['status' => 'error', 'message' => 'DB connection failed']);
+    http_response_code(500);
+    echo json_encode(['status' => 'error', 'message' => 'Service unavailable']);
     exit;
 }
 
-$username   = $conn->real_escape_string($_POST['username']   ?? '');
-$mission_id = $conn->real_escape_string($_POST['mission_id'] ?? '');
+$username   = trim($_POST['username']   ?? '');
+$mission_id = trim($_POST['mission_id'] ?? '');
+
+// Input validation
+if (empty($username) || strlen($username) > 100 || !preg_match('/^[a-zA-Z0-9_]{3,100}$/', $username)) {
+    http_response_code(400);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid username']);
+    exit;
+}
 
 $valid_missions = [
     'fort_santiago', 'baluarte_san_diego', 'casa_manila',
     'museo_intramuros', 'centro_turismo'
 ];
 
-if (empty($username) || !in_array($mission_id, $valid_missions)) {
-    echo json_encode(['status' => 'error', 'message' => 'Invalid parameters']);
+if (!in_array($mission_id, $valid_missions, true)) {
+    http_response_code(400);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid mission ID']);
     exit;
 }
 
-// INSERT IGNORE skips duplicate completions gracefully
-$sql = "INSERT IGNORE INTO mission_completions (username, mission_id) VALUES ('$username', '$mission_id')";
+// Prepared statement prevents SQL injection
+$stmt = $conn->prepare("INSERT IGNORE INTO mission_completions (username, mission_id) VALUES (?, ?)");
+$stmt->bind_param("ss", $username, $mission_id);
 
-if ($conn->query($sql)) {
+if ($stmt->execute()) {
     echo json_encode(['status' => 'success', 'message' => 'Mission recorded']);
 } else {
-    echo json_encode(['status' => 'error', 'message' => $conn->error]);
+    http_response_code(500);
+    echo json_encode(['status' => 'error', 'message' => 'Failed to record mission']);
 }
 
+$stmt->close();
 $conn->close();

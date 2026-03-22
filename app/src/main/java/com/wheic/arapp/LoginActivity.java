@@ -66,39 +66,17 @@ public class LoginActivity extends AppCompatActivity {
             }
         });
 
-        txtUsername.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                LoginChecker();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                LoginChecker();
-            }
-
+        TextWatcher loginWatcher = new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
             @Override
             public void afterTextChanged(Editable editable) {
                 LoginChecker();
             }
-        });
+        };
 
-        txtPassword.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                LoginChecker();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                LoginChecker();
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                LoginChecker();
-            }
-        });
+        txtUsername.addTextChangedListener(loginWatcher);
+        txtPassword.addTextChangedListener(loginWatcher);
 
         tvRegister.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -114,6 +92,10 @@ public class LoginActivity extends AppCompatActivity {
             public void onClick(View view)
             {
                 String usernameInput = txtUsername.getText().toString().trim();
+                if (!usernameInput.matches("^[a-zA-Z0-9_]{3,30}$")) {
+                    Toast.makeText(LoginActivity.this, "Invalid username format.", Toast.LENGTH_SHORT).show();
+                    return;
+                }
                 String authEmail = usernameInput + "@volver.app";
                 String password = txtPassword.getText().toString();
 
@@ -135,7 +117,7 @@ public class LoginActivity extends AppCompatActivity {
                                         || exception instanceof FirebaseAuthInvalidCredentialsException) {
                                     Toast.makeText(LoginActivity.this, "Invalid credentials.", Toast.LENGTH_SHORT).show();
                                 } else if (exception != null) {
-                                    Toast.makeText(LoginActivity.this, exception.toString(), Toast.LENGTH_SHORT).show();
+                                    Toast.makeText(LoginActivity.this, "Login failed. Please try again.", Toast.LENGTH_SHORT).show();
                                 } else {
                                     Toast.makeText(LoginActivity.this, "Invalid credentials.", Toast.LENGTH_SHORT).show();
                                 }

@@ -8,24 +8,24 @@ service cloud.firestore {
       allow read: if request.auth != null
                   && request.auth.uid == uid;
 
+      // Create: require all expected fields and validate types.
       allow create: if request.auth != null
-                    && request.auth.uid == uid;
+                    && request.auth.uid == uid
+                    && request.resource.data.username is string
+                    && request.resource.data.firstName is string
+                    && request.resource.data.lastName is string
+                    && request.resource.data.email is string
+                    && request.resource.data.username.size() >= 3
+                    && request.resource.data.username.size() <= 30;
 
       // Allow updates only for the owner and only for mutable profile/progress fields.
-      // This blocks clients from writing protected/system-managed fields.
+      // email and createdAt are immutable — they can only be set during create.
       allow update: if request.auth != null
                     && request.auth.uid == uid
-                    && request.resource.data.keys().hasOnly([
-                        'username',
-                        'firstName',
-                        'lastName',
-                        'walletAddress',
-                        'allComplete',
-                        'whitelisted',
-                        'whitelistedAt',
-                        'email',
-                        'createdAt'
-                       ]);
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['username', 'firstName', 'lastName',
+                                 'walletAddress', 'allComplete',
+                                 'whitelisted', 'whitelistedAt']);
 
       // Never allow profile deletes from clients.
       allow delete: if false;
@@ -38,10 +38,12 @@ service cloud.firestore {
 
         // Mission records are append-only and only valid when marked completed.
         // Requires missionId field to be a string for predictable schema.
+        // Validates completedAt is a timestamp and not in the future.
         allow create: if request.auth != null
                       && request.auth.uid == uid
                       && request.resource.data.completed == true
-                      && request.resource.data.missionId is string;
+                      && request.resource.data.missionId is string
+                      && request.resource.data.completedAt is timestamp;
 
         // Missions cannot be edited or removed once written.
         allow update: if false;

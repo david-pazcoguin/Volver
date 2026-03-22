@@ -189,17 +189,13 @@ The contract uses OpenZeppelin — a trusted library of NFT standards.
 
 ### Step 2.9 — Update the Android app with the contract address
 
-Open `app/src/main/java/com/wheic/arapp/PolygonService.java` and replace:
+Open `gradle.properties` in the project root and set:
 
-```java
-public static final String NFT_CONTRACT_ADDRESS = "0xYOUR_CONTRACT_ADDRESS_HERE";
+```properties
+NFT_CONTRACT_ADDRESS=0xAbCd...  # your actual deployed contract address
 ```
 
-with:
-
-```java
-public static final String NFT_CONTRACT_ADDRESS = "0xAbCd..."; // your actual address
-```
+The app reads this value at build time via `BuildConfig.NFT_CONTRACT_ADDRESS` in `PolygonService.java`. You do **not** need to edit any Java source files — all blockchain config is injected from `gradle.properties`.
 
 ### Step 2.10 — Update the Cloud Function with the contract address
 
