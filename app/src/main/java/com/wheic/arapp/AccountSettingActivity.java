@@ -89,70 +89,19 @@ public class AccountSettingActivity extends AppCompatActivity {
             }
         });
 
-        txtFirstName.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
+        TextWatcher updateWatcher = new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
             @Override
             public void afterTextChanged(Editable editable) {
                 RegisterButtonWatcher();
             }
-        });
-        txtLastName.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
+        };
 
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                RegisterButtonWatcher();
-            }
-        });
-        txtPassword.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                RegisterButtonWatcher();
-            }
-        });
-        txtConfirmPassword.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                RegisterButtonWatcher();
-            }
-        });
+        txtFirstName.addTextChangedListener(updateWatcher);
+        txtLastName.addTextChangedListener(updateWatcher);
+        txtPassword.addTextChangedListener(updateWatcher);
+        txtConfirmPassword.addTextChangedListener(updateWatcher);
 
         cardViewUpdate.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -162,7 +111,7 @@ public class AccountSettingActivity extends AppCompatActivity {
                 {
                     FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
                     if (user == null) {
-                        Toast.makeText(AccountSettingActivity.this, new IllegalStateException("No authenticated user").toString(), Toast.LENGTH_SHORT).show();
+                        Toast.makeText(AccountSettingActivity.this, "Session expired. Please log in again.", Toast.LENGTH_SHORT).show();
                         return;
                     }
 
@@ -180,8 +129,8 @@ public class AccountSettingActivity extends AppCompatActivity {
                                         startActivity(intent);
                                         finishAffinity();
                                     })
-                                    .addOnFailureListener(e -> Toast.makeText(AccountSettingActivity.this, e.toString(), Toast.LENGTH_SHORT).show()))
-                            .addOnFailureListener(e -> Toast.makeText(AccountSettingActivity.this, e.toString(), Toast.LENGTH_SHORT).show());
+                                    .addOnFailureListener(e -> Toast.makeText(AccountSettingActivity.this, "Failed to update password.", Toast.LENGTH_SHORT).show()))
+                            .addOnFailureListener(e -> Toast.makeText(AccountSettingActivity.this, "Failed to update profile.", Toast.LENGTH_SHORT).show());
                 }
                 else
                 {
@@ -197,7 +146,7 @@ public class AccountSettingActivity extends AppCompatActivity {
     {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) {
-            Toast.makeText(AccountSettingActivity.this, new IllegalStateException("No authenticated user").toString(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(AccountSettingActivity.this, "Session expired. Please log in again.", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -219,7 +168,7 @@ public class AccountSettingActivity extends AppCompatActivity {
                         txtLastName.setText(lastName != null ? lastName : "");
                     }
                 })
-                .addOnFailureListener(e -> Toast.makeText(AccountSettingActivity.this, e.toString(), Toast.LENGTH_SHORT).show());
+                .addOnFailureListener(e -> Toast.makeText(AccountSettingActivity.this, "Failed to load account.", Toast.LENGTH_SHORT).show());
     }
 
     void RegisterButtonWatcher()

@@ -2,31 +2,49 @@
 
 This repository tracks Firestore rules in [firestore.rules](firestore.rules).
 
-## Current policy summary
+## Current Policy Summary
 
-- A signed-in user can read and create their own profile at /users/{uid}.
-- A signed-in user can update their own profile with a restricted set of fields.
-- A signed-in user can create mission docs under /users/{uid}/missions/{missionId}.
-- Mission docs cannot be updated or deleted.
-- Everything else is denied.
+| Path | Read | Create | Update | Delete |
+|------|------|--------|--------|--------|
+| `users/{uid}` | Owner only | Owner + type validation | Owner + field allowlist | Denied |
+| `users/{uid}/missions/{id}` | Owner only | Owner + schema validation | Denied | Denied |
+| Everything else | Denied | Denied | Denied | Denied |
 
-## Important security caveat
+### User Profile Rules (`users/{uid}`)
 
-The current rules allow the client to update server-trust fields on the user profile:
+- **Read**: Only the document owner (`request.auth.uid == uid`).
+- **Create**: Owner only. All required fields validated by type.
+- **Update**: Owner only. Allowed fields restricted via `request.resource.data.diff(resource.data).affectedKeys().hasOnly(...)`.
+- **Immutable fields**: `email` and `createdAt` cannot be changed after creation.
+- **Delete**: Denied for all users.
 
-- allComplete
-- whitelisted
-- whitelistedAt
+### Mission Rules (`users/{uid}/missions/{missionId}`)
 
-If your app uses these fields to unlock minting or rewards, users can set them directly from a modified client.
+- **Create**: Owner only. Required schema: `completed == true`, `missionId is string`, `completedAt is timestamp`.
+- **Update/Delete**: Denied. Missions are append-only records.
 
-## Recommended hardening
+## Security Caveat — Client-Updatable Server-Trust Fields
 
-- Treat allComplete, whitelisted, and whitelistedAt as server-managed only.
-- Set and update those fields from trusted backend code (Cloud Functions or server), not from the app.
-- Optionally validate missionId against a fixed allow-list in rules.
-- Keep immutable fields immutable after creation (for example email and createdAt).
+The current rules allow the client to update these fields on the user profile:
 
-## Deployment reminder
+- `allComplete`
+- `whitelisted`
+- `whitelistedAt`
 
-After editing rules in this repo, deploy the same rules to Firebase Console or Firebase CLI.
+**Mitigation in place**: The `whitelistWallet` Cloud Function performs a double verification — it checks both the `allComplete` flag AND queries the actual mission subcollection count before whitelisting on-chain. A user who manually sets `allComplete = true` without completing missions will still fail the Cloud Function's cross-check.
+
+### Recommended Future Hardening
+
+- Move `allComplete`, `whitelisted`, and `whitelistedAt` to server-managed only (Cloud Functions write, client denied).
+- Validate `missionId` against a fixed allow-list in rules (e.g., only the 5 known mission IDs).
+- Add rate limiting via Cloud Functions if abuse is detected.
+
+## Deployment Reminder
+
+After editing `firestore.rules`, deploy to Firebase:
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+Verify rules are active in **Firebase Console → Firestore Database → Rules** tab.

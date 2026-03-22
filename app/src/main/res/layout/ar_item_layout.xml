@@ -18,23 +18,17 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
-        <androidx.cardview.widget.CardView
+        <com.google.android.material.imageview.ShapeableImageView
+            android:src="@drawable/mission_icon"
+            android:id="@+id/imgView"
+            android:contentDescription="Mission location image"
             android:layout_marginTop="15dp"
-            app:cardBackgroundColor="@color/clouds"
-            app:cardCornerRadius="360dp"
             android:layout_gravity="center"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content">
-
-            <ImageView
-                android:src="@drawable/mission_icon"
-                android:id="@+id/imgView"
-                android:layout_width="125dp"
-                android:layout_height="125dp"
-                android:scaleType="centerCrop">
-
-            </ImageView>
-        </androidx.cardview.widget.CardView>
+            android:layout_width="125dp"
+            android:layout_height="125dp"
+            android:scaleType="centerCrop"
+            android:background="@color/clouds"
+            app:shapeAppearanceOverlay="@style/CircleImageStyle" />
 
         <TextView
             android:id="@+id/tvMissionName"

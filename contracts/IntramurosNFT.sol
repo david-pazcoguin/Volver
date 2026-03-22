@@ -68,8 +68,9 @@ contract IntramurosPassport is ERC721URIStorage, Ownable {
         emit AddressWhitelisted(user);
     }
 
-    /// Batch whitelist for convenience
+    /// Batch whitelist for convenience (max 100 per call to prevent out-of-gas)
     function whitelistBatch(address[] calldata users) external onlyOwner {
+        require(users.length <= 100, "Batch too large");
         for (uint i = 0; i < users.length; i++) {
             isWhitelisted[users[i]] = true;
             emit AddressWhitelisted(users[i]);

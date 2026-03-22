@@ -90,86 +90,20 @@ public class RegisterActivity extends AppCompatActivity {
             }
         });
 
-        txtFirstName.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
+        TextWatcher registerWatcher = new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
             @Override
             public void afterTextChanged(Editable editable) {
                 RegisterButtonWatcher();
             }
-        });
-        txtLastName.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
+        };
 
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                RegisterButtonWatcher();
-            }
-        });
-        txtUsername.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                RegisterButtonWatcher();
-            }
-        });
-        txtPassword.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                RegisterButtonWatcher();
-            }
-        });
-        txtConfirmPassword.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                RegisterButtonWatcher();
-            }
-        });
+        txtFirstName.addTextChangedListener(registerWatcher);
+        txtLastName.addTextChangedListener(registerWatcher);
+        txtUsername.addTextChangedListener(registerWatcher);
+        txtPassword.addTextChangedListener(registerWatcher);
+        txtConfirmPassword.addTextChangedListener(registerWatcher);
 
         cardViewRegister.setOnClickListener(new View.OnClickListener()
         {
@@ -223,8 +157,29 @@ public class RegisterActivity extends AppCompatActivity {
     void Register()
     {
         String username = txtUsername.getText().toString().trim();
-        String email = username + "@volver.app";
         String password = txtPassword.getText().toString();
+        String firstName = txtFirstName.getText().toString().trim();
+        String lastName = txtLastName.getText().toString().trim();
+
+        // Username validation: 3-30 alphanumeric/underscore characters
+        if (!username.matches("^[a-zA-Z0-9_]{3,30}$")) {
+            Toast.makeText(this, "Username must be 3–30 characters (letters, numbers, underscore).", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Password strength: minimum 6 characters (Firebase Auth minimum)
+        if (password.length() < 6) {
+            Toast.makeText(this, "Password must be at least 6 characters.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Name length limits
+        if (firstName.length() > 50 || lastName.length() > 50) {
+            Toast.makeText(this, "Name fields must be 50 characters or fewer.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String email = username + "@volver.app";
 
         FirebaseAuth.getInstance()
                 .createUserWithEmailAndPassword(email, password)
@@ -232,14 +187,14 @@ public class RegisterActivity extends AppCompatActivity {
                     if (task.isSuccessful()) {
                         FirebaseUser user = task.getResult() != null ? task.getResult().getUser() : null;
                         if (user == null) {
-                            Toast.makeText(RegisterActivity.this, "Invalid credentials.", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(RegisterActivity.this, "Registration failed. Please try again.", Toast.LENGTH_SHORT).show();
                             return;
                         }
 
                         Map<String, Object> userData = new HashMap<>();
                         userData.put("username", username);
-                        userData.put("firstName", txtFirstName.getText().toString());
-                        userData.put("lastName", txtLastName.getText().toString());
+                        userData.put("firstName", firstName);
+                        userData.put("lastName", lastName);
                         userData.put("email", email);
                         userData.put("createdAt", FieldValue.serverTimestamp());
 
@@ -248,14 +203,15 @@ public class RegisterActivity extends AppCompatActivity {
                                 .document(user.getUid())
                                 .set(userData)
                                 .addOnSuccessListener(unused -> finish())
-                                .addOnFailureListener(e -> Toast.makeText(RegisterActivity.this, e.toString(), Toast.LENGTH_SHORT).show());
+                                .addOnFailureListener(e -> Toast.makeText(RegisterActivity.this, "Failed to save profile.", Toast.LENGTH_SHORT).show());
                     } else {
                         Exception exception = task.getException();
-                        if (exception != null) {
-                            Toast.makeText(RegisterActivity.this, exception.toString(), Toast.LENGTH_SHORT).show();
-                        } else {
-                            Toast.makeText(RegisterActivity.this, "Invalid credentials.", Toast.LENGTH_SHORT).show();
+                        String msg = "Registration failed.";
+                        if (exception != null && exception.getMessage() != null
+                                && exception.getMessage().contains("already in use")) {
+                            msg = "Username is already taken.";
                         }
+                        Toast.makeText(RegisterActivity.this, msg, Toast.LENGTH_SHORT).show();
                     }
                 });
     }

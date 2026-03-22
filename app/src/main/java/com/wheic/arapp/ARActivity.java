@@ -81,14 +81,15 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private TextView tvCharacterHint;
 
     // ── Periodic location check ──────────────────────────────────────
+    private final float[] distanceResults = new float[1];
     private final Handler locationHandler = new Handler(Looper.getMainLooper());
     private final Runnable locationRunnable = new Runnable() {
         @Override
         public void run() {
             if (!isTargetReached) {
                 getLocationAndCheckTarget();
+                locationHandler.postDelayed(this, LOCATION_CHECK_INTERVAL);
             }
-            locationHandler.postDelayed(this, LOCATION_CHECK_INTERVAL);
         }
     };
 
@@ -213,11 +214,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             if (earth != null && earth.getTrackingState() == TrackingState.TRACKING) {
                 GeospatialPose cameraPose = earth.getCameraGeospatialPose();
                 if (cameraPose.getHorizontalAccuracy() < 10f) {
-                    float[] results = new float[1];
                     Location.distanceBetween(
                             cameraPose.getLatitude(), cameraPose.getLongitude(),
-                            targetLatitude, targetLongitude, results);
-                    float distance = results[0];
+                            targetLatitude, targetLongitude, distanceResults);
+                    float distance = distanceResults[0];
 
                     if (distance <= ACTIVATION_RADIUS_METERS) {
                         onTargetReached();
@@ -243,11 +243,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         fusedLocationClient.getLastLocation().addOnSuccessListener(this, location -> {
             if (location == null) return;
 
-            float[] results = new float[1];
             Location.distanceBetween(
                     location.getLatitude(), location.getLongitude(),
-                    targetLatitude, targetLongitude, results);
-            float distance = results[0];
+                    targetLatitude, targetLongitude, distanceResults);
+            float distance = distanceResults[0];
 
             if (distance <= ACTIVATION_RADIUS_METERS) {
                 onTargetReached();
@@ -406,7 +405,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private void onMissionModelPlaced() {
         if (username.isEmpty() || missionId.equals("unknown")) return;
 
-        MissionCompletionHelper.completeMission(this, username, missionId,
+        MissionCompletionHelper.completeMission(this, missionId,
                 new MissionCompletionHelper.CompletionCallback() {
                     @Override
                     public void onSuccess() {
@@ -422,7 +421,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     }
 
     private void checkForAllMissionsComplete() {
-        MissionCompletionHelper.getMissionProgress(this, username,
+        MissionCompletionHelper.getMissionProgress(this,
                 new MissionCompletionHelper.ProgressCallback() {
                     @Override
                     public void onResult(java.util.Set<String> completedIds, boolean allComplete) {

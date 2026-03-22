@@ -18,6 +18,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.FirebaseFirestore;
 
 public class SettingActivity extends AppCompatActivity {
@@ -109,12 +110,13 @@ public class SettingActivity extends AppCompatActivity {
 
     void LoadAccount()
     {
-        if (FirebaseAuth.getInstance().getCurrentUser() == null) {
+        FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
+        if (currentUser == null) {
             Toast.makeText(SettingActivity.this, "User session expired.", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+        String uid = currentUser.getUid();
         FirebaseFirestore.getInstance()
                 .collection("users")
                 .document(uid)
@@ -139,6 +141,6 @@ public class SettingActivity extends AppCompatActivity {
                         tvFullName.setText((firstName + " " + lastName).trim());
                     }
                 })
-                .addOnFailureListener(e -> Toast.makeText(SettingActivity.this, e.toString(), Toast.LENGTH_SHORT).show());
+                .addOnFailureListener(e -> Toast.makeText(SettingActivity.this, "Failed to load account.", Toast.LENGTH_SHORT).show());
     }
 }

@@ -11,10 +11,9 @@
  *
  * ─── SETUP ────────────────────────────────────────────────────────
  * 1. Install web3.php:  composer require sc0vu/web3.php
- * 2. Set OWNER_PRIVATE_KEY to the contract deployer's private key.
+ * 2. Create a .env file with OWNER_PRIVATE_KEY, CONTRACT_ADDRESS, RPC_URL.
  *    Keep this secret — never commit it to version control.
- * 3. Set CONTRACT_ADDRESS to the deployed IntramurosNFT address.
- * 4. Set RPC_URL to the Polygon Amoy or mainnet RPC endpoint.
+ * 3. Set DB credentials via environment variables.
  * ──────────────────────────────────────────────────────────────────
  */
 
@@ -26,38 +25,50 @@ use Web3\Web3;
 use Web3\Contract;
 use Web3\Utils;
 
-// ── Config (move to a .env file in production) ──────────────────
-define('DB_HOST',           'localhost');
-define('DB_NAME',           'your_database_name');   // ← change
-define('DB_USER',           'your_db_user');          // ← change
-define('DB_PASS',           'your_db_password');      // ← change
+// ── Config from environment variables ────────────────────────────
+define('DB_HOST',           getenv('DB_HOST')           ?: 'localhost');
+define('DB_NAME',           getenv('DB_NAME')           ?: 'your_database_name');
+define('DB_USER',           getenv('DB_USER')           ?: 'your_db_user');
+define('DB_PASS',           getenv('DB_PASSWORD')       ?: 'your_db_password');
 
-define('RPC_URL',           'https://rpc-amoy.polygon.technology');
-define('CHAIN_ID',          80002);
-define('CONTRACT_ADDRESS',  '0xYOUR_CONTRACT_ADDRESS_HERE');    // ← change
-define('OWNER_PRIVATE_KEY', '0xYOUR_OWNER_PRIVATE_KEY_HERE');  // ← change — KEEP SECRET
+define('RPC_URL',           getenv('POLYGON_RPC_URL')         ?: 'https://rpc-amoy.polygon.technology');
+define('CHAIN_ID',          (int)(getenv('POLYGON_CHAIN_ID')  ?: 80002));
+define('CONTRACT_ADDRESS',  getenv('CONTRACT_ADDRESS')        ?: '');
+define('OWNER_PRIVATE_KEY', getenv('OWNER_PRIVATE_KEY')       ?: '');
 define('TOTAL_MISSIONS',    5);
 // ────────────────────────────────────────────────────────────────
 
 $conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
 if ($conn->connect_error) {
-    echo json_encode(['status' => 'error', 'message' => 'DB connection failed']);
+    http_response_code(500);
+    echo json_encode(['status' => 'error', 'message' => 'Service unavailable']);
     exit;
 }
 
-$username       = $conn->real_escape_string($_POST['username']       ?? '');
-$wallet_address = strtolower($conn->real_escape_string($_POST['wallet_address'] ?? ''));
+$username       = trim($_POST['username'] ?? '');
+$wallet_address = strtolower(trim($_POST['wallet_address'] ?? ''));
 
-if (empty($username) || !preg_match('/^0x[0-9a-f]{40}$/', $wallet_address)) {
-    echo json_encode(['status' => 'error', 'message' => 'Invalid parameters']);
+// Input validation
+if (empty($username) || strlen($username) > 100 || !preg_match('/^[a-zA-Z0-9_]{3,100}$/', $username)) {
+    http_response_code(400);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid username']);
     exit;
 }
 
-// Verify all missions are complete
-$result = $conn->query(
-    "SELECT COUNT(*) AS cnt FROM mission_completions WHERE username = '$username'"
-);
+if (!preg_match('/^0x[0-9a-f]{40}$/', $wallet_address)) {
+    http_response_code(400);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid wallet address']);
+    exit;
+}
+
+// Verify all missions are complete (prepared statement)
+$stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM mission_completions WHERE username = ?");
+$stmt->bind_param("s", $username);
+$stmt->execute();
+$result = $stmt->get_result();
 $row = $result->fetch_assoc();
+$stmt->close();
+
 if ((int)$row['cnt'] < TOTAL_MISSIONS) {
     echo json_encode(['status' => 'error', 'message' => 'Not all missions completed yet']);
     exit;

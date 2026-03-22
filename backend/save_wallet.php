@@ -14,33 +14,43 @@
 
 header('Content-Type: application/json');
 
-$host = 'localhost';
-$db   = 'your_database_name';   // ← change
-$user = 'your_db_user';         // ← change
-$pass = 'your_db_password';     // ← change
+$host = getenv('DB_HOST')     ?: 'localhost';
+$db   = getenv('DB_NAME')     ?: 'your_database_name';
+$user = getenv('DB_USER')     ?: 'your_db_user';
+$pass = getenv('DB_PASSWORD') ?: 'your_db_password';
 
 $conn = new mysqli($host, $user, $pass, $db);
 if ($conn->connect_error) {
-    echo json_encode(['status' => 'error', 'message' => 'DB connection failed']);
+    http_response_code(500);
+    echo json_encode(['status' => 'error', 'message' => 'Service unavailable']);
     exit;
 }
 
-$username       = $conn->real_escape_string($_POST['username']       ?? '');
-$wallet_address = strtolower($conn->real_escape_string($_POST['wallet_address'] ?? ''));
+$username       = trim($_POST['username'] ?? '');
+$wallet_address = strtolower(trim($_POST['wallet_address'] ?? ''));
 
-// Basic Polygon address validation (0x + 40 hex chars)
-if (empty($username) || !preg_match('/^0x[0-9a-f]{40}$/', $wallet_address)) {
-    echo json_encode(['status' => 'error', 'message' => 'Invalid username or wallet address']);
+// Input validation
+if (empty($username) || strlen($username) > 100 || !preg_match('/^[a-zA-Z0-9_]{3,100}$/', $username)) {
+    http_response_code(400);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid username']);
     exit;
 }
 
-$sql = "UPDATE users SET wallet_address = '$wallet_address' WHERE username = '$username'";
+if (!preg_match('/^0x[0-9a-f]{40}$/', $wallet_address)) {
+    http_response_code(400);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid wallet address']);
+    exit;
+}
 
-if ($conn->query($sql) && $conn->affected_rows > 0) {
+// Prepared statement prevents SQL injection
+$stmt = $conn->prepare("UPDATE users SET wallet_address = ? WHERE username = ?");
+$stmt->bind_param("ss", $wallet_address, $username);
+
+if ($stmt->execute() && $stmt->affected_rows > 0) {
     echo json_encode(['status' => 'success', 'message' => 'Wallet address saved']);
 } else {
-    // User row not found or no change
     echo json_encode(['status' => 'success', 'message' => 'No update needed']);
 }
 
+$stmt->close();
 $conn->close();
