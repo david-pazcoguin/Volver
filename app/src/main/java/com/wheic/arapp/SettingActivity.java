@@ -84,7 +84,7 @@ public class SettingActivity extends AppCompatActivity {
                         FirebaseAuth.getInstance().signOut();
 
                         SharedPreferences settings = getSharedPreferences("Volver", Context.MODE_PRIVATE);
-                        settings.edit().clear().commit();
+                        settings.edit().clear().apply();
 
                         finishAffinity();
 

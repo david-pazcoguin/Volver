@@ -20,9 +20,6 @@ import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.firestore.FirebaseFirestore;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import java.util.HashMap;
 import java.util.Map;
 
@@ -181,19 +178,7 @@ public class RegisterActivity extends AppCompatActivity {
             {
                 if(txtPassword.getText().toString().equals(txtConfirmPassword.getText().toString()))
                 {
-                    String enteredUsername = txtUsername.getText().toString().trim();
-                    FirebaseFirestore.getInstance()
-                            .collection("users")
-                            .whereEqualTo("username", enteredUsername)
-                            .get()
-                            .addOnSuccessListener(queryDocumentSnapshots -> {
-                                if (queryDocumentSnapshots != null && !queryDocumentSnapshots.isEmpty()) {
-                                    Toast.makeText(RegisterActivity.this, "Your username is already existing in the database.", Toast.LENGTH_SHORT).show();
-                                } else {
-                                    Register();
-                                }
-                            })
-                            .addOnFailureListener(e -> Toast.makeText(RegisterActivity.this, e.toString(), Toast.LENGTH_SHORT).show());
+                    Register();
                 }
                 else
                 {

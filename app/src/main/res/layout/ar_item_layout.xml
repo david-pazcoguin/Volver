@@ -29,9 +29,9 @@
             <ImageView
                 android:src="@drawable/mission_icon"
                 android:id="@+id/imgView"
-                android:layout_margin="5dp"
                 android:layout_width="125dp"
-                android:layout_height="125dp">
+                android:layout_height="125dp"
+                android:scaleType="centerCrop">
 
             </ImageView>
         </androidx.cardview.widget.CardView>

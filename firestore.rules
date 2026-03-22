@@ -21,7 +21,10 @@ service cloud.firestore {
                         'lastName',
                         'walletAddress',
                         'allComplete',
-                        'whitelisted'
+                        'whitelisted',
+                        'whitelistedAt',
+                        'email',
+                        'createdAt'
                        ]);
 
       // Never allow profile deletes from clients.
