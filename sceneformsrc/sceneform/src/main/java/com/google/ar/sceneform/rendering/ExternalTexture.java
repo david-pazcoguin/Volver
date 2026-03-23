@@ -46,24 +46,35 @@ public class ExternalTexture {
   }
 
   /**
-   * Creates an ExternalTexture from an OpenGL ES textureId without a SurfaceTexture. For internal
-   * use only.
+   * Creates an ExternalTexture from an OpenGL ES textureId for the AR camera stream.
+   * For internal use only.
+   *
+   * Filament 1.32+ removed StreamType.TEXTURE_ID. We use Texture.Builder.importTexture()
+   * to directly import the ARCore GL_TEXTURE_EXTERNAL_OES texture into Filament.
    */
   @SuppressWarnings("initialization")
   ExternalTexture(int textureId, int width, int height) {
-    // Explicitly set the surface and surfaceTexture to null, since they are unused in this case.
-    surfaceTexture = null;
-    surface = null;
+    // Camera stream doesn't use SurfaceTexture/Surface — ARCore renders to GL texture directly.
+    this.surfaceTexture = null;
+    this.surface = null;
 
-    // Create the filament stream.
-    Stream stream =
-        new Stream.Builder()
-            .stream(textureId)
-                .width(width)
-                .height(height)
-                .build(EngineInstance.getEngine().getFilamentEngine());
+    IEngine engine = EngineInstance.getEngine();
 
-    initialize(stream);
+    // Import the ARCore camera GL texture directly into Filament by its GL texture name.
+    filamentTexture =
+        new com.google.android.filament.Texture.Builder()
+            .sampler(com.google.android.filament.Texture.Sampler.SAMPLER_EXTERNAL)
+            .format(com.google.android.filament.Texture.InternalFormat.RGB8)
+            .width(width)
+            .height(height)
+            .importTexture((long) textureId)
+            .build(engine.getFilamentEngine());
+
+    // No stream needed — register cleanup for the texture only.
+    this.filamentStream = null;
+    ResourceManager.getInstance()
+        .getExternalTextureCleanupRegistry()
+        .register(this, new CleanupCallback(filamentTexture, null));
   }
 
   /** Gets the surface texture created for this ExternalTexture. */

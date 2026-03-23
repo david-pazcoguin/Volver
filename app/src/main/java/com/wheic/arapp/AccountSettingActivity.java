@@ -19,7 +19,6 @@ import android.widget.Toast;
 
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
-import com.google.firebase.firestore.FirebaseFirestore;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -37,7 +36,7 @@ public class AccountSettingActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.account_setting_activity);
 
-        SharedPreferences sh = getSharedPreferences("Volver", Context.MODE_PRIVATE);
+        SharedPreferences sh = SecurePrefs.get(this);
 
         Username = sh.getString("username", "");
 
@@ -119,7 +118,7 @@ public class AccountSettingActivity extends AppCompatActivity {
                     profileUpdates.put("firstName", txtFirstName.getText().toString());
                     profileUpdates.put("lastName", txtLastName.getText().toString());
 
-                    FirebaseFirestore.getInstance()
+                    FirebaseConfig.getFirestore()
                             .collection("users")
                             .document(user.getUid())
                             .update(profileUpdates)
@@ -150,7 +149,7 @@ public class AccountSettingActivity extends AppCompatActivity {
             return;
         }
 
-        FirebaseFirestore.getInstance()
+        FirebaseConfig.getFirestore()
                 .collection("users")
                 .document(user.getUid())
                 .get()

@@ -116,8 +116,15 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             modelFileName    = extras.getString("ModelFileName",    "san_bartolome_church");
         }
 
-        username = getSharedPreferences("Volver", Context.MODE_PRIVATE)
-                           .getString("username", "");
+        // Validate coordinates
+        if (targetLatitude < -90 || targetLatitude > 90
+                || targetLongitude < -180 || targetLongitude > 180) {
+            Toast.makeText(this, "Invalid mission coordinates.", Toast.LENGTH_LONG).show();
+            finish();
+            return;
+        }
+
+        username = SecurePrefs.get(this).getString("username", "");
 
         // Bind character overlay views (defined in ar_activity.xml)
         tvCharacterName = findViewById(R.id.tvCharacterName);
@@ -149,8 +156,9 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
     @Override
     protected void onDestroy() {
-        super.onDestroy();
+        locationHandler.removeCallbacks(locationRunnable);
         if (ttsEngine != null) ttsEngine.shutdown();
+        super.onDestroy();
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -450,6 +458,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
     @Override
     public void onInit(int status) {
+        if (isFinishing() || isDestroyed()) return;
         if (status == TextToSpeech.SUCCESS) {
             ttsEngine.setLanguage(Locale.US);
             ttsReady = true;

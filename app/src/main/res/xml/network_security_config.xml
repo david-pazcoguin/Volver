@@ -7,4 +7,20 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+
+    <!-- Certificate pinning for the Polygon RPC endpoint.
+         TODO: Replace PLACEHOLDER_PIN_HASH with the real SHA-256 pin obtained by running:
+         openssl s_client -connect rpc-amoy.polygon.technology:443 \
+           | openssl x509 -pubkey -noout \
+           | openssl pkey -pubin -outform der \
+           | openssl dgst -sha256 -binary \
+           | openssl enc -base64
+         Add a second <pin> element with a backup pin (e.g. an intermediate CA key)
+         so the app keeps working if the leaf certificate rotates. -->
+    <domain-config>
+        <domain includeSubdomains="true">rpc-amoy.polygon.technology</domain>
+        <pin-set>
+            <pin digest="SHA-256">u1OlCFGpiDPSm7IclXp18QMJNfQzxWJb04KcCYSHjOg=</pin>
+        </pin-set>
+    </domain-config>
 </network-security-config>

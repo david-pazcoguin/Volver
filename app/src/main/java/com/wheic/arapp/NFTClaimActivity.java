@@ -1,6 +1,9 @@
 package com.wheic.arapp;
 
+import android.content.Context;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
@@ -27,11 +30,14 @@ import androidx.appcompat.app.AppCompatActivity;
  */
 public class NFTClaimActivity extends AppCompatActivity {
 
+    private static final long DEBOUNCE_MILLIS = 2000;
+
     private TextView  tvWalletAddress, tvMintStatus;
     private Button    btnMintNFT;
     private ProgressBar progressMint;
 
     private WalletManager walletManager;
+    private long lastMintClickTime = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -68,6 +74,20 @@ public class NFTClaimActivity extends AppCompatActivity {
     // ──────────────────────────────────────────────────────────────
 
     private void startMinting() {
+        long now = System.currentTimeMillis();
+        if (now - lastMintClickTime < DEBOUNCE_MILLIS) return;
+        lastMintClickTime = now;
+
+        ConnectivityManager cm = (ConnectivityManager)
+                getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo activeNetwork = cm != null ? cm.getActiveNetworkInfo() : null;
+        boolean isConnected = activeNetwork != null && activeNetwork.isConnectedOrConnecting();
+        if (!isConnected) {
+            Toast.makeText(this, "NFT minting requires an internet connection.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+
         btnMintNFT.setEnabled(false);
         progressMint.setVisibility(View.VISIBLE);
         tvMintStatus.setVisibility(View.VISIBLE);

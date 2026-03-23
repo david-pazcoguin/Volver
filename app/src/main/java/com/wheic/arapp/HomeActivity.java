@@ -43,7 +43,7 @@ public class HomeActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.home_activity);
 
-        SharedPreferences sh = getSharedPreferences("Volver", Context.MODE_PRIVATE);
+        SharedPreferences sh = SecurePrefs.get(this);
         username = sh.getString("username", "");
 
         imgDashboard     = findViewById(R.id.imgDashboard);
@@ -163,7 +163,12 @@ public class HomeActivity extends AppCompatActivity {
 
                     @Override
                     public void onError(String message) {
-                        // Silently fail — progress UI stays hidden rather than showing an error
+                        runOnUiThread(() -> {
+                            if (tvProgressLabel != null) {
+                                tvProgressLabel.setText("Unable to load progress — check your connection");
+                                tvProgressLabel.setVisibility(View.VISIBLE);
+                            }
+                        });
                     }
                 });
     }

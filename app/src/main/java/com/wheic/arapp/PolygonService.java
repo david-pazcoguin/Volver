@@ -17,6 +17,9 @@ import java.math.BigInteger;
 import java.util.Collections;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import okhttp3.OkHttpClient;
 
 /**
  * Handles all Polygon blockchain interactions.
@@ -92,7 +95,11 @@ public class PolygonService {
         EXECUTOR.execute(() -> {
             Web3j web3j = null;
             try {
-                web3j = Web3j.build(new HttpService(RPC_URL));
+                web3j = Web3j.build(new HttpService(RPC_URL, new OkHttpClient.Builder()
+                        .connectTimeout(15, TimeUnit.SECONDS)
+                        .readTimeout(30, TimeUnit.SECONDS)
+                        .writeTimeout(30, TimeUnit.SECONDS)
+                        .build()));
 
                 Credentials credentials = Credentials.create(privateKey);
                 String sender = credentials.getAddress();

@@ -18,7 +18,6 @@ import android.widget.Toast;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.FieldValue;
-import com.google.firebase.firestore.FirebaseFirestore;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -198,7 +197,7 @@ public class RegisterActivity extends AppCompatActivity {
                         userData.put("email", email);
                         userData.put("createdAt", FieldValue.serverTimestamp());
 
-                        FirebaseFirestore.getInstance()
+                        FirebaseConfig.getFirestore()
                                 .collection("users")
                                 .document(user.getUid())
                                 .set(userData)

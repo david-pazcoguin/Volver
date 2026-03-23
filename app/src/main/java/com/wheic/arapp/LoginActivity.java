@@ -33,7 +33,7 @@ public class LoginActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.login_activity);
 
-        SharedPreferences sh = getSharedPreferences("Volver", Context.MODE_PRIVATE);
+        SharedPreferences sh = SecurePrefs.get(this);
 
         Username = sh.getString("username", "");
 
@@ -103,7 +103,7 @@ public class LoginActivity extends AppCompatActivity {
                         .signInWithEmailAndPassword(authEmail, password)
                         .addOnCompleteListener(task -> {
                             if (task.isSuccessful()) {
-                                SharedPreferences sharedPreferences = getSharedPreferences("Volver", MODE_PRIVATE);
+                                SharedPreferences sharedPreferences = SecurePrefs.get(LoginActivity.this);
                                 SharedPreferences.Editor myEdit = sharedPreferences.edit();
                                 myEdit.putString("username", txtUsername.getText().toString());
                                 myEdit.apply();

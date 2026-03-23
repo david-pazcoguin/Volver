@@ -9,6 +9,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
+import com.bumptech.glide.Glide;
 import com.google.android.material.imageview.ShapeableImageView;
 
 import androidx.cardview.widget.CardView;
@@ -41,7 +42,11 @@ public class ARAdapter extends RecyclerView.Adapter<ARAdapter.ViewHolder>
 
         // Set mission image based on mission ID
         int imageResId = getMissionImageResource(ARHelper.getMissionId());
-        holder.imgView.setImageResource(imageResId);
+        Glide.with(context)
+                .load(imageResId)
+                .placeholder(R.drawable.placeholder)
+                .error(R.drawable.placeholder)
+                .into(holder.imgView);
 
         holder.cardView.setOnClickListener(new View.OnClickListener() {
             @Override

@@ -19,7 +19,6 @@ import android.widget.Toast;
 
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
-import com.google.firebase.firestore.FirebaseFirestore;
 
 public class SettingActivity extends AppCompatActivity {
 
@@ -36,7 +35,7 @@ public class SettingActivity extends AppCompatActivity {
         linearLayoutLogout = findViewById(R.id.linearLayoutLogout);
         linearLayoutMyAccount = findViewById(R.id.linearLayoutMyAccount);
 
-        SharedPreferences sh = getSharedPreferences("Volver", Context.MODE_PRIVATE);
+        SharedPreferences sh = SecurePrefs.get(this);
 
         Username = sh.getString("username", "");
 
@@ -84,7 +83,7 @@ public class SettingActivity extends AppCompatActivity {
 
                         FirebaseAuth.getInstance().signOut();
 
-                        SharedPreferences settings = getSharedPreferences("Volver", Context.MODE_PRIVATE);
+                        SharedPreferences settings = SecurePrefs.get(SettingActivity.this);
                         settings.edit().clear().apply();
 
                         finishAffinity();
@@ -117,7 +116,7 @@ public class SettingActivity extends AppCompatActivity {
         }
 
         String uid = currentUser.getUid();
-        FirebaseFirestore.getInstance()
+        FirebaseConfig.getFirestore()
                 .collection("users")
                 .document(uid)
                 .get()

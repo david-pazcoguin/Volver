@@ -1,6 +1,9 @@
 package com.wheic.arapp;
 
 import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.widget.Toast;
 
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
@@ -40,6 +43,18 @@ public class MissionCompletionHelper {
     }
 
     // ──────────────────────────────────────────────────────────────
+    // Connectivity helper
+    // ──────────────────────────────────────────────────────────────
+
+    private static boolean isConnected(Context context) {
+        ConnectivityManager cm = (ConnectivityManager)
+                context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) return false;
+        NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+        return activeNetwork != null && activeNetwork.isConnectedOrConnecting();
+    }
+
+    // ──────────────────────────────────────────────────────────────
     // Mission tracking
     // ──────────────────────────────────────────────────────────────
 
@@ -52,7 +67,13 @@ public class MissionCompletionHelper {
             return;
         }
 
-        FirebaseFirestore db = FirebaseFirestore.getInstance();
+        if (!isConnected(context)) {
+            Toast.makeText(context,
+                    "No internet connection. Progress will sync when you reconnect.",
+                    Toast.LENGTH_LONG).show();
+        }
+
+        FirebaseFirestore db = FirebaseConfig.getFirestore();
         db.runTransaction(transaction -> {
             com.google.firebase.firestore.DocumentReference missionRef = db
                     .collection("users")
@@ -86,11 +107,18 @@ public class MissionCompletionHelper {
             return;
         }
 
-        FirebaseFirestore db = FirebaseFirestore.getInstance();
+        if (!isConnected(context)) {
+            Toast.makeText(context,
+                    "No internet connection. Progress will sync when you reconnect.",
+                    Toast.LENGTH_LONG).show();
+        }
+
+        FirebaseFirestore db = FirebaseConfig.getFirestore();
         db.collection("users")
                 .document(user.getUid())
                 .collection("missions")
                 .whereEqualTo("completed", true)
+                .limit(TOTAL_LANDMARKS)
                 .get()
                 .addOnSuccessListener(querySnapshot -> {
                     Set<String> completed = new HashSet<>();
@@ -126,7 +154,13 @@ public class MissionCompletionHelper {
             return;
         }
 
-        FirebaseFirestore.getInstance()
+        if (!isConnected(context)) {
+            Toast.makeText(context,
+                    "No internet connection. Progress will sync when you reconnect.",
+                    Toast.LENGTH_LONG).show();
+        }
+
+        FirebaseConfig.getFirestore()
                 .collection("users")
                 .document(user.getUid())
                 .update("walletAddress", walletAddress)
@@ -144,6 +178,11 @@ public class MissionCompletionHelper {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) {
             callback.onError("Network error");
+            return;
+        }
+
+        if (!isConnected(context)) {
+            callback.onError("Whitelisting requires an internet connection.");
             return;
         }
 
