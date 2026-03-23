@@ -149,7 +149,6 @@ public class ArSceneView extends SceneView {
     initializeFacingDirection(session);
 
     // Session needs access to a texture id for updating the camera stream.
-    // Filament and the Main thread each have their own gl context that share resources for this.
     session.setCameraTextureName(cameraTextureId);
   }
 

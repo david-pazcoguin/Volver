@@ -10,8 +10,6 @@ import com.google.android.filament.Scene;
 import com.google.android.filament.VertexBuffer;
 import com.google.android.filament.VertexBuffer.Builder;
 import com.google.android.filament.VertexBuffer.VertexAttribute;
-import com.google.ar.core.Camera;
-import com.google.ar.core.CameraIntrinsics;
 import com.google.ar.core.Frame;
 import com.google.ar.sceneform.utilities.AndroidPreconditions;
 import com.google.ar.sceneform.utilities.Preconditions;
@@ -69,6 +67,12 @@ public class CameraStream {
     this.cameraTextureId = cameraTextureId;
 
     IEngine engine = EngineInstance.getEngine();
+
+    // Create camera ExternalTexture immediately (matches SceneView approach).
+    // No width/height needed — importTexture uses the GL texture's actual dimensions.
+    cameraTexture = new ExternalTexture(cameraTextureId);
+    isTextureInitialized = true;
+    Log.d(TAG, "CameraStream: created ExternalTexture for texId=" + cameraTextureId);
 
     // create screen quad geometry to camera stream to
     ShortBuffer indexBufferData = ShortBuffer.allocate(CAMERA_INDICES.length);
@@ -149,22 +153,8 @@ public class CameraStream {
     if (isTextureInitialized()) {
       return;
     }
-
-    Camera arCamera = frame.getCamera();
-    CameraIntrinsics intrinsics = arCamera.getTextureIntrinsics();
-    int[] dimensions = intrinsics.getImageDimensions();
-    int width = dimensions[0];
-    int height = dimensions[1];
-
-    cameraTexture = new ExternalTexture(cameraTextureId, width, height);
-
-    isTextureInitialized = true;
-
-    // If the camera material has already been set, call setCameraMaterial again to finish setup
-    // now that the CameraTexture has been created.
-    if (cameraMaterial != null) {
-      setCameraMaterial(cameraMaterial);
-    }
+    // Texture is now created in the constructor, so this should never execute.
+    // Kept for API compatibility with ArSceneView.
   }
 
   public void recalculateCameraUvs(Frame frame) {
@@ -181,6 +171,8 @@ public class CameraStream {
 
   public void setCameraMaterial(Material material) {
     cameraMaterial = material;
+    Log.d(TAG, "setCameraMaterial called, isTextureInitialized=" + isTextureInitialized()
+        + ", renderable=" + cameraStreamRenderable);
 
     // The ExternalTexture can't be created until we receive the first AR Core Frame so that we
     // can access the width and height of the camera texture. Return early if the ExternalTexture
@@ -191,9 +183,11 @@ public class CameraStream {
     }
 
     material.setExternalTexture(MATERIAL_CAMERA_TEXTURE, Preconditions.checkNotNull(cameraTexture));
+    Log.d(TAG, "setCameraMaterial: external texture set on material");
 
     if (cameraStreamRenderable == UNINITIALIZED_FILAMENT_RENDERABLE) {
       initializeFilamentRenderable();
+      Log.d(TAG, "setCameraMaterial: renderable initialized, entity=" + cameraStreamRenderable);
     } else {
       RenderableManager renderableManager = EngineInstance.getEngine().getRenderableManager();
       int renderableInstance = renderableManager.getInstance(cameraStreamRenderable);
