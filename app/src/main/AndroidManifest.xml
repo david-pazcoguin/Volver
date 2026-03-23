@@ -61,7 +61,8 @@
             android:exported="false" />
         <activity
             android:name=".ARActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:screenOrientation="portrait" />
         <activity
             android:name=".WalletSetupActivity"
             android:exported="false" />

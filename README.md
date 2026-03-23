@@ -89,13 +89,13 @@ Volver is an Android augmented-reality tour guide app for exploring **Intramuros
 | Target SDK | Android | 35 (min 24) |
 | AR Runtime | ARCore | 1.44.0 |
 | 3D Rendering | Sceneform + Filament | 1.32.0 |
-| Auth & Database | Firebase BOM | 34.10.0 |
+| Auth & Database | Firebase BOM | 34.11.0 |
 | Blockchain SDK | Web3j | 4.9.8 |
 | Smart Contract | Solidity (OpenZeppelin) | ^0.8.20 |
 | QR Scanning | ZXing | 3.5.3 |
 | Location | Play Services Location | 21.3.0 |
-| UI | Material Components | 1.12.0 |
-| JSON | Gson | 2.11.0 |
+| UI | Material Components | 1.13.0 |
+| JSON | Gson | 2.13.2 |
 | Cloud Functions | Node.js + ethers.js | 24 / 6.16.0 |
 
 ---
@@ -320,6 +320,8 @@ All security measures applied to this project:
 - `FLAG_SECURE` on `WalletSetupActivity` and `NFTClaimActivity` (prevents screenshots)
 - Clipboard auto-cleared 30 seconds after copying private key
 - Handler leak prevented: clipboard runnable is a class field, canceled in `onDestroy()`
+- **Button debounce** (2 s cooldown) on wallet confirm and NFT mint buttons
+- **Web3j HTTP timeouts**: 15 s connect / 30 s read+write to prevent hung transactions
 
 ### Firestore Rules
 - Owner-only access (UID-matched)
@@ -358,8 +360,14 @@ All performance optimizations applied to this project:
 ### Memory & Allocation
 - `ARActivity` reuses a `float[] distanceResults` class field instead of allocating per location check
 - `ARActivity` location polling stops (`Handler.removeCallbacks`) once target is reached
+- `ARActivity` location handler also cleaned up in `onDestroy()` to prevent leaked callbacks
+- `ARActivity` TTS `onInit()` guarded by `isDestroyed()` check — prevents use-after-destroy crashes
+- `ARActivity` validates latitude/longitude bounds on intent extras (rejects invalid coordinates)
 - `WalletManager` uses `getApplicationContext()` to prevent activity context leaks
 - `WalletSetupActivity` clipboard Handler extracted to class field, cleaned up in `onDestroy()`
+
+### Firestore
+- `MissionCompletionHelper.getMissionProgress()` uses `.limit(TOTAL_LANDMARKS)` to cap query reads
 
 ### Threading
 - `PolygonService` uses `ExecutorService.newSingleThreadExecutor()` (not raw `Thread()`)

@@ -53,6 +53,8 @@ public class WalletSetupActivity extends AppCompatActivity {
 
     private WalletManager walletManager;
     private String username;
+    private long lastConfirmClickTime = 0;
+    private static final long DEBOUNCE_MILLIS = 2000;
     private final Handler clipboardHandler = new Handler(Looper.getMainLooper());
     private final Runnable clipboardClearRunnable = () -> {
         ClipboardManager cb = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
@@ -76,8 +78,7 @@ public class WalletSetupActivity extends AppCompatActivity {
         setContentView(R.layout.wallet_setup_activity);
 
         walletManager = WalletManager.getInstance(this);
-        username = getSharedPreferences("Volver", Context.MODE_PRIVATE)
-                           .getString("username", "");
+        username = SecurePrefs.get(this).getString("username", "");
 
         bindViews();
         setupListeners();
@@ -140,6 +141,10 @@ public class WalletSetupActivity extends AppCompatActivity {
         });
 
         btnConfirmAddress.setOnClickListener(v -> {
+            long now = System.currentTimeMillis();
+            if (now - lastConfirmClickTime < DEBOUNCE_MILLIS) return;
+            lastConfirmClickTime = now;
+
             String address = etWalletAddress.getText().toString().trim();
             if (!WalletManager.isValidAddress(address)) {
                 Toast.makeText(this, "Please enter a valid Polygon address (0x...)",
@@ -168,6 +173,10 @@ public class WalletSetupActivity extends AppCompatActivity {
         });
 
         btnConfirmCreated.setOnClickListener(v -> {
+            long now = System.currentTimeMillis();
+            if (now - lastConfirmClickTime < DEBOUNCE_MILLIS) return;
+            lastConfirmClickTime = now;
+
             String address = walletManager.getWalletAddress();
             saveWalletToServer(address);
         });
