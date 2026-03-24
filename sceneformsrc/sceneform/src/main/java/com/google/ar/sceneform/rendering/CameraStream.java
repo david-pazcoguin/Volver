@@ -57,7 +57,7 @@ public class CameraStream {
   @Nullable private Material defaultCameraMaterial = null;
   @Nullable private Material cameraMaterial = null;
 
-  private int renderablePriority = Renderable.RENDER_PRIORITY_LAST;
+  private int renderablePriority = Renderable.RENDER_PRIORITY_FIRST;
 
   private boolean isTextureInitialized = false;
 
