@@ -158,7 +158,7 @@ public class Renderer implements UiHelper.RendererCallback {
         new com.google.android.filament.Renderer.ClearOptions();
     options.clearColor = new float[] {color.r, color.g, color.b, color.a};
     options.clear = true;
-    options.discard = false;
+    options.discard = true;
     renderer.setClearOptions(options);
   }
 
