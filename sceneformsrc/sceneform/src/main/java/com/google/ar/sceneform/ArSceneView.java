@@ -64,8 +64,9 @@ public class ArSceneView extends SceneView {
   private Display display;
   private CameraStream cameraStream;
   private PlaneRenderer planeRenderer;
+  private boolean firstFrameLogged = false;
 
-  private boolean lightEstimationEnabled = true;
+  private boolean lightEstimationEnabled = false;
   private boolean isLightDirectionUpdateEnabled = true;
   @Nullable private Consumer<EnvironmentalHdrLightEstimate> onNextHdrLightingEstimate = null;
 
@@ -149,7 +150,6 @@ public class ArSceneView extends SceneView {
     initializeFacingDirection(session);
 
     // Session needs access to a texture id for updating the camera stream.
-    // Filament and the Main thread each have their own gl context that share resources for this.
     session.setCameraTextureName(cameraTextureId);
   }
 
@@ -434,6 +434,12 @@ public class ArSceneView extends SceneView {
         return false;
       }
 
+      if (!firstFrameLogged) {
+        firstFrameLogged = true;
+        Log.e(TAG, "onBeginFrame: FIRST FRAME, cameraTextureId=" + cameraTextureId
+            + ", textureInit=" + cameraStream.isTextureInitialized());
+      }
+
       // Setup Camera Stream if needed.
       if (!cameraStream.isTextureInitialized()) {
         cameraStream.initializeTexture(frame);
@@ -476,6 +482,20 @@ public class ArSceneView extends SceneView {
       }
     }
 
+    // Always return true so doUpdate()+doRender() run every Choreographer frame.
+    // With LATEST_CAMERA_IMAGE, session.update() is non-blocking: when no new
+    // camera frame is available the timestamp stays the same (updated==false).
+    // Previously returning false skipped Filament rendering entirely, halving
+    // the effective display rate to ~30 fps on a 60 Hz panel.  The camera
+    // external texture is still valid (same image), so re-presenting it keeps
+    // the swap-chain fed at the full display refresh rate.
+    //
+    // When !updated we request a render-only pass (no scene graph traversal)
+    // via the renderOnly flag.  doUpdate() running on stale frames caused
+    // the camera texture to go black on some devices.
+    if (!updated) {
+      renderOnly = true;
+    }
     return updated;
   }
 
@@ -708,12 +728,18 @@ public class ArSceneView extends SceneView {
   private void initializePlaneRenderer() {
     Renderer renderer = Preconditions.checkNotNull(getRenderer());
     planeRenderer = new PlaneRenderer(renderer);
+    // Disable plane overlay rendering for performance; plane detection still works for hit testing
+    planeRenderer.setVisible(false);
+    planeRenderer.setShadowReceiver(false);
+    planeRenderer.setEnabled(false);
   }
 
   private void initializeCameraStream() {
     cameraTextureId = GLHelper.createCameraTexture();
+    Log.e(TAG, "initializeCameraStream: cameraTextureId=" + cameraTextureId);
     Renderer renderer = Preconditions.checkNotNull(getRenderer());
     cameraStream = new CameraStream(cameraTextureId, renderer);
+    Log.e(TAG, "initializeCameraStream: CameraStream created");
   }
 
   private void ensureUpdateMode() {

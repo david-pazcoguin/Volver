@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(claude mcp:*)",
+      "Bash(curl -s --max-time 5 http://127.0.0.1:29979/mcp 2>&1 | head -50)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\(''''mcpServers'''', {}\\), indent=2\\)\\)\")",
+      "mcp__paper__get_basic_info",
+      "mcp__paper__get_selection",
+      "mcp__paper__create_artboard",
+      "mcp__paper__write_html",
+      "mcp__paper__finish_working_on_nodes",
+      "mcp__paper__delete_nodes",
+      "mcp__paper__get_screenshot",
+      "mcp__paper__get_font_family_info",
+      "Bash(python -c \"import socket; s = socket.socket\\(\\); s.settimeout\\(2\\); result = s.connect_ex\\(\\('localhost', 9876\\)\\); print\\('Connected' if result == 0 else f'Cannot connect: error {result}'\\); s.close\\(\\)\")",
+      "Bash(find /c/Users/Mane/Documents/Volver -type f \\\\\\( -name \"*.md\" -o -name \"*.txt\" \\\\\\) | xargs grep -l -i \"blockchain\\\\|wallet\\\\|web3\\\\|nft\" 2>/dev/null || echo \"No matches found\")"
+    ]
+  }
+}

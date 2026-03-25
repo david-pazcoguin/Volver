@@ -15,14 +15,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.android.volley.Request;
-import com.android.volley.RequestQueue;
-import com.android.volley.VolleyError;
-import com.android.volley.toolbox.StringRequest;
-import com.android.volley.toolbox.Volley;
-
-import org.json.JSONException;
-import org.json.JSONObject;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.firestore.FieldValue;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -94,86 +89,20 @@ public class RegisterActivity extends AppCompatActivity {
             }
         });
 
-        txtFirstName.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
+        TextWatcher registerWatcher = new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
             @Override
             public void afterTextChanged(Editable editable) {
                 RegisterButtonWatcher();
             }
-        });
-        txtLastName.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
+        };
 
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                RegisterButtonWatcher();
-            }
-        });
-        txtUsername.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                RegisterButtonWatcher();
-            }
-        });
-        txtPassword.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                RegisterButtonWatcher();
-            }
-        });
-        txtConfirmPassword.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                RegisterButtonWatcher();
-            }
-        });
+        txtFirstName.addTextChangedListener(registerWatcher);
+        txtLastName.addTextChangedListener(registerWatcher);
+        txtUsername.addTextChangedListener(registerWatcher);
+        txtPassword.addTextChangedListener(registerWatcher);
+        txtConfirmPassword.addTextChangedListener(registerWatcher);
 
         cardViewRegister.setOnClickListener(new View.OnClickListener()
         {
@@ -182,48 +111,7 @@ public class RegisterActivity extends AppCompatActivity {
             {
                 if(txtPassword.getText().toString().equals(txtConfirmPassword.getText().toString()))
                 {
-                    String url = URLDatabase.URL_CHECK_ACCOUNT;
-
-                    RequestQueue queue = Volley.newRequestQueue(RegisterActivity.this);
-
-                    StringRequest request = new StringRequest(Request.Method.POST, url, new com.android.volley.Response.Listener<String>() {
-                        @Override
-                        public void onResponse(String response) {
-                            try {
-                                JSONObject jsonObject = new JSONObject(response);
-                                if (jsonObject.getString("user_id").equals("null") || jsonObject.getString("user_id").equals(""))
-                                {
-                                    Register();
-                                }
-                                else
-                                {
-                                    Toast.makeText(RegisterActivity.this, "Your username is already existing in the database.", Toast.LENGTH_SHORT).show();
-                                }
-                            } catch (JSONException e) {
-                                e.printStackTrace();
-                            }
-                        }
-                    }, new com.android.volley.Response.ErrorListener() {
-                        @Override
-                        public void onErrorResponse(VolleyError error)
-                        {
-                            Toast.makeText(RegisterActivity.this, error.toString(), Toast.LENGTH_SHORT).show();
-                        }
-                    }) {
-                        @Override
-                        public String getBodyContentType() {
-                            return "application/x-www-form-urlencoded; charset=UTF-8";
-                        }
-
-                        @Override
-                        protected Map<String, String> getParams()
-                        {
-                            Map<String, String> params = new HashMap<String, String>();
-                            params.put("username", txtUsername.getText().toString());
-                            return params;
-                        }
-                    };
-                    queue.add(request);
+                    Register();
                 }
                 else
                 {
@@ -267,40 +155,63 @@ public class RegisterActivity extends AppCompatActivity {
      */
     void Register()
     {
-        String url = URLDatabase.URL_REGISTER;
+        String username = txtUsername.getText().toString().trim();
+        String password = txtPassword.getText().toString();
+        String firstName = txtFirstName.getText().toString().trim();
+        String lastName = txtLastName.getText().toString().trim();
 
-        RequestQueue queue = Volley.newRequestQueue(RegisterActivity.this);
+        // Username validation: 3-30 alphanumeric/underscore characters
+        if (!username.matches("^[a-zA-Z0-9_]{3,30}$")) {
+            Toast.makeText(this, "Username must be 3–30 characters (letters, numbers, underscore).", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
-        StringRequest request = new StringRequest(Request.Method.POST, url, new com.android.volley.Response.Listener<String>() {
-            @Override
-            public void onResponse(String response)
-            {
-                finish();
-            }
-        }, new com.android.volley.Response.ErrorListener() {
-            @Override
-            public void onErrorResponse(VolleyError error)
-            {
-                Toast.makeText(RegisterActivity.this, error.toString(), Toast.LENGTH_SHORT).show();
-            }
-        }) {
-            @Override
-            public String getBodyContentType() {
-                return "application/x-www-form-urlencoded; charset=UTF-8";
-            }
+        // Password strength: minimum 6 characters (Firebase Auth minimum)
+        if (password.length() < 6) {
+            Toast.makeText(this, "Password must be at least 6 characters.", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
-            @Override
-            protected Map<String, String> getParams()
-            {
-                Map<String, String> params = new HashMap<String, String>();
-                params.put("username", txtUsername.getText().toString());
-                params.put("password", txtPassword.getText().toString());
-                params.put("first_name", txtFirstName.getText().toString());
-                params.put("last_name", txtLastName.getText().toString());
+        // Name length limits
+        if (firstName.length() > 50 || lastName.length() > 50) {
+            Toast.makeText(this, "Name fields must be 50 characters or fewer.", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
-                return params;
-            }
-        };
-        queue.add(request);
+        String email = username + "@volver.app";
+
+        FirebaseAuth.getInstance()
+                .createUserWithEmailAndPassword(email, password)
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        FirebaseUser user = task.getResult() != null ? task.getResult().getUser() : null;
+                        if (user == null) {
+                            Toast.makeText(RegisterActivity.this, "Registration failed. Please try again.", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+
+                        Map<String, Object> userData = new HashMap<>();
+                        userData.put("username", username);
+                        userData.put("firstName", firstName);
+                        userData.put("lastName", lastName);
+                        userData.put("email", email);
+                        userData.put("createdAt", FieldValue.serverTimestamp());
+
+                        FirebaseConfig.getFirestore()
+                                .collection("users")
+                                .document(user.getUid())
+                                .set(userData)
+                                .addOnSuccessListener(unused -> finish())
+                                .addOnFailureListener(e -> Toast.makeText(RegisterActivity.this, "Failed to save profile.", Toast.LENGTH_SHORT).show());
+                    } else {
+                        Exception exception = task.getException();
+                        String msg = "Registration failed.";
+                        if (exception != null && exception.getMessage() != null
+                                && exception.getMessage().contains("already in use")) {
+                            msg = "Username is already taken.";
+                        }
+                        Toast.makeText(RegisterActivity.this, msg, Toast.LENGTH_SHORT).show();
+                    }
+                });
     }
 }

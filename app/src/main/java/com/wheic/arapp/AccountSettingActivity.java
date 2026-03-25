@@ -12,21 +12,13 @@ import android.text.TextWatcher;
 import android.text.method.HideReturnsTransformationMethod;
 import android.text.method.PasswordTransformationMethod;
 import android.view.View;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.android.volley.DefaultRetryPolicy;
-import com.android.volley.Request;
-import com.android.volley.RequestQueue;
-import com.android.volley.VolleyError;
-import com.android.volley.toolbox.StringRequest;
-import com.android.volley.toolbox.Volley;
-
-import org.json.JSONArray;
-import org.json.JSONObject;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -44,7 +36,7 @@ public class AccountSettingActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.account_setting_activity);
 
-        SharedPreferences sh = getSharedPreferences("Volver", Context.MODE_PRIVATE);
+        SharedPreferences sh = SecurePrefs.get(this);
 
         Username = sh.getString("username", "");
 
@@ -96,70 +88,19 @@ public class AccountSettingActivity extends AppCompatActivity {
             }
         });
 
-        txtFirstName.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
+        TextWatcher updateWatcher = new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
             @Override
             public void afterTextChanged(Editable editable) {
                 RegisterButtonWatcher();
             }
-        });
-        txtLastName.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
+        };
 
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                RegisterButtonWatcher();
-            }
-        });
-        txtPassword.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                RegisterButtonWatcher();
-            }
-        });
-        txtConfirmPassword.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                RegisterButtonWatcher();
-            }
-
-            @Override
-            public void afterTextChanged(Editable editable) {
-                RegisterButtonWatcher();
-            }
-        });
+        txtFirstName.addTextChangedListener(updateWatcher);
+        txtLastName.addTextChangedListener(updateWatcher);
+        txtPassword.addTextChangedListener(updateWatcher);
+        txtConfirmPassword.addTextChangedListener(updateWatcher);
 
         cardViewUpdate.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -167,42 +108,28 @@ public class AccountSettingActivity extends AppCompatActivity {
             {
                 if(txtPassword.getText().toString().equals(txtConfirmPassword.getText().toString()))
                 {
-                    String url = URLDatabase.URL_ACCOUNT_SETTING_UPDATE;
+                    FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+                    if (user == null) {
+                        Toast.makeText(AccountSettingActivity.this, "Session expired. Please log in again.", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
 
-                    RequestQueue queue = Volley.newRequestQueue(AccountSettingActivity.this);
+                    Map<String, Object> profileUpdates = new HashMap<>();
+                    profileUpdates.put("firstName", txtFirstName.getText().toString());
+                    profileUpdates.put("lastName", txtLastName.getText().toString());
 
-                    StringRequest request = new StringRequest(Request.Method.POST, url, new com.android.volley.Response.Listener<String>() {
-                        @Override
-                        public void onResponse(String response)
-                        {
-                            Intent intent= new Intent(AccountSettingActivity.this, HomeActivity.class);
-                            startActivity(intent);
-                            finishAffinity();
-                        }
-                    }, new com.android.volley.Response.ErrorListener() {
-                        @Override
-                        public void onErrorResponse(VolleyError error)
-                        {
-                            Toast.makeText(AccountSettingActivity.this, error.toString(), Toast.LENGTH_SHORT).show();
-                        }
-                    }) {
-                        @Override
-                        public String getBodyContentType() {
-                            return "application/x-www-form-urlencoded; charset=UTF-8";
-                        }
-
-                        @Override
-                        protected Map<String, String> getParams()
-                        {
-                            Map<String, String> params = new HashMap<String, String>();
-                            params.put("first_name", txtFirstName.getText().toString());
-                            params.put("last_name", txtLastName.getText().toString());
-                            params.put("password", txtPassword.getText().toString());
-                            params.put("username", Username);
-                            return params;
-                        }
-                    };
-                    queue.add(request);
+                    FirebaseConfig.getFirestore()
+                            .collection("users")
+                            .document(user.getUid())
+                            .update(profileUpdates)
+                            .addOnSuccessListener(unused -> user.updatePassword(txtPassword.getText().toString())
+                                    .addOnSuccessListener(unused2 -> {
+                                        Intent intent= new Intent(AccountSettingActivity.this, HomeActivity.class);
+                                        startActivity(intent);
+                                        finishAffinity();
+                                    })
+                                    .addOnFailureListener(e -> Toast.makeText(AccountSettingActivity.this, "Failed to update password.", Toast.LENGTH_SHORT).show()))
+                            .addOnFailureListener(e -> Toast.makeText(AccountSettingActivity.this, "Failed to update profile.", Toast.LENGTH_SHORT).show());
                 }
                 else
                 {
@@ -216,64 +143,31 @@ public class AccountSettingActivity extends AppCompatActivity {
 
     void LoadAccount()
     {
-        String url = URLDatabase.URL_HOME;
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) {
+            Toast.makeText(AccountSettingActivity.this, "Session expired. Please log in again.", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
-        RequestQueue queue = Volley.newRequestQueue(AccountSettingActivity.this);
+        FirebaseConfig.getFirestore()
+                .collection("users")
+                .document(user.getUid())
+                .get()
+                .addOnSuccessListener(documentSnapshot -> {
+                    if (documentSnapshot != null && documentSnapshot.exists()) {
+                        String username = documentSnapshot.getString("username");
+                        String firstName = documentSnapshot.getString("firstName");
+                        String lastName = documentSnapshot.getString("lastName");
 
-        StringRequest request = new StringRequest(Request.Method.POST, url, new com.android.volley.Response.Listener<String>() {
-            @Override
-            public void onResponse(String response) {
-                try {
-                    if(!response.equals("[]"))
-                    {
-                        JSONObject jsonObject = new JSONObject(response);
-
-                        JSONArray jsonArray = jsonObject.getJSONArray("data");
-                        for(int i = 0; i < jsonArray.length(); i++)
-                        {
-                            JSONObject jsonObjectData = jsonArray.getJSONObject(i);
-                            String firstName = jsonObjectData.getString("first_name");
-                            String lastName = jsonObjectData.getString("last_name");
-                            String password = jsonObjectData.getString("password");
-
-                            txtFirstName.setText(firstName);
-                            txtLastName.setText(lastName);
-                            txtPassword.setText(password);
-                            txtConfirmPassword.setText(password);
+                        if (username != null) {
+                            Username = username;
                         }
+
+                        txtFirstName.setText(firstName != null ? firstName : "");
+                        txtLastName.setText(lastName != null ? lastName : "");
                     }
-
-                } catch (Exception e) {
-
-                    Toast.makeText(AccountSettingActivity.this, e.getMessage(), Toast.LENGTH_SHORT).show();
-                }
-            }
-        }, new com.android.volley.Response.ErrorListener() {
-            @Override
-            public void onErrorResponse(VolleyError error)
-            {
-                Toast.makeText(AccountSettingActivity.this, error.toString(), Toast.LENGTH_SHORT).show();
-            }
-        }) {
-            @Override
-            public String getBodyContentType() {
-                return "application/x-www-form-urlencoded; charset=UTF-8";
-            }
-
-            @Override
-            protected Map<String, String> getParams()
-            {
-                Map<String, String> params = new HashMap<String, String>();
-                params.put("username", Username);
-                return params;
-            }
-        };
-        request.setRetryPolicy(new DefaultRetryPolicy(
-                10000,
-                DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
-                DefaultRetryPolicy.DEFAULT_BACKOFF_MULT)
-        );
-        queue.add(request);
+                })
+                .addOnFailureListener(e -> Toast.makeText(AccountSettingActivity.this, "Failed to load account.", Toast.LENGTH_SHORT).show());
     }
 
     void RegisterButtonWatcher()

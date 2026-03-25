@@ -122,7 +122,7 @@ public class RenderableInstance {
               RenderableInternalFilamentAssetData.getMaterialProvider(),
               EntityManager.get());
 
-      FilamentAsset createdAsset = loader.createAssetFromBinary(renderableData.gltfByteBuffer);
+      FilamentAsset createdAsset = loader.createAsset(renderableData.gltfByteBuffer);
 
       if (createdAsset == null) {
         throw new IllegalStateException("Failed to load gltf");

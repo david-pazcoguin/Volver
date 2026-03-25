@@ -15,6 +15,7 @@
         android:layout_marginTop="25sp"
         android:layout_gravity="center"
         android:src="@drawable/logo"
+        android:contentDescription="Volver app logo"
         android:layout_width="match_parent"
         android:layout_height="250dp">
 
@@ -62,6 +63,7 @@
                     android:hint="Enter your username..."
                     android:textSize="14sp"
                     android:textColor="@color/black"
+                    android:imeOptions="actionNext"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content">
 
@@ -118,7 +120,8 @@
                         android:hint="Enter your password..."
                         android:inputType="textPassword"
                         android:textColor="@color/black"
-                        android:textSize="14sp">
+                        android:textSize="14sp"
+                        android:imeOptions="actionDone">
 
                     </EditText>
 

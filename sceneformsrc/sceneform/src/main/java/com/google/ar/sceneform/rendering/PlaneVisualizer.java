@@ -43,6 +43,9 @@ class PlaneVisualizer implements TransformProvider {
   // Feather scale over the distance between plane center and vertices.
   private static final float FEATHER_SCALE = 0.2f;
 
+  // Cache the last polygon boundary to skip geometry rebuild when unchanged
+  @Nullable private FloatBuffer lastPolygon = null;
+
   public void setEnabled(boolean enabled) {
     if (isEnabled != enabled) {
       isEnabled = enabled;
@@ -211,6 +214,29 @@ class PlaneVisualizer implements TransformProvider {
     if (boundaryVertices == 0) {
       return false;
     }
+
+    // Skip geometry rebuild if the polygon hasn't changed
+    if (lastPolygon != null && lastPolygon.limit() == boundary.limit()) {
+      lastPolygon.rewind();
+      boundary.rewind();
+      boolean same = true;
+      while (boundary.hasRemaining()) {
+        if (Float.compare(boundary.get(), lastPolygon.get()) != 0) {
+          same = false;
+          break;
+        }
+      }
+      boundary.rewind();
+      if (same) {
+        return !vertices.isEmpty();
+      }
+    }
+
+    // Cache the current polygon
+    boundary.rewind();
+    lastPolygon = FloatBuffer.allocate(boundary.limit());
+    lastPolygon.put(boundary);
+    boundary.rewind();
 
     int numVertices = boundaryVertices * VERTS_PER_BOUNDARY_VERT;
     vertices.clear();
