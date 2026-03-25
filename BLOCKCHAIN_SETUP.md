@@ -445,3 +445,11 @@ Verify with: `firebase functions:config:get`
 **Gas price too low / transaction stuck**
 → This is handled automatically by ethers.js in the Cloud Function.
 If needed, you can adjust gas settings in `functions/index.js`.
+
+---
+
+## Related Documentation
+
+- [README.md](README.md) — Full project overview, architecture, and all configuration
+- [FIREBASE_SECURITY_NOTES.md](FIREBASE_SECURITY_NOTES.md) — Firestore security rules details
+- [BUILD_AND_DEPLOY.md](BUILD_AND_DEPLOY.md) — Build commands and Firebase deployment
