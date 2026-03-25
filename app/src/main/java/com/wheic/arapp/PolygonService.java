@@ -42,6 +42,18 @@ public class PolygonService {
     /** Gas limit for the claimPassport() call. Adjust after profiling on testnet. */
     private static final BigInteger GAS_LIMIT = BigInteger.valueOf(200_000L);
 
+    /**
+     * Returns the PolygonScan base URL for the current chain.
+     * Amoy testnet (80002) → amoy.polygonscan.com
+     * Polygon mainnet (137) → polygonscan.com
+     */
+    public static String getPolygonScanTxUrl(String txHash) {
+        String base = (CHAIN_ID == 137)
+                ? "https://polygonscan.com/tx/"
+                : "https://amoy.polygonscan.com/tx/";
+        return base + txHash;
+    }
+
     /** Single background thread for blockchain operations. */
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
 
@@ -110,11 +122,13 @@ public class PolygonService {
                         .send();
                 BigInteger nonce = txCountResp.getTransactionCount();
 
-                // Gas price (+20% tip for faster inclusion)
+                // Gas price (+20% tip for faster inclusion, capped at 500 gwei)
+                BigInteger MAX_GAS_PRICE = BigInteger.valueOf(500_000_000_000L); // 500 gwei
                 EthGasPrice gasPriceResp = web3j.ethGasPrice().send();
                 BigInteger gasPrice = gasPriceResp.getGasPrice()
                         .multiply(BigInteger.valueOf(12))
                         .divide(BigInteger.TEN);
+                if (gasPrice.compareTo(MAX_GAS_PRICE) > 0) gasPrice = MAX_GAS_PRICE;
 
                 // Build, sign, broadcast
                 String encodedData = buildClaimPassportData();

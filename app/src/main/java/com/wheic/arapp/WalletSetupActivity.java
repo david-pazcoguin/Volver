@@ -186,6 +186,8 @@ public class WalletSetupActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        // Clear clipboard immediately if private key was copied and timer hasn't fired yet
+        clipboardClearRunnable.run();
         clipboardHandler.removeCallbacks(clipboardClearRunnable);
         super.onDestroy();
     }

@@ -34,6 +34,8 @@ import com.google.ar.core.Plane;
 import com.google.ar.core.Session;
 import com.google.ar.core.TrackingState;
 import com.google.ar.sceneform.AnchorNode;
+import com.google.ar.sceneform.FrameTime;
+import com.google.ar.sceneform.Scene;
 import com.google.ar.sceneform.math.Vector3;
 import com.google.ar.sceneform.rendering.ModelRenderable;
 import com.google.ar.sceneform.ux.ArFragment;
@@ -51,6 +53,8 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private ArFragment arCam;
     private boolean hasPlacedModel = false;
     private CompletableFuture<ModelRenderable> modelFuture;
+    private boolean modelLoadFailed = false;
+    private final Scene.OnUpdateListener sceneUpdateListener = this::onSceneUpdate;
 
     // ── Location ────────────────────────────────────────────────────
     private FusedLocationProviderClient fusedLocationClient;
@@ -134,6 +138,12 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         ttsEngine = new TextToSpeech(this, this);
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
 
+        // Configure geospatial mode as soon as the session is created
+        if (arCam != null) {
+            arCam.setOnSessionInitializationListener(this::onSessionCreated);
+            // Subscribe to per-frame updates to retry geospatial config if needed
+        }
+
         requestLocationPermission();
         preloadCharacterModel();
         setupTapListener();
@@ -142,7 +152,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     @Override
     protected void onResume() {
         super.onResume();
-        configureGeospatialMode();
+        // Re-attach scene listener (removed in onPause to prevent leak)
+        if (arCam != null && arCam.getArSceneView() != null) {
+            arCam.getArSceneView().getScene().addOnUpdateListener(sceneUpdateListener);
+        }
         // Start periodic location check when screen is visible
         locationHandler.post(locationRunnable);
     }
@@ -151,14 +164,36 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     protected void onPause() {
         super.onPause();
         locationHandler.removeCallbacks(locationRunnable);
+        if (arCam != null && arCam.getArSceneView() != null) {
+            arCam.getArSceneView().getScene().removeOnUpdateListener(sceneUpdateListener);
+        }
         if (ttsEngine != null) ttsEngine.stop();
     }
 
     @Override
     protected void onDestroy() {
         locationHandler.removeCallbacks(locationRunnable);
-        if (ttsEngine != null) ttsEngine.shutdown();
+        if (ttsEngine != null) {
+            ttsEngine.shutdown();
+            ttsEngine = null;
+        }
         super.onDestroy();
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Session & scene callbacks
+    // ──────────────────────────────────────────────────────────────────
+
+    /** Called once when the ARCore session is first created. */
+    private void onSessionCreated(Session session) {
+        configureGeospatialMode();
+    }
+
+    /** Called every frame — used to retry geospatial config and update status. */
+    private void onSceneUpdate(FrameTime frameTime) {
+        if (!geospatialConfigured) {
+            configureGeospatialMode();
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -183,6 +218,15 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 .setSource(this, resId)
                 .setIsFilamentGltf(true)
                 .build();
+
+        modelFuture.exceptionally(throwable -> {
+            Log.e(TAG, "Failed to load model: " + throwable.getMessage());
+            modelLoadFailed = true;
+            runOnUiThread(() ->
+                    Toast.makeText(this, "Failed to load 3D model. Please restart.",
+                            Toast.LENGTH_LONG).show());
+            return null;
+        });
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -216,7 +260,8 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
     private void getLocationAndCheckTarget() {
         if (isGeospatialAvailable()) {
-            Session session = arCam != null ? arCam.getArSceneView().getSession() : null;
+            Session session = (arCam != null && arCam.getArSceneView() != null)
+                    ? arCam.getArSceneView().getSession() : null;
             Earth earth = session != null ? session.getEarth() : null;
 
             if (earth != null && earth.getTrackingState() == TrackingState.TRACKING) {
@@ -230,21 +275,18 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                     if (distance <= ACTIVATION_RADIUS_METERS) {
                         onTargetReached();
                     } else {
-                        String msg = String.format("Move closer to %s. You are %dm away.",
-                                characterName, (int) distance);
-                        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+                        updateHint(String.format("Move closer to %s. You are %dm away.",
+                                characterName, (int) distance));
                     }
                     return;
                 }
-                Toast.makeText(this, "Waiting for precise geospatial accuracy...", Toast.LENGTH_SHORT).show();
+                updateHint("Improving GPS accuracy...");
                 return;
             }
-
-            Toast.makeText(this, "Waiting for geospatial tracking...", Toast.LENGTH_SHORT).show();
-            return;
+            // Geospatial is available but not yet tracking — fall through to fused location
         }
 
-        // Fallback: keep legacy fused location check when geospatial is unavailable.
+        // Fallback: fused location when geospatial is unavailable or not yet tracking.
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) return;
 
@@ -259,9 +301,8 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             if (distance <= ACTIVATION_RADIUS_METERS) {
                 onTargetReached();
             } else {
-                String msg = String.format("Move closer to %s. You are %dm away.",
-                        characterName, (int) distance);
-                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+                updateHint(String.format("Move closer to %s. You are %dm away.",
+                        characterName, (int) distance));
             }
         });
     }
@@ -271,6 +312,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
      * Automatically greets them with the character dialogue via TTS.
      */
     private void onTargetReached() {
+        if (isTargetReached) return; // already triggered
         isTargetReached = true;
 
         // Show character name overlay
@@ -278,10 +320,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             tvCharacterName.setText(characterName + " appears...");
             tvCharacterName.setVisibility(View.VISIBLE);
         }
-        if (tvCharacterHint != null) {
-            tvCharacterHint.setText("Tap a flat surface to place the character");
-            tvCharacterHint.setVisibility(View.VISIBLE);
-        }
+        updateHint("Tap a flat surface to place the character");
 
         // Auto-speak the greeting (once per visit)
         if (!hasGreeted) {
@@ -294,6 +333,13 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
         Toast.makeText(this, characterName + " has arrived! Tap a surface to place.",
                 Toast.LENGTH_LONG).show();
+    }
+
+    private void updateHint(String text) {
+        if (tvCharacterHint != null) {
+            tvCharacterHint.setText(text);
+            tvCharacterHint.setVisibility(View.VISIBLE);
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -312,21 +358,27 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 Toast.makeText(this, "Character already placed.", Toast.LENGTH_SHORT).show();
                 return;
             }
-            if (modelFuture.isDone() && !modelFuture.isCompletedExceptionally()) {
-                try {
-                    Anchor anchor = createMissionAnchor();
-                    if (anchor == null) {
-                        Toast.makeText(this, "Geospatial anchor is not ready yet.", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                    placeModel(anchor, modelFuture.get());
-                    hasPlacedModel = true;
-                    onMissionModelPlaced();
-                } catch (Exception e) {
-                    Toast.makeText(this, "Error placing model.", Toast.LENGTH_LONG).show();
-                }
-            } else {
+            if (modelLoadFailed) {
+                Toast.makeText(this, "Model failed to load. Please restart.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            if (modelFuture == null || !modelFuture.isDone() || modelFuture.isCompletedExceptionally()) {
                 Toast.makeText(this, "Model still loading — please wait.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            try {
+                // Try geospatial anchor first, fall back to plane hit-result anchor
+                Anchor anchor = createMissionAnchor();
+                if (anchor == null) {
+                    anchor = hitResult.createAnchor();
+                }
+                placeModel(anchor, modelFuture.get());
+                hasPlacedModel = true;
+                onMissionModelPlaced();
+            } catch (Exception e) {
+                Log.e(TAG, "Error placing model", e);
+                Toast.makeText(this, "Error placing model. Try tapping again.", Toast.LENGTH_LONG).show();
             }
         });
     }
@@ -337,7 +389,16 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         }
 
         Session session = arCam.getArSceneView().getSession();
-        if (session == null || !isGeospatialAvailable()) {
+        if (session == null) {
+            return;
+        }
+
+        // Check if geospatial is supported before enabling
+        try {
+            if (!session.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
+                return;
+            }
+        } catch (Exception e) {
             return;
         }
 
@@ -345,6 +406,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         config.setGeospatialMode(Config.GeospatialMode.ENABLED);
         session.configure(config);
         geospatialConfigured = true;
+        Log.d(TAG, "Geospatial mode enabled successfully.");
     }
 
     private boolean isGeospatialAvailable() {
@@ -358,7 +420,8 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         }
 
         try {
-            return session.isGeospatialModeSupported(Config.GeospatialMode.ENABLED);
+            return geospatialConfigured
+                    && session.isGeospatialModeSupported(Config.GeospatialMode.ENABLED);
         } catch (Exception e) {
             return false;
         }
@@ -381,7 +444,12 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         }
 
         double altitude = Double.isNaN(targetAltitude) ? cameraPose.getAltitude() : targetAltitude;
-        return earth.createAnchor(targetLatitude, targetLongitude, altitude, 0f, 0f, 0f, 1f);
+        try {
+            return earth.createAnchor(targetLatitude, targetLongitude, altitude, 0f, 0f, 0f, 1f);
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to create geospatial anchor, will use plane anchor.", e);
+            return null;
+        }
     }
 
     private void placeModel(Anchor anchor, ModelRenderable renderable) {
@@ -397,9 +465,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         // Tap the placed model to replay the character dialogue
         model.setOnTapListener((hitResult, node) -> speakText(characterDialogue));
 
-        if (tvCharacterHint != null) {
-            tvCharacterHint.setText("Tap " + characterName + " to hear the story again");
-        }
+        updateHint("Tap " + characterName + " to hear the story again");
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -444,6 +510,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     }
 
     private void showNFTUnlockedDialog() {
+        if (isFinishing() || isDestroyed()) return;
         new AlertDialog.Builder(this)
                 .setTitle("Intramuros Passport Complete!")
                 .setMessage("You have visited all 5 sites. Return to the home screen to claim your Walled City Key NFT.")
@@ -470,8 +537,12 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     }
 
     private void speakText(String text) {
-        if (ttsEngine != null && ttsReady && text != null && !text.isEmpty()) {
-            ttsEngine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "character_dialogue");
+        try {
+            if (ttsEngine != null && ttsReady && text != null && !text.isEmpty()) {
+                ttsEngine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "character_dialogue");
+            }
+        } catch (Exception e) {
+            // TTS may have been shutdown between the null-check and speak() call
         }
     }
 

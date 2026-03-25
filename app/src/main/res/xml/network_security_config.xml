@@ -17,10 +17,22 @@
            | openssl enc -base64
          Add a second <pin> element with a backup pin (e.g. an intermediate CA key)
          so the app keeps working if the leaf certificate rotates. -->
+    <!-- Amoy testnet RPC -->
     <domain-config>
         <domain includeSubdomains="true">rpc-amoy.polygon.technology</domain>
-        <pin-set>
+        <pin-set expiration="2027-01-01">
             <pin digest="SHA-256">u1OlCFGpiDPSm7IclXp18QMJNfQzxWJb04KcCYSHjOg=</pin>
+            <!-- Backup pin (GlobalSign Root R3 — intermediate CA) -->
+            <pin digest="SHA-256">cGuxAXyFXFkWm61cF4HPWX8S0srS9j0aSqN0k4AP+4A=</pin>
+        </pin-set>
+    </domain-config>
+
+    <!-- Polygon mainnet RPC (for production) -->
+    <domain-config>
+        <domain includeSubdomains="true">polygon-rpc.com</domain>
+        <pin-set expiration="2027-01-01">
+            <!-- Replace with actual mainnet pin before production launch -->
+            <pin digest="SHA-256">cGuxAXyFXFkWm61cF4HPWX8S0srS9j0aSqN0k4AP+4A=</pin>
         </pin-set>
     </domain-config>
 </network-security-config>
