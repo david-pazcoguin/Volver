@@ -1,47 +1,99 @@
 plugins {
     id 'com.android.application'
+    id 'com.google.gms.google-services'
+    id 'com.google.firebase.crashlytics'
 }
 
 android {
-    compileSdkVersion 29
+    compileSdk 35
+    namespace 'com.wheic.arapp'
 
     defaultConfig {
         applicationId "com.wheic.arapp"
-        minSdkVersion 24
-        targetSdkVersion 29
+        minSdk 24
+        targetSdk 35
         versionCode 1
         versionName "1.0"
+        manifestPlaceholders = [MAPS_API_KEY: project.findProperty("MAPS_API_KEY") ?: ""]
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
+        debug {
+            buildConfigField "String", "NFT_CONTRACT_ADDRESS", "\"${project.findProperty('NFT_CONTRACT_ADDRESS') ?: '0x0000000000000000000000000000000000000000'}\""
+            buildConfigField "String", "POLYGON_RPC_URL", "\"${project.findProperty('POLYGON_RPC_URL') ?: 'https://rpc-amoy.polygon.technology'}\""
+            buildConfigField "long", "POLYGON_CHAIN_ID", "${project.findProperty('POLYGON_CHAIN_ID') ?: '80002L'}"
+        }
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            buildConfigField "String", "NFT_CONTRACT_ADDRESS", "\"${project.findProperty('NFT_CONTRACT_ADDRESS') ?: '0x0000000000000000000000000000000000000000'}\""
+            buildConfigField "String", "POLYGON_RPC_URL", "\"${project.findProperty('POLYGON_RPC_URL') ?: 'https://rpc-amoy.polygon.technology'}\""
+            buildConfigField "long", "POLYGON_CHAIN_ID", "${project.findProperty('POLYGON_CHAIN_ID') ?: '80002L'}"
         }
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        coreLibraryDesugaringEnabled true
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
     }
-    namespace 'com.wheic.arapp'
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    packaging {
+        resources {
+            excludes += [
+                'META-INF/DEPENDENCIES',
+                'META-INF/LICENSE',
+                'META-INF/LICENSE.txt',
+                'META-INF/license.txt',
+                'META-INF/NOTICE',
+                'META-INF/NOTICE.txt',
+                'META-INF/notice.txt',
+                'META-INF/INDEX.LIST',
+                'META-INF/*.kotlin_module'
+            ]
+        }
+    }
 }
 
 dependencies {
 
     api project(":sceneformux")
-    implementation 'androidx.appcompat:appcompat:1.2.0'
-    implementation 'com.google.android.material:material:1.2.1'
-    implementation 'androidx.constraintlayout:constraintlayout:2.0.4'
-    testImplementation 'junit:junit:4.+'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.2'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.3.0'
-    implementation 'com.android.volley:volley:1.2.1'
-    implementation 'com.github.MKergall:osmbonuspack:6.9.0'
-    implementation 'com.google.zxing:core:3.4.1'
+    implementation "com.google.ar:core:1.44.0"
+    implementation platform('com.google.firebase:firebase-bom:34.11.0')
+    implementation 'com.google.firebase:firebase-analytics'
+    implementation 'com.google.firebase:firebase-auth'
+    implementation 'com.google.firebase:firebase-firestore'
+    implementation 'com.google.firebase:firebase-functions'
+    implementation 'com.google.firebase:firebase-crashlytics'
+    implementation 'androidx.appcompat:appcompat:1.7.1'
+    implementation 'com.google.android.material:material:1.13.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
+    implementation 'com.google.zxing:core:3.5.3'
     implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
-    implementation 'com.google.android.gms:play-services-location:21.0.1'
-    implementation 'com.karumi:dexter:6.2.3'
-    implementation 'com.github.yukuku:ambilwarna:2.0.1'
+    implementation 'com.google.android.gms:play-services-location:21.3.0'
+
+    // Web3j — Polygon/Ethereum blockchain interaction
+    implementation 'org.web3j:core:4.9.8'
+
+    // Gson for JSON serialization
+    implementation 'com.google.code.gson:gson:2.13.2'
+
+    // Encrypted session storage
+    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
+
+    // Glide — efficient image loading with caching
+    implementation 'com.github.bumptech.glide:glide:4.16.0'
+    annotationProcessor 'com.github.bumptech.glide:compiler:4.16.0'
+
+    // Core library desugaring for Java 8+ API on older Android versions
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
 }

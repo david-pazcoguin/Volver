@@ -17,18 +17,8 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.android.volley.DefaultRetryPolicy;
-import com.android.volley.Request;
-import com.android.volley.RequestQueue;
-import com.android.volley.VolleyError;
-import com.android.volley.toolbox.StringRequest;
-import com.android.volley.toolbox.Volley;
-
-import org.json.JSONArray;
-import org.json.JSONObject;
-
-import java.util.HashMap;
-import java.util.Map;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 
 public class SettingActivity extends AppCompatActivity {
 
@@ -45,7 +35,7 @@ public class SettingActivity extends AppCompatActivity {
         linearLayoutLogout = findViewById(R.id.linearLayoutLogout);
         linearLayoutMyAccount = findViewById(R.id.linearLayoutMyAccount);
 
-        SharedPreferences sh = getSharedPreferences("Volver", Context.MODE_PRIVATE);
+        SharedPreferences sh = SecurePrefs.get(this);
 
         Username = sh.getString("username", "");
 
@@ -91,8 +81,10 @@ public class SettingActivity extends AppCompatActivity {
                     public void onClick(View view) {
                         dialog.dismiss();
 
-                        SharedPreferences settings = getSharedPreferences("Volver", Context.MODE_PRIVATE);
-                        settings.edit().clear().commit();
+                        FirebaseAuth.getInstance().signOut();
+
+                        SharedPreferences settings = SecurePrefs.get(SettingActivity.this);
+                        settings.edit().clear().apply();
 
                         finishAffinity();
 
@@ -117,67 +109,37 @@ public class SettingActivity extends AppCompatActivity {
 
     void LoadAccount()
     {
-        String url = URLDatabase.URL_HOME;
+        FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
+        if (currentUser == null) {
+            Toast.makeText(SettingActivity.this, "User session expired.", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
-        RequestQueue queue = Volley.newRequestQueue(SettingActivity.this);
+        String uid = currentUser.getUid();
+        FirebaseConfig.getFirestore()
+                .collection("users")
+                .document(uid)
+                .get()
+                .addOnSuccessListener(documentSnapshot -> {
+                    if (documentSnapshot != null && documentSnapshot.exists()) {
+                        String username = documentSnapshot.getString("username");
+                        String firstName = documentSnapshot.getString("firstName");
+                        String lastName = documentSnapshot.getString("lastName");
 
-        StringRequest request = new StringRequest(Request.Method.POST, url, new com.android.volley.Response.Listener<String>() {
-            @Override
-            public void onResponse(String response) {
-                try {
-                    if(!response.equals("[]"))
-                    {
-                        JSONObject jsonObject = new JSONObject(response);
-
-                        JSONArray jsonArray = jsonObject.getJSONArray("data");
-                        for(int i = 0; i < jsonArray.length(); i++)
-                        {
-                            JSONObject jsonObjectData = jsonArray.getJSONObject(i);
-                            String firstName = jsonObjectData.getString("first_name");
-                            String lastName = jsonObjectData.getString("last_name");
-                            /*String picture = jsonObjectData.getString("picture");
-
-                            if(!picture.equals("null"))
-                            {
-                                byte[] decodedString = Base64.decode(picture, Base64.DEFAULT);
-                                Bitmap decodedByte = BitmapFactory.decodeByteArray(decodedString, 0, decodedString.length);
-                                imgViewPicture.setImageBitmap(decodedByte);
-                            }*/
-
-                            tvFullName.setText(firstName + " " + lastName);
+                        if (username != null) {
+                            Username = username;
                         }
+
+                        if (firstName == null) {
+                            firstName = "";
+                        }
+                        if (lastName == null) {
+                            lastName = "";
+                        }
+
+                        tvFullName.setText((firstName + " " + lastName).trim());
                     }
-
-                } catch (Exception e) {
-
-                    Toast.makeText(SettingActivity.this, e.getMessage(), Toast.LENGTH_SHORT).show();
-                }
-            }
-        }, new com.android.volley.Response.ErrorListener() {
-            @Override
-            public void onErrorResponse(VolleyError error)
-            {
-                Toast.makeText(SettingActivity.this, error.toString(), Toast.LENGTH_SHORT).show();
-            }
-        }) {
-            @Override
-            public String getBodyContentType() {
-                return "application/x-www-form-urlencoded; charset=UTF-8";
-            }
-
-            @Override
-            protected Map<String, String> getParams()
-            {
-                Map<String, String> params = new HashMap<String, String>();
-                params.put("username", Username);
-                return params;
-            }
-        };
-        request.setRetryPolicy(new DefaultRetryPolicy(
-                10000,
-                DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
-                DefaultRetryPolicy.DEFAULT_BACKOFF_MULT)
-        );
-        queue.add(request);
+                })
+                .addOnFailureListener(e -> Toast.makeText(SettingActivity.this, "Failed to load account.", Toast.LENGTH_SHORT).show());
     }
 }

@@ -154,7 +154,12 @@ public class Renderer implements UiHelper.RendererCallback {
 
   /** @hide */
   public void setClearColor(Color color) {
-    view.setClearColor(color.r, color.g, color.b, color.a);
+    com.google.android.filament.Renderer.ClearOptions options =
+        new com.google.android.filament.Renderer.ClearOptions();
+    options.clearColor = new float[] {color.r, color.g, color.b, color.a};
+    options.clear = true;
+    options.discard = true;
+    renderer.setClearOptions(options);
   }
 
   /** @hide */
@@ -275,7 +280,7 @@ public class Renderer implements UiHelper.RendererCallback {
           throw new AssertionError("Internal Error: Failed to get swap chain");
         }
 
-        if (renderer.beginFrame(swapChainLocal)) {
+        if (renderer.beginFrame(swapChainLocal, System.nanoTime())) {
           if (preRenderCallback != null) {
             preRenderCallback.preRender(renderer, swapChainLocal, camera);
           }
@@ -411,7 +416,6 @@ public class Renderer implements UiHelper.RendererCallback {
     // TODO: This functionality should probably be exposed to the developer eventually.
     DynamicResolutionOptions options = new DynamicResolutionOptions();
     options.enabled = isEnabled;
-    options.targetFrameTimeMilli = 1000.0f / 30.0f;
     view.setDynamicResolutionOptions(options);
   }
 
@@ -429,15 +433,15 @@ public class Renderer implements UiHelper.RendererCallback {
 
   /** @hide Used internally by ArSceneView. */
   
-  public void setPostProcessingEnabled(boolean enablePostProcessing) {return ;}
-
-
+  public void setPostProcessingEnabled(boolean enablePostProcessing) {
+    view.setPostProcessingEnabled(enablePostProcessing);
+  }
 
   /** @hide Used internally by ArSceneView */
   
-  public void setRenderQuality(com.google.android.filament.View.RenderQuality renderQuality) {return ;}
-
-
+  public void setRenderQuality(com.google.android.filament.View.RenderQuality renderQuality) {
+    view.setRenderQuality(renderQuality);
+  }
 
   /**
    * Sets a high performance configuration for the filament view. Disables MSAA, disables
@@ -446,7 +450,17 @@ public class Renderer implements UiHelper.RendererCallback {
    * @hide Used internally by ArSceneView
    */
   
-  public void enablePerformanceMode() {return ;}
+  public void enablePerformanceMode() {
+    view.setAntiAliasing(com.google.android.filament.View.AntiAliasing.NONE);
+    view.setPostProcessingEnabled(false);
+    view.setDithering(com.google.android.filament.View.Dithering.NONE);
+    view.setShadowingEnabled(false);
+    com.google.android.filament.View.RenderQuality renderQuality =
+        new com.google.android.filament.View.RenderQuality();
+    renderQuality.hdrColorBuffer =
+        com.google.android.filament.View.QualityLevel.LOW;
+    view.setRenderQuality(renderQuality);
+  }
 
 
 
@@ -554,7 +568,6 @@ public class Renderer implements UiHelper.RendererCallback {
 
     setDynamicResolutionEnabled(true);
 
-    emptyView.setClearColor(0, 0, 0, 1);
     emptyView.setCamera(engine.createCamera());
     emptyView.setScene(engine.createScene());
   }

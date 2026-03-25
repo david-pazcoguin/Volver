@@ -1,6 +1,7 @@
 package com.google.ar.sceneform.rendering;
 
 import android.graphics.SurfaceTexture;
+import android.util.Log;
 import androidx.annotation.Nullable;
 import android.view.Surface;
 import com.google.android.filament.Stream;
@@ -46,24 +47,38 @@ public class ExternalTexture {
   }
 
   /**
-   * Creates an ExternalTexture from an OpenGL ES textureId without a SurfaceTexture. For internal
-   * use only.
+   * Creates an ExternalTexture from an existing OpenGL ES texture for the AR camera stream.
+   * Uses Filament's importTexture() to wrap the ARCore GL_TEXTURE_EXTERNAL_OES texture.
+   *
+   * <p>Filament 1.32+ removed StreamType.TEXTURE_ID. importTexture() directly imports
+   * the GL texture by name, which is functionally equivalent.
+   *
+   * <p>Width/height are intentionally omitted — for imported SAMPLER_EXTERNAL textures,
+   * the actual dimensions come from the underlying EGLImage/HardwareBuffer that ARCore binds.
+   * Setting explicit dimensions can cause Filament to allocate conflicting internal storage.
    */
   @SuppressWarnings("initialization")
-  ExternalTexture(int textureId, int width, int height) {
-    // Explicitly set the surface and surfaceTexture to null, since they are unused in this case.
-    surfaceTexture = null;
-    surface = null;
+  ExternalTexture(int textureId) {
+    this.surfaceTexture = null;
+    this.surface = null;
 
-    // Create the filament stream.
-    Stream stream =
-        new Stream.Builder()
-            .stream(textureId)
-                .width(width)
-                .height(height)
-                .build(EngineInstance.getEngine().getFilamentEngine());
+    IEngine engine = EngineInstance.getEngine();
 
-    initialize(stream);
+    filamentTexture =
+        new com.google.android.filament.Texture.Builder()
+            .sampler(com.google.android.filament.Texture.Sampler.SAMPLER_EXTERNAL)
+            .format(com.google.android.filament.Texture.InternalFormat.RGB16F)
+            .importTexture((long) textureId)
+            .build(engine.getFilamentEngine());
+
+    this.filamentStream = null;
+
+    Log.e(TAG, "Camera ExternalTexture: GL texId=" + textureId
+        + " filament=" + (filamentTexture != null));
+
+    ResourceManager.getInstance()
+        .getExternalTextureCleanupRegistry()
+        .register(this, new CleanupCallback(filamentTexture, null));
   }
 
   /** Gets the surface texture created for this ExternalTexture. */
