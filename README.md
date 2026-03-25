@@ -10,17 +10,19 @@ Volver is an Android augmented-reality tour guide app for exploring **Intramuros
 2. [Architecture Overview](#architecture-overview)
 3. [Tech Stack](#tech-stack)
 4. [Project Structure](#project-structure)
-5. [Getting Started](#getting-started)
-6. [Configuration Reference](#configuration-reference)
-7. [Firestore Data Model](#firestore-data-model)
-8. [Security Standards](#security-standards)
-9. [Performance Standards](#performance-standards)
-10. [Code Conventions](#code-conventions)
-11. [Adding New Missions](#adding-new-missions)
-12. [Adding New 3D Models](#adding-new-3d-models)
-13. [Deployment Checklist](#deployment-checklist)
-14. [Troubleshooting](#troubleshooting)
-15. [License](#license)
+5. [Sceneform / Filament Modifications](#sceneform--filament-modifications)
+6. [Getting Started](#getting-started)
+7. [Configuration Reference](#configuration-reference)
+8. [Firestore Data Model](#firestore-data-model)
+9. [Security Standards](#security-standards)
+10. [Performance Standards](#performance-standards)
+11. [Code Conventions](#code-conventions)
+12. [Adding New Missions](#adding-new-missions)
+13. [Adding New 3D Models](#adding-new-3d-models)
+14. [Deployment Checklist](#deployment-checklist)
+15. [Troubleshooting](#troubleshooting)
+16. [Further Documentation](#further-documentation)
+17. [License](#license)
 
 ---
 
@@ -143,9 +145,12 @@ Volver/
 ├── firebase.json                 # Firebase project config
 ├── sceneformsrc/                 # Sceneform runtime module (Filament/GLB)
 ├── sceneformux/                  # Sceneform UX module (ArFragment, TransformableNode)
-├── BLOCKCHAIN_SETUP.md           # Step-by-step deployment guide
-├── FIREBASE_SECURITY_NOTES.md    # Security considerations for Firestore rules
-└── .gitignore                    # Excludes secrets, build artifacts, google-services.json
+├── AR_CAMERA_ARCHITECTURE.md      # How the camera rendering pipeline works (Filament 1.32)
+├── PERFORMANCE_GUIDE.md           # All performance optimizations explained
+├── BUILD_AND_DEPLOY.md            # Build, install, debug, and deploy guide
+├── BLOCKCHAIN_SETUP.md            # Step-by-step blockchain deployment guide
+├── FIREBASE_SECURITY_NOTES.md     # Security considerations for Firestore rules
+└── .gitignore                     # Excludes secrets, build artifacts, google-services.json
 ```
 
 ### Java Source Files — Quick Reference
@@ -167,6 +172,36 @@ Volver/
 | `PolygonService` | Builds + sends Polygon transactions | Web3j, BuildConfig |
 | `MissionCompletionHelper` | Firestore CRUD for missions, wallet, whitelist requests | FirebaseFirestore, FirebaseFunctions |
 | `FirebaseConfig` | Centralized Firebase instance access + field constants | FirebaseAuth, Firestore, Functions |
+
+---
+
+## Sceneform / Filament Modifications
+
+This project uses a **heavily modified fork of Google Sceneform** upgraded from Filament ~1.4 to **Filament 1.32.0**. The original Sceneform 1.15 SDK is no longer maintained by Google. These modifications are critical for the AR camera to work.
+
+> **⚠️ Read [AR_CAMERA_ARCHITECTURE.md](AR_CAMERA_ARCHITECTURE.md) before modifying any rendering code.**
+
+### What Was Changed and Why
+
+| File | Change | Reason |
+|------|--------|--------|
+| `ExternalTexture.java` | New constructor using `importTexture()` | Filament 1.32 removed `StreamType.TEXTURE_ID` |
+| `CameraStream.java` | Texture created eagerly in constructor | Eliminates race condition with async material loading |
+| `ArSceneView.java` | `renderOnly` flag + disabled plane visuals | 60fps rendering without breaking camera |
+| `SceneView.java` | Render-only branch in frame loop | Re-present frames without scene graph traversal |
+| `Renderer.java` | `enablePerformanceMode()` | Disable MSAA, post-processing, shadows for mid-range devices |
+| `PlaneRenderer.java` | Early returns when disabled | Skip unnecessary plane overlay processing |
+| `PlaneVisualizer.java` | Polygon boundary caching | Skip geometry rebuild when plane shape unchanged |
+| `ArFragment.java` | Disabled depth/light estimation, horizontal-only planes | Reduce ARCore ML overhead |
+| `BaseArFragment.java` | Frame timestamp deduplication | Skip redundant `getUpdatedTrackables()` calls |
+
+### Camera Material
+
+The camera background uses a custom Filament material compiled with `matc` v1.32.0. The vertex shader undoes Filament's View-Projection transform so the camera quad fills the screen. See [AR_CAMERA_ARCHITECTURE.md](AR_CAMERA_ARCHITECTURE.md#camera-material-matc) for details.
+
+### Key Rule
+
+**Never change `onBeginFrame()` to `return true`.** This causes the camera to go black because `doUpdate()` runs on stale ARCore frames. The `renderOnly` flag is the correct solution for 60fps rendering.
 
 ---
 
@@ -355,7 +390,15 @@ All security measures applied to this project:
 
 ## Performance Standards
 
-All performance optimizations applied to this project:
+All performance optimizations applied to this project. For detailed explanations, see [PERFORMANCE_GUIDE.md](PERFORMANCE_GUIDE.md).
+
+### AR Rendering (Sceneform / Filament)
+- **Filament renderer**: MSAA off, post-processing off, dithering off, shadows off, HDR quality LOW
+- **ARCore config**: Depth disabled, light estimation disabled, horizontal planes only
+- **Plane rendering**: Fully disabled (visuals only — detection active for hit-testing)
+- **Polygon caching**: PlaneVisualizer skips geometry rebuild when plane boundary unchanged
+- **Frame dedup**: BaseArFragment skips `getUpdatedTrackables()` when frame timestamp unchanged
+- **Render-only passes**: Re-present camera frames at 60fps without scene graph traversal (via `renderOnly` flag)
 
 ### Memory & Allocation
 - `ARActivity` reuses a `float[] distanceResults` class field instead of allocating per location check
@@ -588,6 +631,30 @@ firebase deploy --only firestore:rules,functions
 - **Skip location requirement**: Temporarily set `ACTIVATION_RADIUS_METERS = 50000.0f` in `ARActivity.java` to test AR anywhere
 - **Check Firestore data**: Firebase Console → Firestore → `users/{uid}/missions/` should show 5 documents
 - **Check whitelist**: Search your contract on amoy.polygonscan.com → Events tab → `AddressWhitelisted`
+
+### AR Camera Issues
+
+| Symptom | Solution |
+|---------|----------|
+| Camera shows black screen | Do NOT return `true` from `onBeginFrame()`. Check that the `renderOnly` flag is working. See [AR_CAMERA_ARCHITECTURE.md](AR_CAMERA_ARCHITECTURE.md#known-pitfalls) |
+| Camera renders at ~30fps (judder) | The `renderOnly` flag may not be working. Check `SceneView.doFrameNoRepost()` has the `else if (renderOnly)` branch |
+| Material fails to load | Recompile `.matc` with matching Filament version. See [BUILD_AND_DEPLOY.md](BUILD_AND_DEPLOY.md#material-compilation) |
+| App crashes on `setExternalImage()` | This API was removed in Filament 1.32. Use `importTexture()` instead |
+| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | Uninstall the old APK first: `adb uninstall com.wheic.arapp` |
+| Log.d() not visible in logcat | Some ROMs (Oppo ColorOS) suppress user-app `Log.d()`/`Log.w()`. Use `Log.e()` for debugging |
+
+---
+
+## Further Documentation
+
+| Document | Description |
+|----------|-------------|
+| [AR_CAMERA_ARCHITECTURE.md](AR_CAMERA_ARCHITECTURE.md) | **Start here** if you need to modify AR rendering. Covers the camera pipeline, ExternalTexture, the renderOnly flag, the vertex shader trick, and all 9 modified Sceneform files. |
+| [PERFORMANCE_GUIDE.md](PERFORMANCE_GUIDE.md) | Every performance optimization with explanations. Filament settings, ARCore config, plane caching, frame dedup, and how to measure performance. |
+| [BUILD_AND_DEPLOY.md](BUILD_AND_DEPLOY.md) | Build commands, ADB installation, multi-device setup, material compilation, common build errors and fixes. |
+| [BLOCKCHAIN_SETUP.md](BLOCKCHAIN_SETUP.md) | Step-by-step guide for the NFT system: Firebase backend, MetaMask, Polygon smart contract deployment, IPFS metadata. |
+| [FIREBASE_SECURITY_NOTES.md](FIREBASE_SECURITY_NOTES.md) | Firestore security rules explanation, caveats about client-updatable fields, and recommended hardening. |
+| [intramuros_3d_character.md](intramuros_3d_character.md) | Character definitions for the 5 AR missions (historical figures, dialogue, appearance). |
 
 ---
 
