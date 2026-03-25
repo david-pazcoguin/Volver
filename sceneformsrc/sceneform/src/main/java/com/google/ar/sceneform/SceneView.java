@@ -27,6 +27,8 @@ public class SceneView extends SurfaceView implements Choreographer.FrameCallbac
   private static final String TAG = SceneView.class.getSimpleName();
 
   @Nullable private Renderer renderer = null;
+  /** Set by subclasses to request a render-only pass (no scene update). */
+  protected boolean renderOnly = false;
   private final FrameTime frameTime = new FrameTime();
 
   private Scene scene;
@@ -333,6 +335,11 @@ public class SceneView extends SurfaceView implements Choreographer.FrameCallbac
     if (onBeginFrame(frameTimeNanos)) {
       doUpdate(frameTimeNanos);
       doRender();
+    } else if (renderOnly) {
+      // Re-present the same camera frame at display refresh rate
+      // without traversing the scene graph.
+      doRender();
+      renderOnly = false;
     }
 
     if (debugEnabled) {

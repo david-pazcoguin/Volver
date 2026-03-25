@@ -72,7 +72,7 @@ public class CameraStream {
     // No width/height needed — importTexture uses the GL texture's actual dimensions.
     cameraTexture = new ExternalTexture(cameraTextureId);
     isTextureInitialized = true;
-    Log.d(TAG, "CameraStream: created ExternalTexture for texId=" + cameraTextureId);
+    Log.e(TAG, "CameraStream: created ExternalTexture for texId=" + cameraTextureId);
 
     // create screen quad geometry to camera stream to
     ShortBuffer indexBufferData = ShortBuffer.allocate(CAMERA_INDICES.length);
@@ -171,7 +171,7 @@ public class CameraStream {
 
   public void setCameraMaterial(Material material) {
     cameraMaterial = material;
-    Log.d(TAG, "setCameraMaterial called, isTextureInitialized=" + isTextureInitialized()
+    Log.e(TAG, "setCameraMaterial called, isTextureInitialized=" + isTextureInitialized()
         + ", renderable=" + cameraStreamRenderable);
 
     // The ExternalTexture can't be created until we receive the first AR Core Frame so that we
@@ -183,11 +183,12 @@ public class CameraStream {
     }
 
     material.setExternalTexture(MATERIAL_CAMERA_TEXTURE, Preconditions.checkNotNull(cameraTexture));
-    Log.d(TAG, "setCameraMaterial: external texture set on material");
+    Log.e(TAG, "setCameraMaterial: external texture set on material");
 
     if (cameraStreamRenderable == UNINITIALIZED_FILAMENT_RENDERABLE) {
       initializeFilamentRenderable();
-      Log.d(TAG, "setCameraMaterial: renderable initialized, entity=" + cameraStreamRenderable);
+      Log.e(TAG, "setCameraMaterial: renderable initialized, entity=" + cameraStreamRenderable
+          + ", vertexBuffer=" + cameraVertexBuffer + ", indexBuffer=" + cameraIndexBuffer);
     } else {
       RenderableManager renderableManager = EngineInstance.getEngine().getRenderableManager();
       int renderableInstance = renderableManager.getInstance(cameraStreamRenderable);

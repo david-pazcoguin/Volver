@@ -69,6 +69,8 @@ public class ArFragment extends BaseArFragment {
     Config config = new Config(session);
     // Disable heavy ML features that cause frame drops on mid-range devices.
     config.setDepthMode(Config.DepthMode.DISABLED);
+    config.setLightEstimationMode(Config.LightEstimationMode.DISABLED);
+    config.setPlaneFindingMode(Config.PlaneFindingMode.HORIZONTAL);
     return config;
   }
 

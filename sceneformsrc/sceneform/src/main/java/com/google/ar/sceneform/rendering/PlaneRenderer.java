@@ -169,8 +169,12 @@ public class PlaneRenderer {
 
   /** @hide PlaneRenderer is updated in a different package, but not part of external API. */
   public void update(Frame frame, int viewWidth, int viewHeight) {
+    if (!isEnabled) {
+      return;
+    }
+
     Collection<Plane> updatedPlanes = frame.getUpdatedTrackables(Plane.class);
-    Vector3 focusPoint = getFocusPoint(frame, viewWidth, viewHeight);
+    Vector3 focusPoint = isVisible ? getFocusPoint(frame, viewWidth, viewHeight) : new Vector3();
 
     @SuppressWarnings("nullness")
     @Nullable

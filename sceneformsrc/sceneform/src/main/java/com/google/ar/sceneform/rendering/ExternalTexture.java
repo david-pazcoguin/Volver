@@ -73,7 +73,7 @@ public class ExternalTexture {
 
     this.filamentStream = null;
 
-    Log.d(TAG, "Camera ExternalTexture: GL texId=" + textureId
+    Log.e(TAG, "Camera ExternalTexture: GL texId=" + textureId
         + " filament=" + (filamentTexture != null));
 
     ResourceManager.getInstance()

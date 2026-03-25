@@ -516,12 +516,21 @@ public abstract class BaseArFragment extends Fragment
     }
   }
 
+  private long lastOnUpdateTimestamp = -1;
+
   @Override
   public void onUpdate(FrameTime frameTime) {
     Frame frame = arSceneView.getArFrame();
     if (frame == null) {
       return;
     }
+
+    // Skip when the ARCore frame hasn't changed (same camera image).
+    long ts = frame.getTimestamp();
+    if (ts == lastOnUpdateTimestamp) {
+      return;
+    }
+    lastOnUpdateTimestamp = ts;
 
     for (Plane plane : frame.getUpdatedTrackables(Plane.class)) {
       if (plane.getTrackingState() == TrackingState.TRACKING) {
