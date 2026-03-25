@@ -63,7 +63,7 @@ public class MissionCompletionHelper {
                                        CompletionCallback callback) {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) {
-            callback.onError("Network error");
+            callback.onError("Please sign in first.");
             return;
         }
 
@@ -71,6 +71,8 @@ public class MissionCompletionHelper {
             Toast.makeText(context,
                     "No internet connection. Progress will sync when you reconnect.",
                     Toast.LENGTH_LONG).show();
+            callback.onError("No internet connection.");
+            return;
         }
 
         FirebaseFirestore db = FirebaseConfig.getFirestore();
@@ -103,7 +105,7 @@ public class MissionCompletionHelper {
                                           ProgressCallback callback) {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) {
-            callback.onError("Network error");
+            callback.onError("Please sign in first.");
             return;
         }
 
@@ -111,6 +113,8 @@ public class MissionCompletionHelper {
             Toast.makeText(context,
                     "No internet connection. Progress will sync when you reconnect.",
                     Toast.LENGTH_LONG).show();
+            callback.onError("No internet connection.");
+            return;
         }
 
         FirebaseFirestore db = FirebaseConfig.getFirestore();
@@ -150,7 +154,7 @@ public class MissionCompletionHelper {
                                          CompletionCallback callback) {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) {
-            callback.onError("Network error");
+            callback.onError("Please sign in first.");
             return;
         }
 
@@ -158,6 +162,8 @@ public class MissionCompletionHelper {
             Toast.makeText(context,
                     "No internet connection. Progress will sync when you reconnect.",
                     Toast.LENGTH_LONG).show();
+            callback.onError("No internet connection.");
+            return;
         }
 
         FirebaseConfig.getFirestore()
@@ -177,7 +183,7 @@ public class MissionCompletionHelper {
                                         CompletionCallback callback) {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) {
-            callback.onError("Network error");
+            callback.onError("Please sign in first.");
             return;
         }
 

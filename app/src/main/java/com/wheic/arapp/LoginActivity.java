@@ -117,7 +117,13 @@ public class LoginActivity extends AppCompatActivity {
                                         || exception instanceof FirebaseAuthInvalidCredentialsException) {
                                     Toast.makeText(LoginActivity.this, "Invalid credentials.", Toast.LENGTH_SHORT).show();
                                 } else if (exception != null) {
-                                    Toast.makeText(LoginActivity.this, "Login failed. Please try again.", Toast.LENGTH_SHORT).show();
+                                    String msg = exception.getMessage();
+                                    if (msg != null && (msg.contains("network") || msg.contains("NETWORK")
+                                            || msg.contains("connect") || msg.contains("timeout"))) {
+                                        Toast.makeText(LoginActivity.this, "Network error. Check your connection.", Toast.LENGTH_SHORT).show();
+                                    } else {
+                                        Toast.makeText(LoginActivity.this, "Login failed. Please try again.", Toast.LENGTH_SHORT).show();
+                                    }
                                 } else {
                                     Toast.makeText(LoginActivity.this, "Invalid credentials.", Toast.LENGTH_SHORT).show();
                                 }

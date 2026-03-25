@@ -160,7 +160,7 @@ public class NFTClaimActivity extends AppCompatActivity {
                 android.content.res.ColorStateList.valueOf(0xFF2E7D32)); // green
 
         tvMintStatus.setText("Your Intramuros Passport has been minted!\n\nTransaction:\n" + txHash
-                + "\n\nView on PolygonScan: https://amoy.polygonscan.com/tx/" + txHash);
+                + "\n\nView on PolygonScan: " + PolygonService.getPolygonScanTxUrl(txHash));
         tvMintStatus.setVisibility(View.VISIBLE);
 
         Toast.makeText(this, "NFT minted successfully!", Toast.LENGTH_LONG).show();

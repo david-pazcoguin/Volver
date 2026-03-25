@@ -728,10 +728,10 @@ public class ArSceneView extends SceneView {
   private void initializePlaneRenderer() {
     Renderer renderer = Preconditions.checkNotNull(getRenderer());
     planeRenderer = new PlaneRenderer(renderer);
-    // Disable plane overlay rendering for performance; plane detection still works for hit testing
-    planeRenderer.setVisible(false);
-    planeRenderer.setShadowReceiver(false);
-    planeRenderer.setEnabled(false);
+    // Enable plane overlay so users can see where to tap
+    planeRenderer.setVisible(true);
+    planeRenderer.setShadowReceiver(true);
+    planeRenderer.setEnabled(true);
   }
 
   private void initializeCameraStream() {
