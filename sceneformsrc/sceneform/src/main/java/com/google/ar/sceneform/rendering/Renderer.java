@@ -433,15 +433,15 @@ public class Renderer implements UiHelper.RendererCallback {
 
   /** @hide Used internally by ArSceneView. */
   
-  public void setPostProcessingEnabled(boolean enablePostProcessing) {return ;}
-
-
+  public void setPostProcessingEnabled(boolean enablePostProcessing) {
+    view.setPostProcessingEnabled(enablePostProcessing);
+  }
 
   /** @hide Used internally by ArSceneView */
   
-  public void setRenderQuality(com.google.android.filament.View.RenderQuality renderQuality) {return ;}
-
-
+  public void setRenderQuality(com.google.android.filament.View.RenderQuality renderQuality) {
+    view.setRenderQuality(renderQuality);
+  }
 
   /**
    * Sets a high performance configuration for the filament view. Disables MSAA, disables
@@ -450,7 +450,17 @@ public class Renderer implements UiHelper.RendererCallback {
    * @hide Used internally by ArSceneView
    */
   
-  public void enablePerformanceMode() {return ;}
+  public void enablePerformanceMode() {
+    view.setAntiAliasing(com.google.android.filament.View.AntiAliasing.NONE);
+    view.setPostProcessingEnabled(false);
+    view.setDithering(com.google.android.filament.View.Dithering.NONE);
+    view.setShadowingEnabled(false);
+    com.google.android.filament.View.RenderQuality renderQuality =
+        new com.google.android.filament.View.RenderQuality();
+    renderQuality.hdrColorBuffer =
+        com.google.android.filament.View.QualityLevel.LOW;
+    view.setRenderQuality(renderQuality);
+  }
 
 
 
