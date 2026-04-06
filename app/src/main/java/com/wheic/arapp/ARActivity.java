@@ -55,6 +55,8 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private CompletableFuture<ModelRenderable> modelFuture;
     private boolean modelLoadFailed = false;
     private final Scene.OnUpdateListener sceneUpdateListener = this::onSceneUpdate;
+    private int diagnosticFrameCount = 0;
+    private boolean cameraStreamDiagLogged = false;
 
     // ── Location ────────────────────────────────────────────────────
     private FusedLocationProviderClient fusedLocationClient;
@@ -186,13 +188,43 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
     /** Called once when the ARCore session is first created. */
     private void onSessionCreated(Session session) {
-        configureGeospatialMode();
+        Log.d(TAG, "onSessionCreated: session=" + (session != null));
+        // Geospatial configuration is deferred to onSceneUpdate because
+        // setupSession() has not been called yet at this point.
     }
 
     /** Called every frame — used to retry geospatial config and update status. */
     private void onSceneUpdate(FrameTime frameTime) {
         if (!geospatialConfigured) {
             configureGeospatialMode();
+        }
+
+        // One-time diagnostic: after a few frames, check if camera stream is healthy
+        diagnosticFrameCount++;
+        if (!cameraStreamDiagLogged && diagnosticFrameCount == 30) {
+            cameraStreamDiagLogged = true;
+            logCameraStreamDiagnostics();
+        }
+    }
+
+    private void logCameraStreamDiagnostics() {
+        if (arCam == null || arCam.getArSceneView() == null) {
+            Log.e(TAG, "DIAG: ArFragment or ArSceneView is null!");
+            return;
+        }
+        com.google.ar.sceneform.ArSceneView arView = arCam.getArSceneView();
+        Session session = arView.getSession();
+        Log.e(TAG, "DIAG: session=" + (session != null)
+                + ", frame=" + (arView.getArFrame() != null)
+                + ", cameraTextureId=" + arView.getCameraTextureId()
+                + ", cameraStreamHealthy=" + arView.isCameraStreamHealthy());
+        if (session != null) {
+            com.google.ar.core.Camera cam = null;
+            try {
+                com.google.ar.core.Frame f = arView.getArFrame();
+                if (f != null) cam = f.getCamera();
+            } catch (Exception e) { /* ignore */ }
+            Log.e(TAG, "DIAG: ARCore camera tracking=" + (cam != null ? cam.getTrackingState() : "null"));
         }
     }
 
@@ -396,17 +428,25 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         // Check if geospatial is supported before enabling
         try {
             if (!session.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
+                Log.w(TAG, "Geospatial mode not supported on this device.");
+                geospatialConfigured = true; // Stop retrying
                 return;
             }
         } catch (Exception e) {
+            Log.w(TAG, "Error checking geospatial support", e);
             return;
         }
 
-        Config config = session.getConfig();
-        config.setGeospatialMode(Config.GeospatialMode.ENABLED);
-        session.configure(config);
-        geospatialConfigured = true;
-        Log.d(TAG, "Geospatial mode enabled successfully.");
+        try {
+            Config config = session.getConfig();
+            config.setGeospatialMode(Config.GeospatialMode.ENABLED);
+            session.configure(config);
+            geospatialConfigured = true;
+            Log.d(TAG, "Geospatial mode enabled successfully.");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to configure geospatial mode", e);
+            geospatialConfigured = true; // Stop retrying to avoid per-frame exceptions
+        }
     }
 
     private boolean isGeospatialAvailable() {

@@ -43,7 +43,7 @@ public class CameraStream {
   private static final int UNINITIALIZED_FILAMENT_RENDERABLE = -1;
 
   private final Scene scene;
-  private final int cameraTextureId;
+  private int cameraTextureId;
 
   private int cameraStreamRenderable = UNINITIALIZED_FILAMENT_RENDERABLE;
 
@@ -60,6 +60,7 @@ public class CameraStream {
   private int renderablePriority = Renderable.RENDER_PRIORITY_FIRST;
 
   private boolean isTextureInitialized = false;
+  private boolean materialLoadFailed = false;
 
   @SuppressWarnings({"AndroidApiChecker", "FutureReturnValueIgnored", "initialization"})
   public CameraStream(int cameraTextureId, Renderer renderer) {
@@ -68,11 +69,17 @@ public class CameraStream {
 
     IEngine engine = EngineInstance.getEngine();
 
-    // Create camera ExternalTexture immediately (matches SceneView approach).
-    // No width/height needed — importTexture uses the GL texture's actual dimensions.
-    cameraTexture = new ExternalTexture(cameraTextureId);
-    isTextureInitialized = true;
-    Log.e(TAG, "CameraStream: created ExternalTexture for texId=" + cameraTextureId);
+    // If cameraTextureId == 0, defer ExternalTexture creation to
+    // reinitializeTexture() which runs on the first frame when the
+    // correct EGL context is guaranteed to be active.
+    if (cameraTextureId != 0) {
+      cameraTexture = new ExternalTexture(cameraTextureId);
+      isTextureInitialized = true;
+      Log.e(TAG, "CameraStream: created ExternalTexture for texId=" + cameraTextureId);
+    } else {
+      isTextureInitialized = false;
+      Log.e(TAG, "CameraStream: deferred ExternalTexture creation (texId=0)");
+    }
 
     // create screen quad geometry to camera stream to
     ShortBuffer indexBufferData = ShortBuffer.allocate(CAMERA_INDICES.length);
@@ -132,6 +139,7 @@ public class CameraStream {
         .thenAccept(
             material -> {
               defaultCameraMaterial = material;
+              Log.e(TAG, "Camera material loaded successfully");
 
               // Only set the camera material if it hasn't already been set to a custom material.
               if (cameraMaterial == null) {
@@ -140,7 +148,12 @@ public class CameraStream {
             })
         .exceptionally(
             throwable -> {
-              Log.e(TAG, "Unable to load camera stream materials.", throwable);
+              materialLoadFailed = true;
+              Log.e(TAG, "CRITICAL: Unable to load camera stream materials. "
+                  + "Camera feed will NOT render (black screen). "
+                  + "Likely cause: sceneform_camera_material.matc is incompatible "
+                  + "with this Filament version. Recompile with matching matc tool.",
+                  throwable);
               return null;
             });
   }
@@ -149,15 +162,71 @@ public class CameraStream {
     return isTextureInitialized;
   }
 
+  public boolean isMaterialLoaded() {
+    return defaultCameraMaterial != null && !materialLoadFailed;
+  }
+
+  public boolean isMaterialLoadFailed() {
+    return materialLoadFailed;
+  }
+
+  public boolean isRenderableInitialized() {
+    return cameraStreamRenderable != UNINITIALIZED_FILAMENT_RENDERABLE;
+  }
+
+  /** Returns true if the camera stream pipeline is fully set up and should produce visible output. */
+  public boolean isHealthy() {
+    return isTextureInitialized && !materialLoadFailed
+        && cameraMaterial != null
+        && cameraStreamRenderable != UNINITIALIZED_FILAMENT_RENDERABLE;
+  }
+
   public void initializeTexture(Frame frame) {
     if (isTextureInitialized()) {
       return;
     }
-    // Texture is now created in the constructor, so this should never execute.
-    // Kept for API compatibility with ArSceneView.
+    // If texture not yet created (deferred mode), create it now.
+    if (cameraTextureId != 0) {
+      cameraTexture = new ExternalTexture(cameraTextureId);
+      isTextureInitialized = true;
+      Log.e(TAG, "initializeTexture: created ExternalTexture for texId=" + cameraTextureId);
+      // If the material was already loaded, bind it now
+      if (defaultCameraMaterial != null && cameraMaterial == null) {
+        setCameraMaterial(defaultCameraMaterial);
+      }
+    }
+  }
+
+  /**
+   * Recreates the ExternalTexture with a new GL texture ID.
+   * Called by ArSceneView when the camera texture needs to be rebound
+   * in a different EGL context (fixes black-camera on context mismatch).
+   */
+  public void reinitializeTexture(int newTextureId) {
+    this.cameraTextureId = newTextureId;
+    cameraTexture = new ExternalTexture(newTextureId);
+    isTextureInitialized = true;
+    Log.e(TAG, "reinitializeTexture: created ExternalTexture for texId=" + newTextureId);
+
+    // If material is already loaded, rebind the new texture to it.
+    // Must also recreate the Filament renderable since the texture changed.
+    if (defaultCameraMaterial != null) {
+      // Reset renderable so setCameraMaterial creates a new one
+      if (cameraStreamRenderable != UNINITIALIZED_FILAMENT_RENDERABLE) {
+        scene.remove(cameraStreamRenderable);
+        cameraStreamRenderable = UNINITIALIZED_FILAMENT_RENDERABLE;
+      }
+      cameraMaterial = null;
+      setCameraMaterial(defaultCameraMaterial);
+    }
   }
 
   public void recalculateCameraUvs(Frame frame) {
+    // Pull the latest camera frame into the ExternalTexture's SurfaceTexture.
+    if (cameraTexture != null) {
+      cameraTexture.updateCameraTexture();
+    }
+
     IEngine engine = EngineInstance.getEngine();
 
     FloatBuffer cameraUvCoords = this.cameraUvCoords;
