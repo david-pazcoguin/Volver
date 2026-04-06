@@ -23,6 +23,7 @@ import com.google.ar.core.exceptions.CameraNotAvailableException;
 import com.google.ar.core.exceptions.FatalException;
 
 import com.google.ar.sceneform.math.Vector3;
+import com.google.ar.sceneform.rendering.CameraBackgroundRenderer;
 import com.google.ar.sceneform.rendering.CameraStream;
 import com.google.ar.sceneform.rendering.Color;
 import com.google.ar.sceneform.rendering.EnvironmentalHdrLightEstimate;
@@ -63,6 +64,7 @@ public class ArSceneView extends SceneView {
 
   private Display display;
   private CameraStream cameraStream;
+  private CameraBackgroundRenderer cameraBackgroundRenderer;
   private PlaneRenderer planeRenderer;
   private boolean firstFrameLogged = false;
 
@@ -151,6 +153,19 @@ public class ArSceneView extends SceneView {
 
     // Session needs access to a texture id for updating the camera stream.
     session.setCameraTextureName(cameraTextureId);
+    Log.e(TAG, "setupSession: cameraTextureId=" + cameraTextureId
+        + ", cameraStream.textureInit=" + cameraStream.isTextureInitialized()
+        + ", cameraStream.materialLoaded=" + cameraStream.isMaterialLoaded());
+  }
+
+  /** Returns the GL texture ID used for the camera stream. */
+  public int getCameraTextureId() {
+    return cameraTextureId;
+  }
+
+  /** Returns true if the camera stream pipeline is fully healthy (texture + material + renderable). */
+  public boolean isCameraStreamHealthy() {
+    return cameraStream != null && cameraStream.isHealthy();
   }
 
   
@@ -437,7 +452,11 @@ public class ArSceneView extends SceneView {
       if (!firstFrameLogged) {
         firstFrameLogged = true;
         Log.e(TAG, "onBeginFrame: FIRST FRAME, cameraTextureId=" + cameraTextureId
-            + ", textureInit=" + cameraStream.isTextureInitialized());
+            + ", textureInit=" + cameraStream.isTextureInitialized()
+            + ", materialLoaded=" + cameraStream.isMaterialLoaded()
+            + ", materialFailed=" + cameraStream.isMaterialLoadFailed()
+            + ", renderableInit=" + cameraStream.isRenderableInitialized()
+            + ", healthy=" + cameraStream.isHealthy());
       }
 
       // Setup Camera Stream if needed.
@@ -448,6 +467,9 @@ public class ArSceneView extends SceneView {
       // Recalculate camera Uvs if necessary.
       if (shouldRecalculateCameraUvs(frame)) {
         cameraStream.recalculateCameraUvs(frame);
+        if (cameraBackgroundRenderer != null) {
+          cameraBackgroundRenderer.updateUvs(frame);
+        }
       }
 
       if (currentFrame != null && currentFrame.getTimestamp() == frame.getTimestamp()) {
@@ -740,6 +762,17 @@ public class ArSceneView extends SceneView {
     Renderer renderer = Preconditions.checkNotNull(getRenderer());
     cameraStream = new CameraStream(cameraTextureId, renderer);
     Log.e(TAG, "initializeCameraStream: CameraStream created");
+
+    // Direct GL camera rendering: bypass Filament's importTexture pipeline
+    // which does not display the camera on some device/driver combos.
+    cameraBackgroundRenderer = new CameraBackgroundRenderer();
+    final int texId = cameraTextureId;
+    renderer.setPostRenderCallback(() -> {
+      if (cameraBackgroundRenderer != null) {
+        cameraBackgroundRenderer.draw(texId);
+      }
+    });
+    Log.e(TAG, "initializeCameraStream: CameraBackgroundRenderer + post-render callback set");
   }
 
   private void ensureUpdateMode() {

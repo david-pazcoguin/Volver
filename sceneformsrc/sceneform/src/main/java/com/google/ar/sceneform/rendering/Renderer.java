@@ -93,8 +93,14 @@ public class Renderer implements UiHelper.RendererCallback {
         com.google.android.filament.Camera camera);
   }
 
+  /** @hide */
+  public interface PostRenderCallback {
+    void postRender();
+  }
+
   @Nullable private Runnable onFrameRenderDebugCallback = null;
   @Nullable private PreRenderCallback preRenderCallback;
+  @Nullable private PostRenderCallback postRenderCallback;
 
   /** @hide */
   @SuppressWarnings("initialization") // Suppress @UnderInitialization warning.
@@ -231,6 +237,11 @@ public class Renderer implements UiHelper.RendererCallback {
   }
 
   /** @hide */
+  public void setPostRenderCallback(@Nullable PostRenderCallback postRenderCallback) {
+    this.postRenderCallback = postRenderCallback;
+  }
+
+  /** @hide */
   public void render(boolean debugEnabled) {
     synchronized (this) {
       if (recreateSwapChain) {
@@ -294,6 +305,10 @@ public class Renderer implements UiHelper.RendererCallback {
           com.google.android.filament.View currentView =
               cameraProvider.isActive() ? view : emptyView;
           renderer.render(currentView);
+
+          if (postRenderCallback != null) {
+            postRenderCallback.postRender();
+          }
 
           synchronized (mirrors) {
             for (Mirror mirror : mirrors) {

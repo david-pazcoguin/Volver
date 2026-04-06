@@ -47,15 +47,8 @@ public class ExternalTexture {
   }
 
   /**
-   * Creates an ExternalTexture from an existing OpenGL ES texture for the AR camera stream.
-   * Uses Filament's importTexture() to wrap the ARCore GL_TEXTURE_EXTERNAL_OES texture.
-   *
-   * <p>Filament 1.32+ removed StreamType.TEXTURE_ID. importTexture() directly imports
-   * the GL texture by name, which is functionally equivalent.
-   *
-   * <p>Width/height are intentionally omitted — for imported SAMPLER_EXTERNAL textures,
-   * the actual dimensions come from the underlying EGLImage/HardwareBuffer that ARCore binds.
-   * Setting explicit dimensions can cause Filament to allocate conflicting internal storage.
+   * Creates an ExternalTexture for the AR camera stream by importing the
+   * ARCore GL_TEXTURE_EXTERNAL_OES texture into Filament.
    */
   @SuppressWarnings("initialization")
   ExternalTexture(int textureId) {
@@ -73,12 +66,19 @@ public class ExternalTexture {
 
     this.filamentStream = null;
 
-    Log.e(TAG, "Camera ExternalTexture: GL texId=" + textureId
+    Log.e(TAG, "Camera ExternalTexture (importTexture): GL texId=" + textureId
         + " filament=" + (filamentTexture != null));
 
     ResourceManager.getInstance()
         .getExternalTextureCleanupRegistry()
         .register(this, new CleanupCallback(filamentTexture, null));
+  }
+
+  /**
+   * No-op for the importTexture path. Kept for API compatibility.
+   */
+  public void updateCameraTexture() {
+    // importTexture() path: texture content is updated by ARCore directly.
   }
 
   /** Gets the surface texture created for this ExternalTexture. */
