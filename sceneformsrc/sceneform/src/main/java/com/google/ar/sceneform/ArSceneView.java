@@ -365,10 +365,13 @@ public class ArSceneView extends SceneView {
   public void onLayout(boolean changed, int left, int top, int right, int bottom) {
     super.onLayout(changed, left, top, right, bottom);
 
+    int width = right - left;
+    int height = bottom - top;
     if (session != null) {
-      int width = right - left;
-      int height = bottom - top;
       session.setDisplayGeometry(display.getRotation(), width, height);
+    }
+    if (cameraBackgroundRenderer != null) {
+      cameraBackgroundRenderer.setViewport(width, height);
     }
   }
 
@@ -467,10 +470,10 @@ public class ArSceneView extends SceneView {
       // Recalculate camera Uvs if necessary.
       if (shouldRecalculateCameraUvs(frame)) {
         cameraStream.recalculateCameraUvs(frame);
-        if (cameraBackgroundRenderer != null) {
-          cameraBackgroundRenderer.updateUvs(frame);
-        }
       }
+
+      // Update camera texture content EVERY frame
+      cameraStream.updateCameraFrame(frame);
 
       if (currentFrame != null && currentFrame.getTimestamp() == frame.getTimestamp()) {
         updated = false;
@@ -763,16 +766,9 @@ public class ArSceneView extends SceneView {
     cameraStream = new CameraStream(cameraTextureId, renderer);
     Log.e(TAG, "initializeCameraStream: CameraStream created");
 
-    // Direct GL camera rendering: bypass Filament's importTexture pipeline
-    // which does not display the camera on some device/driver combos.
-    cameraBackgroundRenderer = new CameraBackgroundRenderer();
-    final int texId = cameraTextureId;
-    renderer.setPostRenderCallback(() -> {
-      if (cameraBackgroundRenderer != null) {
-        cameraBackgroundRenderer.draw(texId);
-      }
-    });
-    Log.e(TAG, "initializeCameraStream: CameraBackgroundRenderer + post-render callback set");
+    // CameraBackgroundRenderer disabled: it runs on the wrong GL thread.
+    // Relying on Filament's own CameraStream renderable instead.
+    Log.e(TAG, "initializeCameraStream: using Filament CameraStream renderable (Stream path)");
   }
 
   private void ensureUpdateMode() {

@@ -238,6 +238,16 @@ public class CameraStream {
         engine.getFilamentEngine(), UV_BUFFER_INDEX, transformedCameraUvCoords);
   }
 
+  /**
+   * Updates the camera texture content from the ARCore Frame.
+   * Must be called EVERY frame (not just when display geometry changes).
+   */
+  public void updateCameraFrame(Frame frame) {
+    if (cameraTexture != null) {
+      cameraTexture.updateCameraFrame(frame);
+    }
+  }
+
   public void setCameraMaterial(Material material) {
     cameraMaterial = material;
     Log.e(TAG, "setCameraMaterial called, isTextureInitialized=" + isTextureInitialized()

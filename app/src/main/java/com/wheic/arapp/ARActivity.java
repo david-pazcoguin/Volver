@@ -425,28 +425,11 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             return;
         }
 
-        // Check if geospatial is supported before enabling
-        try {
-            if (!session.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
-                Log.w(TAG, "Geospatial mode not supported on this device.");
-                geospatialConfigured = true; // Stop retrying
-                return;
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Error checking geospatial support", e);
-            return;
-        }
-
-        try {
-            Config config = session.getConfig();
-            config.setGeospatialMode(Config.GeospatialMode.ENABLED);
-            session.configure(config);
-            geospatialConfigured = true;
-            Log.d(TAG, "Geospatial mode enabled successfully.");
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to configure geospatial mode", e);
-            geospatialConfigured = true; // Stop retrying to avoid per-frame exceptions
-        }
+        // Geospatial mode is disabled to prevent a native SIGABRT crash in
+        // ConfigureRuntimeSensors on some devices (e.g. SM-A356E).
+        // The app falls back to fused location for distance calculation.
+        Log.w(TAG, "Geospatial mode disabled (sensor config crash workaround). Using fused location.");
+        geospatialConfigured = true;
     }
 
     private boolean isGeospatialAvailable() {
