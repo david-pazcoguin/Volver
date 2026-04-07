@@ -2,6 +2,7 @@ package com.google.ar.sceneform;
 
 import android.content.Context;
 import android.media.Image;
+import android.opengl.GLES30;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
@@ -447,6 +448,9 @@ public class ArSceneView extends SceneView {
     boolean updated = true;
     try {
       Frame frame = session.update();
+      // Flush GL commands so the camera texture update is visible
+      // to Filament's shared EGL context on the render thread.
+      GLES30.glFlush();
       // No frame, no drawing.
       if (frame == null) {
         return false;
