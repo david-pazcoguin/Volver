@@ -1,24 +1,18 @@
 package com.google.ar.sceneform.rendering;
 
+import android.graphics.Bitmap;
 import android.graphics.SurfaceTexture;
-import android.opengl.EGL14;
-import android.opengl.EGLConfig;
-import android.opengl.EGLContext;
-import android.opengl.EGLDisplay;
-import android.opengl.EGLSurface;
-import android.opengl.GLES11Ext;
-import android.opengl.GLES20;
+import android.media.Image;
 import android.util.Log;
 import androidx.annotation.Nullable;
 import android.view.Surface;
 import com.google.android.filament.Stream;
+import com.google.android.filament.android.TextureHelper;
 import com.google.ar.core.Frame;
 import com.google.ar.sceneform.utilities.AndroidPreconditions;
 import com.google.ar.sceneform.utilities.Preconditions;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.FloatBuffer;
 
 /**
  * Creates an Android {@link SurfaceTexture} and {@link Surface} that can be displayed by Sceneform.
@@ -60,253 +54,161 @@ public class ExternalTexture {
 
   /**
    * Creates an ExternalTexture for the AR camera stream.
-   * Uses GPU blit to copy ARCore camera texture to a SurfaceTexture via an
-   * EGL window surface. The SurfaceTexture feeds Filament's Stream.
+   * Bypasses SurfaceTexture/Stream/OES entirely — uses a regular SAMPLER_2D
+   * Filament Texture with direct bitmap upload via TextureHelper.setBitmap().
+   * This eliminates the SurfaceTexture BufferQueue + OES texture pipeline
+   * that caused flickering on Mali GPUs.
    */
   @SuppressWarnings("initialization")
   ExternalTexture(int textureId) {
-    SurfaceTexture surfaceTexture = new SurfaceTexture(0);
-    surfaceTexture.detachFromGLContext();
-    // Set buffer size to common camera resolution; will be resized when actual
-    // camera dimensions are known from the first frame.
-    surfaceTexture.setDefaultBufferSize(1920, 1080);
-    this.surfaceTexture = surfaceTexture;
-
-    this.surface = new Surface(surfaceTexture);
-
-    IEngine engine = EngineInstance.getEngine();
-
-    Stream stream =
-        new Stream.Builder()
-            .stream(surfaceTexture)
-            .build(engine.getFilamentEngine());
-
-    initialize(stream);
-
+    // No SurfaceTexture or Surface needed — we upload directly to Filament
+    this.surfaceTexture = null;
+    this.surface = null;
     this.arCoreTextureId = textureId;
+    this.useDirectUpload = true;
 
-    Log.e(TAG, "Camera ExternalTexture (GPU blit): arCoreTexId=" + textureId
-        + " filament=" + (filamentTexture != null)
-        + " stream=" + (filamentStream != null));
+    // Texture will be created on first frame when we know the camera dimensions
+    this.filamentTexture = null;
+    this.filamentStream = null;
+
+    Log.e(TAG, "Camera ExternalTexture (DIRECT UPLOAD path): arCoreTexId=" + textureId);
   }
 
   private int arCoreTextureId = 0;
   private long lastFrameTimestamp = 0;
   private boolean bufferSizeSet = false;
-
-  // GPU blit fields
-  private EGLSurface blitEglSurface;
-  private EGLDisplay blitEglDisplay;
-  private int blitProgram = -1;
-  private boolean blitInitialized = false;
-  private FloatBuffer blitVertexBuf;
-  private FloatBuffer blitTexCoordBuf;
+  private Bitmap cameraBitmap;
+  private int[] cameraPixels;
+  private boolean hasBitmap = false;
+  private int frameCount = 0;
+  private int postCount = 0;
+  private int failCount = 0;
+  private boolean useDirectUpload = false;
 
   public void updateCameraTexture() {
     // No-op
   }
 
   /**
-   * Initializes the EGL surface and shader program for GPU blit.
+   * Acquires the camera image from ARCore, converts YUV→RGB on CPU,
+   * and pushes it to the SurfaceTexture via Canvas (no GL operations at all).
+   * Always re-posts the last good bitmap even when no new camera image is
+   * available, so Filament's Stream always has fresh data.
    */
-  private boolean initBlit() {
+  public void updateCameraFrame(Frame frame) {
+    frameCount++;
+    if (frame == null) return;
+    if (arCoreTextureId <= 0) return;
+
+    long timestamp = frame.getTimestamp();
+    boolean newFrame = (timestamp != lastFrameTimestamp);
+
+    if (frameCount <= 10 || frameCount % 60 == 0) {
+      Log.e(TAG, "updateCameraFrame: frame#" + frameCount + " newFrame=" + newFrame
+          + " ts=" + timestamp + " posts=" + postCount + " fails=" + failCount
+          + " direct=" + useDirectUpload);
+    }
+
+    if (!newFrame) return;
+    lastFrameTimestamp = timestamp;
+
+    Image cameraImage = null;
     try {
-      blitEglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
+      cameraImage = frame.acquireCameraImage();
+      int w = cameraImage.getWidth();
+      int h = cameraImage.getHeight();
 
-      int[] configAttribs = {
-          EGL14.EGL_RENDERABLE_TYPE, 0x40 /* ES3 */,
-          EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT,
-          EGL14.EGL_RED_SIZE, 8,
-          EGL14.EGL_GREEN_SIZE, 8,
-          EGL14.EGL_BLUE_SIZE, 8,
-          EGL14.EGL_NONE
-      };
-      EGLConfig[] configs = new EGLConfig[1];
-      int[] numConfig = new int[1];
-      EGL14.eglChooseConfig(blitEglDisplay, configAttribs, 0, configs, 0, 1, numConfig, 0);
-      if (numConfig[0] == 0) {
-        Log.e(TAG, "initBlit: no suitable EGL config");
-        return false;
+      if (!bufferSizeSet || cameraBitmap == null
+          || cameraBitmap.getWidth() != w || cameraBitmap.getHeight() != h) {
+        cameraBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        cameraPixels = new int[w * h];
+        bufferSizeSet = true;
+        Log.e(TAG, "Camera buffer sized: " + w + "x" + h);
+
+        if (useDirectUpload) {
+          // Create the Filament 2D texture now that we know dimensions
+          IEngine engine = EngineInstance.getEngine();
+          if (filamentTexture != null) {
+            engine.destroyTexture(filamentTexture);
+          }
+          filamentTexture = new com.google.android.filament.Texture.Builder()
+              .width(w)
+              .height(h)
+              .levels(1)
+              .sampler(com.google.android.filament.Texture.Sampler.SAMPLER_2D)
+              .format(com.google.android.filament.Texture.InternalFormat.SRGB8_A8)
+              .build(engine.getFilamentEngine());
+          Log.e(TAG, "Created SAMPLER_2D Filament texture: " + w + "x" + h);
+        }
       }
 
-      blitEglSurface = EGL14.eglCreateWindowSurface(
-          blitEglDisplay, configs[0], surface, new int[]{EGL14.EGL_NONE}, 0);
-      if (blitEglSurface == EGL14.EGL_NO_SURFACE) {
-        Log.e(TAG, "initBlit: failed to create EGL window surface, err=0x"
-            + Integer.toHexString(EGL14.eglGetError()));
-        return false;
+      // Convert YUV_420_888 → ARGB pixels
+      yuvToArgb(cameraImage, cameraPixels, w, h);
+      cameraBitmap.setPixels(cameraPixels, 0, w, 0, 0, w, h);
+      hasBitmap = true;
+
+      if (useDirectUpload && filamentTexture != null) {
+        // Upload bitmap directly to Filament texture — no SurfaceTexture involved
+        IEngine engine = EngineInstance.getEngine();
+        TextureHelper.setBitmap(engine.getFilamentEngine(), filamentTexture, 0, cameraBitmap);
+        postCount++;
+      } else if (surface != null && surface.isValid()) {
+        // Legacy Canvas path
+        android.graphics.Canvas canvas = surface.lockCanvas(null);
+        canvas.drawBitmap(cameraBitmap, 0, 0, null);
+        surface.unlockCanvasAndPost(canvas);
+        postCount++;
       }
 
-      // Use current context (shared with Filament, holds ARCore texture)
-      EGLContext ctx = EGL14.eglGetCurrentContext();
-      EGLSurface oldDraw = EGL14.eglGetCurrentSurface(EGL14.EGL_DRAW);
-      EGLSurface oldRead = EGL14.eglGetCurrentSurface(EGL14.EGL_READ);
-
-      EGL14.eglMakeCurrent(blitEglDisplay, blitEglSurface, blitEglSurface, ctx);
-
-      String vertSrc =
-          "attribute vec4 aPosition;\n" +
-          "attribute vec2 aTexCoord;\n" +
-          "varying vec2 vTexCoord;\n" +
-          "void main() {\n" +
-          "  gl_Position = aPosition;\n" +
-          "  vTexCoord = aTexCoord;\n" +
-          "}\n";
-
-      String fragSrc =
-          "#extension GL_OES_EGL_image_external : require\n" +
-          "precision mediump float;\n" +
-          "varying vec2 vTexCoord;\n" +
-          "uniform samplerExternalOES uTexture;\n" +
-          "void main() {\n" +
-          "  gl_FragColor = texture2D(uTexture, vTexCoord);\n" +
-          "}\n";
-
-      int vs = GLES20.glCreateShader(GLES20.GL_VERTEX_SHADER);
-      GLES20.glShaderSource(vs, vertSrc);
-      GLES20.glCompileShader(vs);
-      int[] status = new int[1];
-      GLES20.glGetShaderiv(vs, GLES20.GL_COMPILE_STATUS, status, 0);
-      if (status[0] == 0) {
-        Log.e(TAG, "Vertex shader error: " + GLES20.glGetShaderInfoLog(vs));
-        GLES20.glDeleteShader(vs);
-        EGL14.eglMakeCurrent(blitEglDisplay, oldDraw, oldRead, ctx);
-        return false;
-      }
-
-      int fs = GLES20.glCreateShader(GLES20.GL_FRAGMENT_SHADER);
-      GLES20.glShaderSource(fs, fragSrc);
-      GLES20.glCompileShader(fs);
-      GLES20.glGetShaderiv(fs, GLES20.GL_COMPILE_STATUS, status, 0);
-      if (status[0] == 0) {
-        Log.e(TAG, "Fragment shader error: " + GLES20.glGetShaderInfoLog(fs));
-        GLES20.glDeleteShader(vs);
-        GLES20.glDeleteShader(fs);
-        EGL14.eglMakeCurrent(blitEglDisplay, oldDraw, oldRead, ctx);
-        return false;
-      }
-
-      blitProgram = GLES20.glCreateProgram();
-      GLES20.glAttachShader(blitProgram, vs);
-      GLES20.glAttachShader(blitProgram, fs);
-      GLES20.glLinkProgram(blitProgram);
-      GLES20.glGetProgramiv(blitProgram, GLES20.GL_LINK_STATUS, status, 0);
-      if (status[0] == 0) {
-        Log.e(TAG, "Program link error: " + GLES20.glGetProgramInfoLog(blitProgram));
-        GLES20.glDeleteProgram(blitProgram);
-        blitProgram = -1;
-        GLES20.glDeleteShader(vs);
-        GLES20.glDeleteShader(fs);
-        EGL14.eglMakeCurrent(blitEglDisplay, oldDraw, oldRead, ctx);
-        return false;
-      }
-      GLES20.glDeleteShader(vs);
-      GLES20.glDeleteShader(fs);
-
-      float[] verts = { -1f, -1f,  1f, -1f,  -1f, 1f,  1f, 1f };
-      blitVertexBuf = ByteBuffer.allocateDirect(verts.length * 4)
-          .order(ByteOrder.nativeOrder()).asFloatBuffer();
-      blitVertexBuf.put(verts).position(0);
-
-      // Flip Y to match OpenGL convention (ARCore OES is top-down)
-      float[] texCoords = { 0f, 1f,  1f, 1f,  0f, 0f,  1f, 0f };
-      blitTexCoordBuf = ByteBuffer.allocateDirect(texCoords.length * 4)
-          .order(ByteOrder.nativeOrder()).asFloatBuffer();
-      blitTexCoordBuf.put(texCoords).position(0);
-
-      EGL14.eglMakeCurrent(blitEglDisplay, oldDraw, oldRead, ctx);
-
-      blitInitialized = true;
-      Log.e(TAG, "GPU blit initialized: program=" + blitProgram);
-      return true;
     } catch (Exception e) {
-      Log.e(TAG, "initBlit failed", e);
-      return false;
+      failCount++;
+      Log.e(TAG, "updateCameraFrame FAILED frame#" + frameCount + ": " + e.getMessage());
+    } finally {
+      if (cameraImage != null) {
+        cameraImage.close();
+      }
     }
   }
 
   /**
-   * Copies the ARCore camera texture to the SurfaceTexture via GPU OpenGL blit.
+   * Convert YUV_420_888 (from ARCore camera) to ARGB int array.
    */
-  public void updateCameraFrame(Frame frame) {
-    if (surface == null || !surface.isValid() || frame == null) return;
-    if (arCoreTextureId <= 0) return;
+  private static void yuvToArgb(Image image, int[] out, int w, int h) {
+    Image.Plane yPlane = image.getPlanes()[0];
+    Image.Plane uPlane = image.getPlanes()[1];
+    Image.Plane vPlane = image.getPlanes()[2];
 
-    long timestamp = frame.getTimestamp();
-    if (timestamp == lastFrameTimestamp) return;
-    lastFrameTimestamp = timestamp;
+    ByteBuffer yBuf = yPlane.getBuffer();
+    ByteBuffer uBuf = uPlane.getBuffer();
+    ByteBuffer vBuf = vPlane.getBuffer();
 
-    // Resize the SurfaceTexture buffer to match actual camera dimensions on first frame.
-    if (!bufferSizeSet && surfaceTexture != null) {
-      try {
-        android.media.Image img = frame.acquireCameraImage();
-        int camW = img.getWidth();
-        int camH = img.getHeight();
-        img.close();
-        surfaceTexture.setDefaultBufferSize(camW, camH);
-        bufferSizeSet = true;
-        // Must re-create the EGL surface for the new buffer size.
-        if (blitInitialized && blitEglSurface != null) {
-          EGL14.eglDestroySurface(blitEglDisplay, blitEglSurface);
-          blitInitialized = false;
-        }
-        Log.e(TAG, "Camera buffer resized to " + camW + "x" + camH);
-      } catch (Exception e) {
-        // Camera image not yet available; will retry next frame.
+    int yRowStride = yPlane.getRowStride();
+    int uvRowStride = uPlane.getRowStride();
+    int uvPixelStride = uPlane.getPixelStride();
+
+    for (int row = 0; row < h; row++) {
+      for (int col = 0; col < w; col++) {
+        int y = yBuf.get(row * yRowStride + col) & 0xFF;
+        int uvRow = row >> 1;
+        int uvCol = col >> 1;
+        int u = uBuf.get(uvRow * uvRowStride + uvCol * uvPixelStride) & 0xFF;
+        int v = vBuf.get(uvRow * uvRowStride + uvCol * uvPixelStride) & 0xFF;
+
+        int yVal = y - 16;
+        int uVal = u - 128;
+        int vVal = v - 128;
+
+        int r = clamp((298 * yVal + 409 * vVal + 128) >> 8);
+        int g = clamp((298 * yVal - 100 * uVal - 208 * vVal + 128) >> 8);
+        int b = clamp((298 * yVal + 516 * uVal + 128) >> 8);
+
+        out[row * w + col] = 0xFF000000 | (r << 16) | (g << 8) | b;
       }
     }
+  }
 
-    if (!blitInitialized && !initBlit()) return;
-
-    EGLContext ctx = EGL14.eglGetCurrentContext();
-    EGLSurface oldDraw = EGL14.eglGetCurrentSurface(EGL14.EGL_DRAW);
-    EGLSurface oldRead = EGL14.eglGetCurrentSurface(EGL14.EGL_READ);
-
-    try {
-      if (!EGL14.eglMakeCurrent(blitEglDisplay, blitEglSurface, blitEglSurface, ctx)) {
-        return;
-      }
-
-      int[] dims = new int[1];
-      EGL14.eglQuerySurface(blitEglDisplay, blitEglSurface, EGL14.EGL_WIDTH, dims, 0);
-      int w = dims[0];
-      EGL14.eglQuerySurface(blitEglDisplay, blitEglSurface, EGL14.EGL_HEIGHT, dims, 0);
-      int h = dims[0];
-
-      GLES20.glViewport(0, 0, w, h);
-      GLES20.glDisable(GLES20.GL_DEPTH_TEST);
-      GLES20.glDisable(GLES20.GL_SCISSOR_TEST);
-
-      GLES20.glUseProgram(blitProgram);
-
-      GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
-      GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, arCoreTextureId);
-      GLES20.glUniform1i(GLES20.glGetUniformLocation(blitProgram, "uTexture"), 0);
-
-      int posLoc = GLES20.glGetAttribLocation(blitProgram, "aPosition");
-      int tcLoc = GLES20.glGetAttribLocation(blitProgram, "aTexCoord");
-
-      GLES20.glEnableVertexAttribArray(posLoc);
-      GLES20.glVertexAttribPointer(posLoc, 2, GLES20.GL_FLOAT, false, 0, blitVertexBuf);
-      GLES20.glEnableVertexAttribArray(tcLoc);
-      GLES20.glVertexAttribPointer(tcLoc, 2, GLES20.GL_FLOAT, false, 0, blitTexCoordBuf);
-
-      GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
-
-      GLES20.glDisableVertexAttribArray(posLoc);
-      GLES20.glDisableVertexAttribArray(tcLoc);
-
-      // Flush all draw commands to the GPU, then present the buffer.
-      // glFlush is lighter than glFinish but sufficient for buffer queue delivery.
-      GLES20.glFlush();
-      if (!EGL14.eglSwapBuffers(blitEglDisplay, blitEglSurface)) {
-        Log.e(TAG, "eglSwapBuffers failed: 0x" + Integer.toHexString(EGL14.eglGetError()));
-      }
-    } catch (Exception e) {
-      Log.e(TAG, "GPU blit frame error", e);
-    } finally {
-      EGL14.eglMakeCurrent(blitEglDisplay, oldDraw, oldRead, ctx);
-    }
+  private static int clamp(int val) {
+    return val < 0 ? 0 : (val > 255 ? 255 : val);
   }
 
   /** Gets the surface texture created for this ExternalTexture. */
@@ -325,8 +227,16 @@ public class ExternalTexture {
     return Preconditions.checkNotNull(filamentTexture);
   }
 
+  boolean isTextureReady() {
+    return filamentTexture != null;
+  }
+
+  boolean isDirectUpload() {
+    return useDirectUpload;
+  }
+
   Stream getFilamentStream() {
-    return Preconditions.checkNotNull(filamentStream);
+    return filamentStream;
   }
 
   @SuppressWarnings("initialization")
@@ -355,6 +265,18 @@ public class ExternalTexture {
     ResourceManager.getInstance()
         .getExternalTextureCleanupRegistry()
         .register(this, new CleanupCallback(filamentTexture, filamentStream));
+  }
+
+  /**
+   * Registers cleanup for direct-upload textures (no stream).
+   * Must be called after the texture is created in updateCameraFrame.
+   */
+  void registerCleanup() {
+    if (filamentTexture != null) {
+      ResourceManager.getInstance()
+          .getExternalTextureCleanupRegistry()
+          .register(this, new CleanupCallback(filamentTexture, null));
+    }
   }
 
   /** Cleanup filament objects after garbage collection */
