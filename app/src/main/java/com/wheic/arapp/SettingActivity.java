@@ -84,7 +84,7 @@ public class SettingActivity extends AppCompatActivity {
                         FirebaseAuth.getInstance().signOut();
 
                         SharedPreferences settings = SecurePrefs.get(SettingActivity.this);
-                        settings.edit().clear().apply();
+                        settings.edit().remove("username").apply();
 
                         finishAffinity();
 

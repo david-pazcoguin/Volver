@@ -71,6 +71,8 @@ public class ArFragment extends BaseArFragment {
     config.setDepthMode(Config.DepthMode.DISABLED);
     config.setLightEstimationMode(Config.LightEstimationMode.DISABLED);
     config.setPlaneFindingMode(Config.PlaneFindingMode.HORIZONTAL);
+    // Lock autofocus to prevent focus hunting frame drops during AR tracking
+    config.setFocusMode(Config.FocusMode.AUTO);
     return config;
   }
 

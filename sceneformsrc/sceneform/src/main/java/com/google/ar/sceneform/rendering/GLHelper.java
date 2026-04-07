@@ -63,6 +63,11 @@ public class GLHelper {
     GLES30.glTexParameteri(textureTarget, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE);
     GLES30.glTexParameteri(textureTarget, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_NEAREST);
     GLES30.glTexParameteri(textureTarget, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_NEAREST);
+
+    EGLContext ctx = EGL14.eglGetCurrentContext();
+    android.util.Log.e("GLHelper", "createCameraTexture: texId=" + result
+        + " eglCtx=" + ctx + " tid=" + Thread.currentThread().getId());
+
     return result;
   }
 
