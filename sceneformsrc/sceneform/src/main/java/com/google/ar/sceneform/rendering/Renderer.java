@@ -2,6 +2,7 @@ package com.google.ar.sceneform.rendering;
 
 import android.content.Context;
 import android.os.Build;
+import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.annotation.VisibleForTesting;
@@ -54,6 +55,7 @@ public class Renderer implements UiHelper.RendererCallback {
   private final ViewAttachmentManager viewAttachmentManager;
 
   private final ArrayList<RenderableInstance> renderableInstances = new ArrayList<>();
+  private int filamentSkipCount = 0;
   private final ArrayList<LightInstance> lightInstances = new ArrayList<>();
 
   private Surface surface;
@@ -249,7 +251,7 @@ public class Renderer implements UiHelper.RendererCallback {
         if (swapChain != null) {
           engine.destroySwapChain(swapChain);
         }
-        swapChain = engine.createSwapChain(surface, SwapChain.CONFIG_READABLE);
+        swapChain = engine.createSwapChain(surface, 0);
         recreateSwapChain = false;
       }
     }
@@ -295,7 +297,7 @@ public class Renderer implements UiHelper.RendererCallback {
           if (preRenderCallback != null) {
             preRenderCallback.preRender(renderer, swapChainLocal, camera);
           }
-
+          filamentSkipCount = 0;
           // Currently, filament does not provide functionality for disabling cameras, and
           // rendering a view with a null camera doesn't clear the viewport. As a workaround, we
           // render an empty view when the camera is disabled. this is actually similar to what we
@@ -304,6 +306,9 @@ public class Renderer implements UiHelper.RendererCallback {
           // views pointing to the same scene.
           com.google.android.filament.View currentView =
               cameraProvider.isActive() ? view : emptyView;
+          if (currentView == emptyView) {
+            Log.e("Renderer", "WARNING: Rendering emptyView (cameraProvider inactive)");
+          }
           renderer.render(currentView);
 
           if (postRenderCallback != null) {
@@ -328,6 +333,11 @@ public class Renderer implements UiHelper.RendererCallback {
             onFrameRenderDebugCallback.run();
           }
           renderer.endFrame();
+        } else {
+          filamentSkipCount++;
+          if (filamentSkipCount <= 5 || filamentSkipCount % 60 == 0) {
+            Log.e("Renderer", "Filament beginFrame returned false (skip #" + filamentSkipCount + ")");
+          }
         }
 
         reclaimReleasedResources();
@@ -581,7 +591,10 @@ public class Renderer implements UiHelper.RendererCallback {
     view.setCamera(camera);
     view.setScene(scene);
 
-    setDynamicResolutionEnabled(true);
+    // Dynamic resolution requires post-processing for the upscale pass.
+    // With post-processing disabled (enablePerformanceMode), dynamic resolution
+    // causes undefined behavior — potential resolution instability → flicker.
+    setDynamicResolutionEnabled(false);
 
     emptyView.setCamera(engine.createCamera());
     emptyView.setScene(engine.createScene());

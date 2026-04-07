@@ -244,7 +244,39 @@ public class CameraStream {
    */
   public void updateCameraFrame(Frame frame) {
     if (cameraTexture != null) {
+      boolean wasReady = cameraTexture.isTextureReady();
       cameraTexture.updateCameraFrame(frame);
+
+      // For direct upload: the Filament texture is created lazily on first frame.
+      // Once it's ready, bind it to the material.
+      if (!wasReady && cameraTexture.isTextureReady() && cameraMaterial != null) {
+        Log.e(TAG, "Direct upload texture now ready — binding to material");
+        bindTextureToMaterial(cameraMaterial);
+        cameraTexture.registerCleanup();
+      }
+    }
+  }
+
+  private void bindTextureToMaterial(Material material) {
+    if (cameraTexture == null) return;
+
+    if (cameraTexture.isDirectUpload()) {
+      // For direct SAMPLER_2D upload, use setTexture to bypass samplerExternal.
+      // The material's GLSL uses samplerExternalOES, but on Mali GPUs
+      // GL_TEXTURE_2D bound to samplerExternalOES works correctly.
+      com.google.android.filament.TextureSampler sampler =
+          new com.google.android.filament.TextureSampler();
+      sampler.setMinFilter(com.google.android.filament.TextureSampler.MinFilter.LINEAR);
+      sampler.setMagFilter(com.google.android.filament.TextureSampler.MagFilter.LINEAR);
+      sampler.setWrapModeS(com.google.android.filament.TextureSampler.WrapMode.CLAMP_TO_EDGE);
+      sampler.setWrapModeT(com.google.android.filament.TextureSampler.WrapMode.CLAMP_TO_EDGE);
+      material.getFilamentMaterialInstance().setParameter(
+          MATERIAL_CAMERA_TEXTURE, cameraTexture.getFilamentTexture(), sampler);
+      Log.e(TAG, "bindTextureToMaterial: set SAMPLER_2D texture directly on material");
+    } else {
+      material.setExternalTexture(MATERIAL_CAMERA_TEXTURE,
+          Preconditions.checkNotNull(cameraTexture));
+      Log.e(TAG, "bindTextureToMaterial: set SAMPLER_EXTERNAL texture on material");
     }
   }
 
@@ -253,16 +285,20 @@ public class CameraStream {
     Log.e(TAG, "setCameraMaterial called, isTextureInitialized=" + isTextureInitialized()
         + ", renderable=" + cameraStreamRenderable);
 
-    // The ExternalTexture can't be created until we receive the first AR Core Frame so that we
-    // can access the width and height of the camera texture. Return early if the ExternalTexture
-    // hasn't been created yet so we don't start rendering until we have a valid texture. This will
-    // be called again when the ExternalTexture is created.
     if (!isTextureInitialized()) {
       return;
     }
 
-    material.setExternalTexture(MATERIAL_CAMERA_TEXTURE, Preconditions.checkNotNull(cameraTexture));
-    Log.e(TAG, "setCameraMaterial: external texture set on material");
+    // For direct upload, the texture might not be ready yet (created on first camera frame).
+    // Bind it if ready; otherwise updateCameraFrame will bind it when ready.
+    if (cameraTexture != null && cameraTexture.isTextureReady()) {
+      bindTextureToMaterial(material);
+    } else if (cameraTexture != null && cameraTexture.isDirectUpload()) {
+      Log.e(TAG, "setCameraMaterial: direct upload texture not ready yet, deferring bind");
+    } else {
+      material.setExternalTexture(MATERIAL_CAMERA_TEXTURE, Preconditions.checkNotNull(cameraTexture));
+      Log.e(TAG, "setCameraMaterial: external texture set on material");
+    }
 
     if (cameraStreamRenderable == UNINITIALIZED_FILAMENT_RENDERABLE) {
       initializeFilamentRenderable();

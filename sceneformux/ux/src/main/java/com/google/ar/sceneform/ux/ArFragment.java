@@ -70,7 +70,10 @@ public class ArFragment extends BaseArFragment {
     // Disable heavy ML features that cause frame drops on mid-range devices.
     config.setDepthMode(Config.DepthMode.DISABLED);
     config.setLightEstimationMode(Config.LightEstimationMode.DISABLED);
-    config.setPlaneFindingMode(Config.PlaneFindingMode.HORIZONTAL);
+    // Disable plane detection entirely — it causes GPU/CPU spikes after ~3s
+    // that trigger camera feed flickering on Mali GPUs.
+    // The plane *renderer* was already disabled; this stops the detection too.
+    config.setPlaneFindingMode(Config.PlaneFindingMode.DISABLED);
     // Lock autofocus to prevent focus hunting frame drops during AR tracking
     config.setFocusMode(Config.FocusMode.AUTO);
     return config;

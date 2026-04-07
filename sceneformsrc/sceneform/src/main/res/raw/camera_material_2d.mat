@@ -1,0 +1,25 @@
+material {
+    name : "Camera Material 2D",
+    parameters : [
+        {
+            type : sampler2d,
+            name : cameraTexture
+        }
+    ],
+    requires : [
+        uv0
+    ],
+    vertexDomain : device,
+    depthWrite : false,
+    shadingModel : unlit,
+    doubleSided : true,
+    culling : none
+}
+
+fragment {
+    void material(inout MaterialInputs material) {
+        prepareMaterial(material);
+        vec2 uv = getUV0();
+        material.baseColor = texture(materialParams_cameraTexture, uv);
+    }
+}
