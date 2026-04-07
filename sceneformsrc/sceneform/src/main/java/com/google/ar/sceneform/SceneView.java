@@ -29,6 +29,10 @@ public class SceneView extends SurfaceView implements Choreographer.FrameCallbac
   @Nullable private Renderer renderer = null;
   /** Set by subclasses to request a render-only pass (no scene update). */
   protected boolean renderOnly = false;
+  private int sceneFrameCount = 0;
+  private int renderFullCount = 0;
+  private int renderOnlyCount = 0;
+  private int renderSkipCount = 0;
   private final FrameTime frameTime = new FrameTime();
 
   private Scene scene;
@@ -332,14 +336,23 @@ public class SceneView extends SurfaceView implements Choreographer.FrameCallbac
       frameTotalTracker.beginSample();
     }
 
+    sceneFrameCount++;
+
     if (onBeginFrame(frameTimeNanos)) {
+      renderFullCount++;
       doUpdate(frameTimeNanos);
       doRender();
     } else if (renderOnly) {
-      // Re-present the same camera frame at display refresh rate
-      // without traversing the scene graph.
+      renderOnlyCount++;
       doRender();
       renderOnly = false;
+    } else {
+      renderSkipCount++;
+    }
+
+    if (sceneFrameCount <= 10 || sceneFrameCount % 60 == 0) {
+      Log.e(TAG, "doFrame#" + sceneFrameCount + " full=" + renderFullCount
+          + " renderOnly=" + renderOnlyCount + " skip=" + renderSkipCount);
     }
 
     if (debugEnabled) {

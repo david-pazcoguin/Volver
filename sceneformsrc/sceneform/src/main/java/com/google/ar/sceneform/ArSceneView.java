@@ -2,7 +2,6 @@ package com.google.ar.sceneform;
 
 import android.content.Context;
 import android.media.Image;
-import android.opengl.GLES30;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
@@ -448,9 +447,6 @@ public class ArSceneView extends SceneView {
     boolean updated = true;
     try {
       Frame frame = session.update();
-      // Flush GL commands so the camera texture update is visible
-      // to Filament's shared EGL context on the render thread.
-      GLES30.glFlush();
       // No frame, no drawing.
       if (frame == null) {
         return false;
@@ -518,14 +514,7 @@ public class ArSceneView extends SceneView {
     // the effective display rate to ~30 fps on a 60 Hz panel.  The camera
     // external texture is still valid (same image), so re-presenting it keeps
     // the swap-chain fed at the full display refresh rate.
-    //
-    // When !updated we request a render-only pass (no scene graph traversal)
-    // via the renderOnly flag.  doUpdate() running on stale frames caused
-    // the camera texture to go black on some devices.
-    if (!updated) {
-      renderOnly = true;
-    }
-    return updated;
+    return true;
   }
 
   private boolean shouldRecalculateCameraUvs(Frame frame) {
@@ -757,10 +746,12 @@ public class ArSceneView extends SceneView {
   private void initializePlaneRenderer() {
     Renderer renderer = Preconditions.checkNotNull(getRenderer());
     planeRenderer = new PlaneRenderer(renderer);
-    // Enable plane overlay so users can see where to tap
-    planeRenderer.setVisible(true);
-    planeRenderer.setShadowReceiver(true);
-    planeRenderer.setEnabled(true);
+    // Disable plane rendering — the plane visualizer entities add GPU load
+    // that causes Filament's beginFrame() to skip frames → camera flicker.
+    // Re-enable if plane visualization is needed once camera stability is confirmed.
+    planeRenderer.setVisible(false);
+    planeRenderer.setShadowReceiver(false);
+    planeRenderer.setEnabled(false);
   }
 
   private void initializeCameraStream() {
