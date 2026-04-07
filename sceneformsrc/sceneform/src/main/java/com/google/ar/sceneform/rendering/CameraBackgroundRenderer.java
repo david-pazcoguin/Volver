@@ -1,5 +1,7 @@
 package com.google.ar.sceneform.rendering;
 
+import android.opengl.EGL14;
+import android.opengl.EGLContext;
 import android.opengl.GLES11Ext;
 import android.opengl.GLES30;
 import android.util.Log;
@@ -65,12 +67,13 @@ public class CameraBackgroundRenderer {
         "}\n";
 
     private static final String FRAGMENT_SHADER =
-        "#extension GL_OES_EGL_image_external_essl3 : require\n" +
+        "#extension GL_OES_EGL_image_external : require\n" +
         "precision mediump float;\n" +
         "uniform samplerExternalOES uTexture;\n" +
         "varying vec2 vTexCoord;\n" +
         "void main() {\n" +
-        "  gl_FragColor = texture2D(uTexture, vTexCoord);\n" +
+        "  vec4 cam = texture2D(uTexture, vTexCoord);\n" +
+        "  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);\n" +
         "}\n";
 
     public CameraBackgroundRenderer() {
@@ -131,6 +134,19 @@ public class CameraBackgroundRenderer {
         texCoordBuf = uvOutput;
     }
 
+    private int drawCount = 0;
+    private int viewportWidth = 0;
+    private int viewportHeight = 0;
+
+    /**
+     * Set the viewport dimensions for rendering.
+     * Call this whenever the surface size changes.
+     */
+    public void setViewport(int width, int height) {
+        viewportWidth = width;
+        viewportHeight = height;
+    }
+
     /**
      * Renders the camera texture onto the current framebuffer.
      * Must be called while Filament's GL context is active (inside
@@ -141,6 +157,19 @@ public class CameraBackgroundRenderer {
         if (!initialized) {
             init();
             if (!initialized) return;
+        }
+        if (viewportWidth <= 0 || viewportHeight <= 0) return;
+
+        drawCount++;
+        if (drawCount <= 3) {
+            int[] fbo = new int[1];
+            GLES30.glGetIntegerv(GLES30.GL_FRAMEBUFFER_BINDING, fbo, 0);
+            boolean texValid = GLES30.glIsTexture(cameraTextureId);
+            EGLContext ctx = EGL14.eglGetCurrentContext();
+            Log.e(TAG, "draw #" + drawCount + ": fbo=" + fbo[0]
+                + " viewport=" + viewportWidth + "x" + viewportHeight
+                + " texValid=" + texValid + " texId=" + cameraTextureId
+                + " eglCtx=" + ctx + " tid=" + Thread.currentThread().getId());
         }
 
         // Save GL state we modify
@@ -156,6 +185,11 @@ public class CameraBackgroundRenderer {
         GLES30.glGetIntegerv(GLES30.GL_DEPTH_FUNC, prevDepthFunc, 0);
         boolean[] prevDepthMask = new boolean[1];
         GLES30.glGetBooleanv(GLES30.GL_DEPTH_WRITEMASK, prevDepthMask, 0);
+        int[] prevViewport = new int[4];
+        GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, prevViewport, 0);
+
+        // Set the correct viewport for the full surface
+        GLES30.glViewport(0, 0, viewportWidth, viewportHeight);
 
         // Configure for full-screen background draw
         GLES30.glDisable(GLES30.GL_DEPTH_TEST);
@@ -193,6 +227,7 @@ public class CameraBackgroundRenderer {
         if (scissorWas) GLES30.glEnable(GLES30.GL_SCISSOR_TEST);
         GLES30.glDepthFunc(prevDepthFunc[0]);
         GLES30.glActiveTexture(prevActiveTexture[0]);
+        GLES30.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
         GLES30.glUseProgram(prevProgram[0]);
 
         int err = GLES30.glGetError();

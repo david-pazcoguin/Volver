@@ -5,6 +5,7 @@ import android.util.Log;
 import androidx.annotation.Nullable;
 import android.view.Surface;
 import com.google.android.filament.Stream;
+import com.google.ar.core.Frame;
 import com.google.ar.sceneform.utilities.AndroidPreconditions;
 import com.google.ar.sceneform.utilities.Preconditions;
 
@@ -47,26 +48,29 @@ public class ExternalTexture {
   }
 
   /**
-   * Creates an ExternalTexture for the AR camera stream by importing the
-   * ARCore GL_TEXTURE_EXTERNAL_OES texture into Filament.
+   * Creates an ExternalTexture for the AR camera stream.
+   * Uses Filament's setExternalImage() to bind the ARCore GL texture directly.
    */
   @SuppressWarnings("initialization")
   ExternalTexture(int textureId) {
     this.surfaceTexture = null;
     this.surface = null;
+    this.arCoreTextureId = textureId;
 
     IEngine engine = EngineInstance.getEngine();
 
     filamentTexture =
         new com.google.android.filament.Texture.Builder()
             .sampler(com.google.android.filament.Texture.Sampler.SAMPLER_EXTERNAL)
-            .format(com.google.android.filament.Texture.InternalFormat.RGB16F)
-            .importTexture((long) textureId)
+            .format(com.google.android.filament.Texture.InternalFormat.RGB8)
             .build(engine.getFilamentEngine());
+
+    // Directly bind the ARCore GL texture to this Filament Texture
+    filamentTexture.setExternalImage(engine.getFilamentEngine(), (long) textureId);
 
     this.filamentStream = null;
 
-    Log.e(TAG, "Camera ExternalTexture (importTexture): GL texId=" + textureId
+    Log.e(TAG, "Camera ExternalTexture (setExternalImage): GL texId=" + textureId
         + " filament=" + (filamentTexture != null));
 
     ResourceManager.getInstance()
@@ -74,11 +78,25 @@ public class ExternalTexture {
         .register(this, new CleanupCallback(filamentTexture, null));
   }
 
+  private int arCoreTextureId = 0;
+
   /**
-   * No-op for the importTexture path. Kept for API compatibility.
+   * Rebinds the ARCore camera texture to Filament each frame via setExternalImage().
    */
   public void updateCameraTexture() {
-    // importTexture() path: texture content is updated by ARCore directly.
+    if (filamentTexture != null && arCoreTextureId != 0) {
+      IEngine engine = EngineInstance.getEngine();
+      if (engine != null && engine.isValid()) {
+        filamentTexture.setExternalImage(engine.getFilamentEngine(), (long) arCoreTextureId);
+      }
+    }
+  }
+
+  /**
+   * Frame-based camera update. For setExternalImage path, just rebinds the texture.
+   */
+  public void updateCameraFrame(Frame frame) {
+    updateCameraTexture();
   }
 
   /** Gets the surface texture created for this ExternalTexture. */
