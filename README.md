@@ -145,11 +145,13 @@ Volver/
 ├── firebase.json                 # Firebase project config
 ├── sceneformsrc/                 # Sceneform runtime module (Filament/GLB)
 ├── sceneformux/                  # Sceneform UX module (ArFragment, TransformableNode)
-├── AR_CAMERA_ARCHITECTURE.md      # How the camera rendering pipeline works (Filament 1.32)
-├── PERFORMANCE_GUIDE.md           # All performance optimizations explained
-├── BUILD_AND_DEPLOY.md            # Build, install, debug, and deploy guide
-├── BLOCKCHAIN_SETUP.md            # Step-by-step blockchain deployment guide
-├── FIREBASE_SECURITY_NOTES.md     # Security considerations for Firestore rules
+├── ai-workflows/                  # AI workflow folders (domain-specific docs)
+│   ├── 01-ar-camera/              # Camera pipeline, Filament, rendering
+│   ├── 02-arcore-geospatial/      # Location, AR session, model placement
+│   ├── 03-firebase/               # Auth, Firestore, Cloud Functions, security
+│   ├── 04-blockchain-nft/         # Smart contract, Web3j, wallets, minting
+│   ├── 05-android-ui/             # Activities, navigation, layouts
+│   └── 06-build-deploy/           # Build, deploy, ProGuard, debugging
 └── .gitignore                     # Excludes secrets, build artifacts, google-services.json
 ```
 
@@ -179,7 +181,7 @@ Volver/
 
 This project uses a **heavily modified fork of Google Sceneform** upgraded from Filament ~1.4 to **Filament 1.32.0**. The original Sceneform 1.15 SDK is no longer maintained by Google. These modifications are critical for the AR camera to work.
 
-> **⚠️ Read [AR_CAMERA_ARCHITECTURE.md](AR_CAMERA_ARCHITECTURE.md) before modifying any rendering code.**
+> **⚠️ Read [ai-workflows/01-ar-camera/context.md](ai-workflows/01-ar-camera/context.md) before modifying any rendering code.**
 
 ### What Was Changed and Why
 
@@ -197,7 +199,7 @@ This project uses a **heavily modified fork of Google Sceneform** upgraded from 
 
 ### Camera Material
 
-The camera background uses a custom Filament material compiled with `matc` v1.32.0. The vertex shader undoes Filament's View-Projection transform so the camera quad fills the screen. See [AR_CAMERA_ARCHITECTURE.md](AR_CAMERA_ARCHITECTURE.md#camera-material-matc) for details.
+The camera background uses a custom Filament material compiled with `matc` v1.32.0. See [ai-workflows/01-ar-camera/context.md](ai-workflows/01-ar-camera/context.md) for material details.
 
 ### Key Rule
 
@@ -264,7 +266,7 @@ MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
 
 ### Step 5 — Deploy Smart Contract
 
-See [BLOCKCHAIN_SETUP.md](BLOCKCHAIN_SETUP.md) for the complete step-by-step guide covering MetaMask setup, Polygon Amoy testnet, Remix IDE deployment, IPFS metadata upload, and mainnet migration.
+See [ai-workflows/04-blockchain-nft/context.md](ai-workflows/04-blockchain-nft/context.md) for the complete deployment guide covering MetaMask setup, Polygon Amoy testnet, Remix IDE deployment, IPFS metadata upload, and mainnet migration.
 
 ### Step 6 — Build and Run
 
@@ -390,7 +392,7 @@ All security measures applied to this project:
 
 ## Performance Standards
 
-All performance optimizations applied to this project. For detailed explanations, see [PERFORMANCE_GUIDE.md](PERFORMANCE_GUIDE.md).
+All performance optimizations applied to this project. For detailed explanations, see [ai-workflows/01-ar-camera/context.md](ai-workflows/01-ar-camera/context.md) and [ai-workflows/06-build-deploy/context.md](ai-workflows/06-build-deploy/context.md).
 
 ### AR Rendering (Sceneform / Filament)
 - **Filament renderer**: MSAA off, post-processing off, dithering off, shadows off, HDR quality LOW
@@ -636,9 +638,9 @@ firebase deploy --only firestore:rules,functions
 
 | Symptom | Solution |
 |---------|----------|
-| Camera shows black screen | Do NOT return `true` from `onBeginFrame()`. Check that the `renderOnly` flag is working. See [AR_CAMERA_ARCHITECTURE.md](AR_CAMERA_ARCHITECTURE.md#known-pitfalls) |
+| Camera shows black screen | Do NOT return `true` from `onBeginFrame()`. Check that the `renderOnly` flag is working. See [ai-workflows/01-ar-camera/context.md](ai-workflows/01-ar-camera/context.md) |
 | Camera renders at ~30fps (judder) | The `renderOnly` flag may not be working. Check `SceneView.doFrameNoRepost()` has the `else if (renderOnly)` branch |
-| Material fails to load | Recompile `.matc` with matching Filament version. See [BUILD_AND_DEPLOY.md](BUILD_AND_DEPLOY.md#material-compilation) |
+| Material fails to load | Recompile `.matc` with matching Filament version. See [ai-workflows/06-build-deploy/context.md](ai-workflows/06-build-deploy/context.md) |
 | App crashes on `setExternalImage()` | This API was removed in Filament 1.32. Use `importTexture()` instead |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | Uninstall the old APK first: `adb uninstall com.wheic.arapp` |
 | Log.d() not visible in logcat | Some ROMs (Oppo ColorOS) suppress user-app `Log.d()`/`Log.w()`. Use `Log.e()` for debugging |
@@ -647,14 +649,22 @@ firebase deploy --only firestore:rules,functions
 
 ## Further Documentation
 
-| Document | Description |
-|----------|-------------|
-| [AR_CAMERA_ARCHITECTURE.md](AR_CAMERA_ARCHITECTURE.md) | **Start here** if you need to modify AR rendering. Covers the camera pipeline, ExternalTexture, the renderOnly flag, the vertex shader trick, and all 9 modified Sceneform files. |
-| [PERFORMANCE_GUIDE.md](PERFORMANCE_GUIDE.md) | Every performance optimization with explanations. Filament settings, ARCore config, plane caching, frame dedup, and how to measure performance. |
-| [BUILD_AND_DEPLOY.md](BUILD_AND_DEPLOY.md) | Build commands, ADB installation, multi-device setup, material compilation, common build errors and fixes. |
-| [BLOCKCHAIN_SETUP.md](BLOCKCHAIN_SETUP.md) | Step-by-step guide for the NFT system: Firebase backend, MetaMask, Polygon smart contract deployment, IPFS metadata. |
-| [FIREBASE_SECURITY_NOTES.md](FIREBASE_SECURITY_NOTES.md) | Firestore security rules explanation, caveats about client-updatable fields, and recommended hardening. |
-| [intramuros_3d_character.md](intramuros_3d_character.md) | Character definitions for the 5 AR missions (historical figures, dialogue, appearance). |
+All detailed documentation lives in `ai-workflows/`, organized by domain:
+
+| Domain | Folder | What's Inside |
+|--------|--------|---------------|
+| AR Camera & Filament | [ai-workflows/01-ar-camera/](ai-workflows/01-ar-camera/) | Camera pipeline, ExternalTexture, renderOnly flag, material compilation, performance settings |
+| ARCore & Geospatial | [ai-workflows/02-arcore-geospatial/](ai-workflows/02-arcore-geospatial/) | Location activation, model placement, landmark coordinates, TTS |
+| Firebase | [ai-workflows/03-firebase/](ai-workflows/03-firebase/) | Auth, Firestore data model, security rules, Cloud Functions, deployment |
+| Blockchain & NFT | [ai-workflows/04-blockchain-nft/](ai-workflows/04-blockchain-nft/) | Smart contract deployment, Web3j, wallet encryption, IPFS metadata, minting flow |
+| Android UI | [ai-workflows/05-android-ui/](ai-workflows/05-android-ui/) | Activities, navigation flow, layouts, form validation, naming conventions |
+| Build & Deploy | [ai-workflows/06-build-deploy/](ai-workflows/06-build-deploy/) | Build commands, ADB, material compilation, ProGuard, deployment checklist |
+
+Each folder contains `role.md` (AI persona), `context.md` (architecture & constraints), and `checklist.md` (step-by-step procedures).
+
+Additional references:
+- [intramuros_3d_character.md](intramuros_3d_character.md) — Character definitions for the 5 AR missions
+- [ai-workflows/TODO_FIXES.md](ai-workflows/TODO_FIXES.md) — Remaining manual setup tasks
 
 ---
 
