@@ -83,6 +83,8 @@ public class WalletManager {
         try {
             return decryptPrivateKey(encrypted);
         } catch (Exception e) {
+            android.util.Log.e("WalletManager", "Private key decryption failed. "
+                    + "Keystore may be corrupted. User must re-create wallet.", e);
             return null;
         }
     }

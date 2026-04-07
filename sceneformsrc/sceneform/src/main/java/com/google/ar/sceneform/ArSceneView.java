@@ -2,6 +2,7 @@ package com.google.ar.sceneform;
 
 import android.content.Context;
 import android.media.Image;
+import android.opengl.GLES30;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
@@ -23,6 +24,7 @@ import com.google.ar.core.exceptions.CameraNotAvailableException;
 import com.google.ar.core.exceptions.FatalException;
 
 import com.google.ar.sceneform.math.Vector3;
+import com.google.ar.sceneform.rendering.CameraBackgroundRenderer;
 import com.google.ar.sceneform.rendering.CameraStream;
 import com.google.ar.sceneform.rendering.Color;
 import com.google.ar.sceneform.rendering.EnvironmentalHdrLightEstimate;
@@ -63,6 +65,7 @@ public class ArSceneView extends SceneView {
 
   private Display display;
   private CameraStream cameraStream;
+  private CameraBackgroundRenderer cameraBackgroundRenderer;
   private PlaneRenderer planeRenderer;
   private boolean firstFrameLogged = false;
 
@@ -151,6 +154,19 @@ public class ArSceneView extends SceneView {
 
     // Session needs access to a texture id for updating the camera stream.
     session.setCameraTextureName(cameraTextureId);
+    Log.e(TAG, "setupSession: cameraTextureId=" + cameraTextureId
+        + ", cameraStream.textureInit=" + cameraStream.isTextureInitialized()
+        + ", cameraStream.materialLoaded=" + cameraStream.isMaterialLoaded());
+  }
+
+  /** Returns the GL texture ID used for the camera stream. */
+  public int getCameraTextureId() {
+    return cameraTextureId;
+  }
+
+  /** Returns true if the camera stream pipeline is fully healthy (texture + material + renderable). */
+  public boolean isCameraStreamHealthy() {
+    return cameraStream != null && cameraStream.isHealthy();
   }
 
   
@@ -350,10 +366,13 @@ public class ArSceneView extends SceneView {
   public void onLayout(boolean changed, int left, int top, int right, int bottom) {
     super.onLayout(changed, left, top, right, bottom);
 
+    int width = right - left;
+    int height = bottom - top;
     if (session != null) {
-      int width = right - left;
-      int height = bottom - top;
       session.setDisplayGeometry(display.getRotation(), width, height);
+    }
+    if (cameraBackgroundRenderer != null) {
+      cameraBackgroundRenderer.setViewport(width, height);
     }
   }
 
@@ -429,6 +448,9 @@ public class ArSceneView extends SceneView {
     boolean updated = true;
     try {
       Frame frame = session.update();
+      // Flush GL commands so the camera texture update is visible
+      // to Filament's shared EGL context on the render thread.
+      GLES30.glFlush();
       // No frame, no drawing.
       if (frame == null) {
         return false;
@@ -437,7 +459,11 @@ public class ArSceneView extends SceneView {
       if (!firstFrameLogged) {
         firstFrameLogged = true;
         Log.e(TAG, "onBeginFrame: FIRST FRAME, cameraTextureId=" + cameraTextureId
-            + ", textureInit=" + cameraStream.isTextureInitialized());
+            + ", textureInit=" + cameraStream.isTextureInitialized()
+            + ", materialLoaded=" + cameraStream.isMaterialLoaded()
+            + ", materialFailed=" + cameraStream.isMaterialLoadFailed()
+            + ", renderableInit=" + cameraStream.isRenderableInitialized()
+            + ", healthy=" + cameraStream.isHealthy());
       }
 
       // Setup Camera Stream if needed.
@@ -449,6 +475,9 @@ public class ArSceneView extends SceneView {
       if (shouldRecalculateCameraUvs(frame)) {
         cameraStream.recalculateCameraUvs(frame);
       }
+
+      // Update camera texture content EVERY frame
+      cameraStream.updateCameraFrame(frame);
 
       if (currentFrame != null && currentFrame.getTimestamp() == frame.getTimestamp()) {
         updated = false;
@@ -728,10 +757,10 @@ public class ArSceneView extends SceneView {
   private void initializePlaneRenderer() {
     Renderer renderer = Preconditions.checkNotNull(getRenderer());
     planeRenderer = new PlaneRenderer(renderer);
-    // Disable plane overlay rendering for performance; plane detection still works for hit testing
-    planeRenderer.setVisible(false);
-    planeRenderer.setShadowReceiver(false);
-    planeRenderer.setEnabled(false);
+    // Enable plane overlay so users can see where to tap
+    planeRenderer.setVisible(true);
+    planeRenderer.setShadowReceiver(true);
+    planeRenderer.setEnabled(true);
   }
 
   private void initializeCameraStream() {
@@ -740,6 +769,10 @@ public class ArSceneView extends SceneView {
     Renderer renderer = Preconditions.checkNotNull(getRenderer());
     cameraStream = new CameraStream(cameraTextureId, renderer);
     Log.e(TAG, "initializeCameraStream: CameraStream created");
+
+    // CameraBackgroundRenderer disabled: it runs on the wrong GL thread.
+    // Relying on Filament's own CameraStream renderable instead.
+    Log.e(TAG, "initializeCameraStream: using Filament CameraStream renderable (Stream path)");
   }
 
   private void ensureUpdateMode() {

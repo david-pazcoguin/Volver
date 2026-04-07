@@ -158,17 +158,21 @@ public class HomeActivity extends AppCompatActivity {
                 new MissionCompletionHelper.ProgressCallback() {
                     @Override
                     public void onResult(Set<String> completedIds, boolean allComplete) {
-                        runOnUiThread(() -> updateProgressUI(completedIds.size(), allComplete));
+                        if (!isFinishing() && !isDestroyed()) {
+                            runOnUiThread(() -> updateProgressUI(completedIds.size(), allComplete));
+                        }
                     }
 
                     @Override
                     public void onError(String message) {
-                        runOnUiThread(() -> {
-                            if (tvProgressLabel != null) {
-                                tvProgressLabel.setText("Unable to load progress — check your connection");
-                                tvProgressLabel.setVisibility(View.VISIBLE);
-                            }
-                        });
+                        if (!isFinishing() && !isDestroyed()) {
+                            runOnUiThread(() -> {
+                                if (tvProgressLabel != null) {
+                                    tvProgressLabel.setText("Unable to load progress — check your connection");
+                                    tvProgressLabel.setVisibility(View.VISIBLE);
+                                }
+                            });
+                        }
                     }
                 });
     }

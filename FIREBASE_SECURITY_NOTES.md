@@ -48,3 +48,11 @@ firebase deploy --only firestore:rules
 ```
 
 Verify rules are active in **Firebase Console → Firestore Database → Rules** tab.
+
+---
+
+## Related Documentation
+
+- [README.md](README.md) — Full project overview and security standards
+- [BLOCKCHAIN_SETUP.md](BLOCKCHAIN_SETUP.md) — Smart contract deployment and Cloud Function setup
+- [BUILD_AND_DEPLOY.md](BUILD_AND_DEPLOY.md) — Firebase deployment commands
