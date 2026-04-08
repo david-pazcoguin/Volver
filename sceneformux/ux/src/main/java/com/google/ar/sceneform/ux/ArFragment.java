@@ -16,7 +16,10 @@
 package com.google.ar.sceneform.ux;
 
 import android.util.Log;
+import android.util.Size;
 import android.widget.Toast;
+import com.google.ar.core.CameraConfig;
+import com.google.ar.core.CameraConfigFilter;
 import com.google.ar.core.Config;
 import com.google.ar.core.Session;
 
@@ -66,6 +69,10 @@ public class ArFragment extends BaseArFragment {
 
   @Override
   protected Config getSessionConfiguration(Session session) {
+    // Select highest CPU image resolution for the direct SAMPLER_2D upload path.
+    // Must be called before session.configure().
+    selectHighResCameraConfig(session);
+
     Config config = new Config(session);
     // Disable heavy ML features that cause frame drops on mid-range devices.
     config.setDepthMode(Config.DepthMode.DISABLED);
@@ -77,6 +84,41 @@ public class ArFragment extends BaseArFragment {
     // Lock autofocus to prevent focus hunting frame drops during AR tracking
     config.setFocusMode(Config.FocusMode.AUTO);
     return config;
+  }
+
+  /**
+   * Selects the camera config closest to 1280×720 CPU image resolution.
+   * 1920×1080 is too expensive for per-frame CPU YUV→ARGB conversion;
+   * 1280×720 gives ~2× the pixels of 640×480 at half the cost of 1080p.
+   */
+  private void selectHighResCameraConfig(Session session) {
+    try {
+      CameraConfigFilter filter = new CameraConfigFilter(session);
+      java.util.List<CameraConfig> configs = session.getSupportedCameraConfigs(filter);
+      if (configs.isEmpty()) return;
+
+      // Target ~921,600 pixels (1280×720). Pick config closest to this.
+      final int TARGET_PIXELS = 1280 * 720;
+      CameraConfig best = configs.get(0);
+      int bestDiff = Integer.MAX_VALUE;
+      for (CameraConfig cfg : configs) {
+        Size cur = cfg.getImageSize();
+        int pixels = cur.getWidth() * cur.getHeight();
+        int diff = Math.abs(pixels - TARGET_PIXELS);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = cfg;
+        }
+      }
+
+      session.setCameraConfig(best);
+      Size imgSize = best.getImageSize();
+      Size texSize = best.getTextureSize();
+      Log.e(TAG, "Camera config: CPU=" + imgSize + " GPU=" + texSize
+          + " (from " + configs.size() + " configs)");
+    } catch (Exception e) {
+      Log.e(TAG, "Failed to set high-res camera config", e);
+    }
   }
 
   
