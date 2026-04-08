@@ -234,6 +234,18 @@ public class CameraStream {
     VertexBuffer cameraVertexBuffer = this.cameraVertexBuffer;
     frame.transformDisplayUvCoords(cameraUvCoords, transformedCameraUvCoords);
     adjustCameraUvsForOpenGL();
+
+    // Diagnostic: dump transformed UVs to verify aspect-ratio mapping
+    transformedCameraUvCoords.rewind();
+    StringBuilder uvDebug = new StringBuilder("UVs after transform: ");
+    for (int i = 0; i < VERTEX_COUNT; i++) {
+      float u = transformedCameraUvCoords.get();
+      float v = transformedCameraUvCoords.get();
+      uvDebug.append(String.format("v%d=(%.3f,%.3f) ", i, u, v));
+    }
+    transformedCameraUvCoords.rewind();
+    Log.e(TAG, uvDebug.toString());
+
     cameraVertexBuffer.setBufferAt(
         engine.getFilamentEngine(), UV_BUFFER_INDEX, transformedCameraUvCoords);
   }
