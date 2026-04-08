@@ -30,6 +30,15 @@
         android:fontFamily="@font/montserrat_bold"
         android:visibility="gone" />
 
+    <!-- Navigation compass — bottom-end, above the hint bar -->
+    <com.wheic.arapp.NavigationCompassView
+        android:id="@+id/navigationCompass"
+        android:layout_width="130dp"
+        android:layout_height="190dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="64dp" />
+
     <!-- Hint text at the bottom -->
     <TextView
         android:id="@+id/tvCharacterHint"
