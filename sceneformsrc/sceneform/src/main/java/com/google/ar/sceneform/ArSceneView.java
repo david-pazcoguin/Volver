@@ -518,7 +518,8 @@ public class ArSceneView extends SceneView {
   }
 
   private boolean shouldRecalculateCameraUvs(Frame frame) {
-    return frame.hasDisplayGeometryChanged();
+    // TODO: revert to frame.hasDisplayGeometryChanged() after UV debugging
+    return true;
   }
 
   /** Get the AR light estimate from the frame and then update the scene. */

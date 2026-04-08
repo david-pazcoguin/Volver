@@ -136,7 +136,7 @@ public class ExternalTexture {
               .height(h)
               .levels(1)
               .sampler(com.google.android.filament.Texture.Sampler.SAMPLER_2D)
-              .format(com.google.android.filament.Texture.InternalFormat.SRGB8_A8)
+              .format(com.google.android.filament.Texture.InternalFormat.RGBA8)
               .build(engine.getFilamentEngine());
           Log.e(TAG, "Created SAMPLER_2D Filament texture: " + w + "x" + h);
         }
