@@ -234,20 +234,82 @@ public class CameraStream {
     VertexBuffer cameraVertexBuffer = this.cameraVertexBuffer;
     frame.transformDisplayUvCoords(cameraUvCoords, transformedCameraUvCoords);
     adjustCameraUvsForOpenGL();
-
-    // Diagnostic: dump transformed UVs to verify aspect-ratio mapping
-    transformedCameraUvCoords.rewind();
-    StringBuilder uvDebug = new StringBuilder("UVs after transform: ");
-    for (int i = 0; i < VERTEX_COUNT; i++) {
-      float u = transformedCameraUvCoords.get();
-      float v = transformedCameraUvCoords.get();
-      uvDebug.append(String.format("v%d=(%.3f,%.3f) ", i, u, v));
-    }
-    transformedCameraUvCoords.rewind();
-    Log.e(TAG, uvDebug.toString());
-
     cameraVertexBuffer.setBufferAt(
         engine.getFilamentEngine(), UV_BUFFER_INDEX, transformedCameraUvCoords);
+  }
+
+  private boolean directUploadUvsLogged = false;
+  private boolean directUploadUvsComputed = false;
+
+  /**
+   * Computes correct UVs for the direct bitmap upload path.
+   * ARCore's transformDisplayUvCoords is designed for its GPU camera texture
+   * which may have a different aspect ratio than the CPU image from acquireCameraImage().
+   * This method computes fill-mode UVs based on the actual camera image and screen dimensions.
+   */
+  public void recalculateCameraUvsForDirectUpload(int screenW, int screenH) {
+    if (cameraTexture == null) return;
+    int camW = cameraTexture.getCameraWidth();   // landscape width (e.g. 640)
+    int camH = cameraTexture.getCameraHeight();  // landscape height (e.g. 480)
+    if (camW == 0 || camH == 0 || screenW == 0 || screenH == 0) return;
+
+    // Camera is landscape, display is portrait (90° CW rotation).
+    // After rotation: portrait camera = camH(w) × camW(h)
+    float camPortraitW = (float) camH;
+    float camPortraitH = (float) camW;
+
+    // Fill mode: scale uniformly to fill entire screen, crop excess
+    float fillScale = Math.max((float) screenW / camPortraitW,
+                               (float) screenH / camPortraitH);
+
+    // Visible camera area in portrait pixels
+    float visibleW = (float) screenW / fillScale;
+    float visibleH = (float) screenH / fillScale;
+
+    // Map to landscape texture UV:
+    //   Screen horizontal → texture V (landscape Y), with Y-flip
+    //   Screen vertical   → texture U (landscape X)
+    float cropMarginV = (camH - visibleW) / (2.0f * camH);
+    float vMin = cropMarginV;           // post Y-flip: same as pre-flip for symmetric crop
+    float vMax = 1.0f - cropMarginV;
+
+    float cropMarginU = (camW - visibleH) / (2.0f * camW);
+    float uMin = cropMarginU;
+    float uMax = 1.0f - cropMarginU;
+
+    // Oversized triangle UVs (post Y-flip):
+    //   v0 = screen TL → (uMin, vMin)
+    //   v1 = extrapolated below BL → (2*uMax - uMin, vMin)
+    //   v2 = extrapolated right of TR → (uMin, 2*vMax - vMin)
+    transformedCameraUvCoords.rewind();
+    transformedCameraUvCoords.put(uMin);
+    transformedCameraUvCoords.put(vMin);
+    transformedCameraUvCoords.put(2.0f * uMax - uMin);
+    transformedCameraUvCoords.put(vMin);
+    transformedCameraUvCoords.put(uMin);
+    transformedCameraUvCoords.put(2.0f * vMax - vMin);
+    transformedCameraUvCoords.rewind();
+
+    if (!directUploadUvsLogged) {
+      Log.e(TAG, String.format("DirectUpload UVs: cam=%dx%d screen=%dx%d "
+          + "V=[%.3f,%.3f] U=[%.3f,%.3f] fill=%.3f",
+          camW, camH, screenW, screenH, vMin, vMax, uMin, uMax, fillScale));
+      directUploadUvsLogged = true;
+    }
+
+    directUploadUvsComputed = true;
+
+    IEngine engine = EngineInstance.getEngine();
+    cameraVertexBuffer.setBufferAt(
+        engine.getFilamentEngine(), UV_BUFFER_INDEX, transformedCameraUvCoords);
+  }
+
+  public boolean isDirectUpload() {
+    return cameraTexture != null && cameraTexture.isDirectUpload();
+  }
+
+  public boolean needsDirectUploadUvs() {
+    return isDirectUpload() && !directUploadUvsComputed;
   }
 
   /**

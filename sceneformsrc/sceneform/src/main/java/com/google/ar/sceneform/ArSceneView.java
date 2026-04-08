@@ -468,8 +468,12 @@ public class ArSceneView extends SceneView {
       }
 
       // Recalculate camera Uvs if necessary.
-      if (shouldRecalculateCameraUvs(frame)) {
-        cameraStream.recalculateCameraUvs(frame);
+      if (shouldRecalculateCameraUvs(frame) || cameraStream.needsDirectUploadUvs()) {
+        if (cameraStream.isDirectUpload()) {
+          cameraStream.recalculateCameraUvsForDirectUpload(getWidth(), getHeight());
+        } else {
+          cameraStream.recalculateCameraUvs(frame);
+        }
       }
 
       // Update camera texture content EVERY frame
@@ -518,8 +522,7 @@ public class ArSceneView extends SceneView {
   }
 
   private boolean shouldRecalculateCameraUvs(Frame frame) {
-    // TODO: revert to frame.hasDisplayGeometryChanged() after UV debugging
-    return true;
+    return frame.hasDisplayGeometryChanged();
   }
 
   /** Get the AR light estimate from the frame and then update the scene. */

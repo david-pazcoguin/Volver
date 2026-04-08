@@ -2,13 +2,14 @@
 
 ## Modifying the Camera Pipeline
 
-1. Read `ExternalTexture.java` — understand the direct upload path (`useDirectUpload`, `TextureHelper.setBitmap()`)
-2. Read `CameraStream.java` — understand `bindTextureToMaterial()` and when texture binding happens
-3. Make your changes
-4. Clean and rebuild: `.\gradlew :sceneform:clean :app:clean :app:assembleDebug`
-5. Install: `adb install -r app\build\outputs\apk\debug\app-debug.apk`
-6. Force stop and relaunch: `adb shell am force-stop com.wheic.arapp && adb shell am start -n com.wheic.arapp/.LoginActivity`
-7. Check logs: `adb logcat -s "ExternalTexture:*" "CameraStream:*" "SceneView:*" "Renderer:*"`
+1. Read `ExternalTexture.java` — understand the direct upload path (`useDirectUpload`, `TextureHelper.setBitmap()`, optimized `yuvToArgb()` with bulk row reads)
+2. Read `CameraStream.java` — understand `bindTextureToMaterial()`, `recalculateCameraUvsForDirectUpload()`, and `needsDirectUploadUvs` flag
+3. Read `ArFragment.java` — understand `selectHighResCameraConfig()` (targets 1280×720 CPU image)
+4. Make your changes
+5. Clean and rebuild: `.\gradlew :sceneform:clean :app:clean :app:assembleDebug`
+6. Install: `adb install -r app\build\outputs\apk\debug\app-debug.apk`
+7. Force stop and relaunch: `adb shell am force-stop com.wheic.arapp && adb shell am start -n com.wheic.arapp/.LoginActivity`
+8. Check logs: `adb logcat -s "ExternalTexture:*" "CameraStream:*" "StandardArFragment:*" "SceneView:*" "Renderer:*"`
 
 ## Recompiling a Material
 

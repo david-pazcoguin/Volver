@@ -172,8 +172,12 @@ public class ExternalTexture {
 
   /**
    * Convert YUV_420_888 (from ARCore camera) to ARGB int array.
+   * Optimized: bulk row reads into byte[] instead of per-pixel ByteBuffer.get().
    */
-  private static void yuvToArgb(Image image, int[] out, int w, int h) {
+  private byte[] yRow;
+  private byte[] uvRow;
+
+  private void yuvToArgb(Image image, int[] out, int w, int h) {
     Image.Plane yPlane = image.getPlanes()[0];
     Image.Plane uPlane = image.getPlanes()[1];
     Image.Plane vPlane = image.getPlanes()[2];
@@ -186,13 +190,41 @@ public class ExternalTexture {
     int uvRowStride = uPlane.getRowStride();
     int uvPixelStride = uPlane.getPixelStride();
 
+    // Allocate row buffers once
+    if (yRow == null || yRow.length < yRowStride) {
+      yRow = new byte[yRowStride];
+    }
+    if (uvRow == null || uvRow.length < uvRowStride) {
+      uvRow = new byte[uvRowStride];
+    }
+
+    byte[] uRowBuf = new byte[uvRowStride];
+    byte[] vRowBuf = new byte[uvRowStride];
+
+    int prevUvRow = -1;
+
     for (int row = 0; row < h; row++) {
+      // Bulk read Y row
+      yBuf.position(row * yRowStride);
+      yBuf.get(yRow, 0, Math.min(yRowStride, yBuf.remaining()));
+
+      int uvRowIdx = row >> 1;
+      // Only re-read UV rows when we move to a new chroma row
+      if (uvRowIdx != prevUvRow) {
+        int uvPos = uvRowIdx * uvRowStride;
+        uBuf.position(uvPos);
+        uBuf.get(uRowBuf, 0, Math.min(uvRowStride, uBuf.remaining()));
+        vBuf.position(uvPos);
+        vBuf.get(vRowBuf, 0, Math.min(uvRowStride, vBuf.remaining()));
+        prevUvRow = uvRowIdx;
+      }
+
       for (int col = 0; col < w; col++) {
-        int y = yBuf.get(row * yRowStride + col) & 0xFF;
-        int uvRow = row >> 1;
+        int y = yRow[col] & 0xFF;
         int uvCol = col >> 1;
-        int u = uBuf.get(uvRow * uvRowStride + uvCol * uvPixelStride) & 0xFF;
-        int v = vBuf.get(uvRow * uvRowStride + uvCol * uvPixelStride) & 0xFF;
+        int uvOffset = uvCol * uvPixelStride;
+        int u = uRowBuf[uvOffset] & 0xFF;
+        int v = vRowBuf[uvOffset] & 0xFF;
 
         int yVal = y - 16;
         int uVal = u - 128;
@@ -233,6 +265,14 @@ public class ExternalTexture {
 
   boolean isDirectUpload() {
     return useDirectUpload;
+  }
+
+  int getCameraWidth() {
+    return cameraBitmap != null ? cameraBitmap.getWidth() : 0;
+  }
+
+  int getCameraHeight() {
+    return cameraBitmap != null ? cameraBitmap.getHeight() : 0;
   }
 
   Stream getFilamentStream() {
