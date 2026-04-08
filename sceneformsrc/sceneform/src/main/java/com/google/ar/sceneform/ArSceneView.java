@@ -468,8 +468,12 @@ public class ArSceneView extends SceneView {
       }
 
       // Recalculate camera Uvs if necessary.
-      if (shouldRecalculateCameraUvs(frame)) {
-        cameraStream.recalculateCameraUvs(frame);
+      if (shouldRecalculateCameraUvs(frame) || cameraStream.needsDirectUploadUvs()) {
+        if (cameraStream.isDirectUpload()) {
+          cameraStream.recalculateCameraUvsForDirectUpload(getWidth(), getHeight());
+        } else {
+          cameraStream.recalculateCameraUvs(frame);
+        }
       }
 
       // Update camera texture content EVERY frame
