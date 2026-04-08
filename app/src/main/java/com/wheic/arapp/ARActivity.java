@@ -85,6 +85,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     // ── UI ──────────────────────────────────────────────────────────
     private TextView tvCharacterName;
     private TextView tvCharacterHint;
+    private NavigationCompassView navigationCompass;
 
     // ── Periodic location check ──────────────────────────────────────
     private final float[] distanceResults = new float[1];
@@ -135,6 +136,8 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         // Bind character overlay views (defined in ar_activity.xml)
         tvCharacterName = findViewById(R.id.tvCharacterName);
         tvCharacterHint = findViewById(R.id.tvCharacterHint);
+        navigationCompass = findViewById(R.id.navigationCompass);
+        navigationCompass.setTargetLocation(targetLatitude, targetLongitude);
 
         arCam = (ArFragment) getSupportFragmentManager().findFragmentById(R.id.arCameraArea);
         ttsEngine = new TextToSpeech(this, this);
@@ -160,12 +163,14 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         }
         // Start periodic location check when screen is visible
         locationHandler.post(locationRunnable);
+        if (navigationCompass != null) navigationCompass.startSensors();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         locationHandler.removeCallbacks(locationRunnable);
+        if (navigationCompass != null) navigationCompass.stopSensors();
         if (arCam != null && arCam.getArSceneView() != null) {
             arCam.getArSceneView().getScene().removeOnUpdateListener(sceneUpdateListener);
         }
@@ -304,6 +309,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                             targetLatitude, targetLongitude, distanceResults);
                     float distance = distanceResults[0];
 
+                    if (navigationCompass != null) {
+                        navigationCompass.updateCurrentLocation(
+                                cameraPose.getLatitude(), cameraPose.getLongitude(), distance);
+                    }
                     if (distance <= ACTIVATION_RADIUS_METERS) {
                         onTargetReached();
                     } else {
@@ -330,6 +339,11 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                     targetLatitude, targetLongitude, distanceResults);
             float distance = distanceResults[0];
 
+            if (navigationCompass != null) {
+                navigationCompass.updateCurrentLocation(
+                        location.getLatitude(), location.getLongitude(), distance);
+            }
+
             if (distance <= ACTIVATION_RADIUS_METERS) {
                 onTargetReached();
             } else {
@@ -346,6 +360,12 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private void onTargetReached() {
         if (isTargetReached) return; // already triggered
         isTargetReached = true;
+
+        // Hide navigation compass — user has arrived
+        if (navigationCompass != null) {
+            navigationCompass.setVisibility(View.GONE);
+            navigationCompass.stopSensors();
+        }
 
         // Show character name overlay
         if (tvCharacterName != null) {
