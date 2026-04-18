@@ -57,6 +57,12 @@ public class NFTClaimActivity extends AppCompatActivity {
         btnMintNFT      = findViewById(R.id.btnMintNFT);
         progressMint    = findViewById(R.id.progressMint);
 
+        TextView tvCoinCount = findViewById(R.id.tvWalletCoinCount);
+        if (tvCoinCount != null) {
+            int total = CoinManager.getTotalCoins(this);
+            tvCoinCount.setText(total + " coins collected");
+        }
+
         // Guard: wallet must be set up before reaching this screen
         if (!walletManager.hasWallet()) {
             startActivity(new Intent(this, WalletSetupActivity.class));
