@@ -117,8 +117,6 @@ public class ARAdapter extends RecyclerView.Adapter<ARAdapter.ViewHolder>
                 return R.drawable.museo_intramuros;
             case "centro_turismo":
                 return R.drawable.centro_turismo;
-            case "lyceum_philippines":
-                return R.drawable.mission_icon;
             default:
                 return R.drawable.mission_icon;
         }
