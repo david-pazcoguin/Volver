@@ -26,7 +26,7 @@ import java.util.Set;
  */
 public class MissionCompletionHelper {
 
-    private static final int TOTAL_LANDMARKS = 6;
+    private static final int TOTAL_LANDMARKS = 5;
 
     public interface CompletionCallback {
         void onSuccess();

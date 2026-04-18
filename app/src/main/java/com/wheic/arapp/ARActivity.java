@@ -41,13 +41,8 @@ import com.google.ar.sceneform.rendering.ModelRenderable;
 import com.google.ar.sceneform.ux.ArFragment;
 import com.google.ar.sceneform.ux.TransformableNode;
 
-import android.view.ViewGroup;
-import android.widget.LinearLayout;
-
-import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInitListener {
@@ -86,11 +81,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     // ── TTS ─────────────────────────────────────────────────────────
     private TextToSpeech ttsEngine;
     private boolean ttsReady = false;
-
-    // ── Coins ────────────────────────────────────────────────────────
-    private CompletableFuture<ModelRenderable> coinModelFuture;
-    private LinearLayout coinCounterLayout;
-    private TextView tvCoinCount;
 
     // ── UI ──────────────────────────────────────────────────────────
     private TextView tvCharacterName;
@@ -159,12 +149,8 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             // Subscribe to per-frame updates to retry geospatial config if needed
         }
 
-        coinCounterLayout = findViewById(R.id.coinCounterLayout);
-        tvCoinCount = findViewById(R.id.tvCoinCount);
-
         requestLocationPermission();
         preloadCharacterModel();
-        preloadCoinModel();
         setupTapListener();
     }
 
@@ -276,23 +262,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             runOnUiThread(() ->
                     Toast.makeText(this, "Failed to load 3D model. Please restart.",
                             Toast.LENGTH_LONG).show());
-            return null;
-        });
-    }
-
-    private void preloadCoinModel() {
-        int resId = getResources().getIdentifier("intramuros_coin", "raw", getPackageName());
-        if (resId == 0) {
-            Log.w(TAG, "intramuros_coin.glb not found — coins will not appear.");
-            return;
-        }
-        coinModelFuture = ModelRenderable.builder()
-                .setSource(this, resId)
-                .setIsFilamentGltf(true)
-                .build();
-        coinModelFuture.exceptionally(t -> {
-            Log.e(TAG, "Failed to load coin model: " + t.getMessage());
-            coinModelFuture = null;
             return null;
         });
     }
@@ -536,69 +505,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         model.setLocalScale(new Vector3(0.01f, 0.01f, 0.01f));
         model.select();
 
+        // Tap the placed model to replay the character dialogue
         model.setOnTapListener((hitResult, node) -> speakText(characterDialogue));
 
         updateHint("Tap " + characterName + " to hear the story again");
-
-        spawnCoins(anchorNode);
-    }
-
-    private void spawnCoins(AnchorNode anchorNode) {
-        if (coinModelFuture == null || !coinModelFuture.isDone()
-                || coinModelFuture.isCompletedExceptionally()) return;
-
-        List<CoinManager.CoinSpawn> spawns = CoinManager.loadSpawns(this, missionId);
-        Set<String> collectable = CoinManager.getCollectableToday(this, missionId, spawns);
-
-        if (collectable.isEmpty()) {
-            Toast.makeText(this, "All coins collected today! Come back tomorrow.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        try {
-            ModelRenderable coinRenderable = coinModelFuture.get();
-            for (CoinManager.CoinSpawn spawn : spawns) {
-                if (!collectable.contains(spawn.id)) continue;
-
-                com.google.ar.sceneform.Node coinNode = new com.google.ar.sceneform.Node();
-                coinNode.setParent(anchorNode);
-                coinNode.setLocalPosition(new Vector3(spawn.x, spawn.y + 0.1f, spawn.z));
-                coinNode.setLocalScale(new Vector3(0.05f, 0.05f, 0.05f));
-                coinNode.setRenderable(coinRenderable);
-
-                String coinId = spawn.id;
-                coinNode.setOnTapListener((hit, node) -> collectCoin(coinNode, coinId));
-            }
-
-            showCoinCounter();
-        } catch (Exception e) {
-            Log.e(TAG, "Error spawning coins", e);
-        }
-    }
-
-    private void collectCoin(com.google.ar.sceneform.Node coinNode, String coinId) {
-        boolean collected = CoinManager.collectCoin(this, coinId);
-        if (!collected) return;
-
-        coinNode.setParent(null);
-        int total = CoinManager.getTotalCoins(this);
-        runOnUiThread(() -> {
-            Toast.makeText(this, "Coin collected! Total: " + total, Toast.LENGTH_SHORT).show();
-            updateCoinCounterUI(total);
-        });
-    }
-
-    private void showCoinCounter() {
-        if (coinCounterLayout == null) return;
-        int total = CoinManager.getTotalCoins(this);
-        updateCoinCounterUI(total);
-        coinCounterLayout.setVisibility(android.view.View.VISIBLE);
-    }
-
-    private void updateCoinCounterUI(int total) {
-        if (tvCoinCount != null) {
-            tvCoinCount.setText(total + " coins");
-        }
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -646,7 +556,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         if (isFinishing() || isDestroyed()) return;
         new AlertDialog.Builder(this)
                 .setTitle("Intramuros Passport Complete!")
-                .setMessage("You have visited all 6 sites. Return to the home screen to claim your Walled City Key NFT.")
+                .setMessage("You have visited all 5 sites. Return to the home screen to claim your Walled City Key NFT.")
                 .setPositiveButton("Go to Home", (d, w) -> finish())
                 .setNegativeButton("Stay in AR", null)
                 .show();
