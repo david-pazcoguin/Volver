@@ -136,6 +136,17 @@ public class HomeActivity extends AppCompatActivity {
                 "and kept the flame of memory alive. The Intramuros Passport is yours.",
                 "ignatius_character"
         ));
+
+        arHelpers.add(new ARHelper(
+                "Lyceum of the Philippines University",
+                "",
+                14.5881, 120.9735,
+                "lyceum_philippines",
+                "Jose P. Laurel",
+                "Education is the cornerstone of a free nation. Within these halls, " +
+                "the minds of tomorrow are shaped. Take a photo and preserve this legacy.",
+                "laurel_character"
+        ));
     }
 
     private void setupRecyclerView() {
