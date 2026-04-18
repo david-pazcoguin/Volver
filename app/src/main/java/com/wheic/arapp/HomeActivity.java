@@ -85,7 +85,7 @@ public class HomeActivity extends AppCompatActivity {
         arHelpers.add(new ARHelper(
                 "Fort Santiago",
                 "",
-                14.6367, 121.0028,
+                14.594265, 120.970425,
                 "fort_santiago",
                 "José Rizal",
                 "In this cell, my thoughts turned to freedom. I leave behind my last poem, " +
@@ -96,7 +96,7 @@ public class HomeActivity extends AppCompatActivity {
         arHelpers.add(new ARHelper(
                 "Baluarte de San Diego",
                 "",
-                14.587778, 120.971667,
+                14.585491, 120.975702,
                 "baluarte_san_diego",
                 "Antonio Sedeño",
                 "From this tower, we watched the galleons approach across Manila Bay. " +
@@ -107,7 +107,7 @@ public class HomeActivity extends AppCompatActivity {
         arHelpers.add(new ARHelper(
                 "Casa Manila",
                 "",
-                14.590000, 120.975278,
+                14.589622, 120.975129,
                 "casa_manila",
                 "Imelda Marcos",
                 "This home revives our bahay na bato legacy. Every room tells a story " +
@@ -118,7 +118,7 @@ public class HomeActivity extends AppCompatActivity {
         arHelpers.add(new ARHelper(
                 "Museo de Intramuros",
                 "",
-                14.5898, 120.9734,
+                14.589853, 120.973438,
                 "museo_intramuros",
                 "Martin Tinio Jr.",
                 "These stones whisper Manila's four-hundred-year saga. " +
@@ -129,7 +129,7 @@ public class HomeActivity extends AppCompatActivity {
         arHelpers.add(new ARHelper(
                 "Centro de Turismo",
                 "",
-                14.5912, 120.9756,
+                14.590135, 120.973367,
                 "centro_turismo",
                 "St. Ignatius of Loyola",
                 "From ruins, renewal rises. You have walked the length of the Walled City " +
