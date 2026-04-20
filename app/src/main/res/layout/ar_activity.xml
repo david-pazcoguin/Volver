@@ -12,6 +12,13 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- AR compass overlay — full-screen, togglable (hidden by default) -->
+    <com.wheic.arapp.ARNavigationOverlay
+        android:id="@+id/arNavOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
     <!-- Character name banner — appears when user enters the 50 m radius -->
     <TextView
         android:id="@+id/tvCharacterName"
@@ -29,6 +36,93 @@
         android:gravity="center"
         android:fontFamily="@font/montserrat_bold"
         android:visibility="gone" />
+
+    <!-- Direction banner — turn-by-turn instruction at the top -->
+    <LinearLayout
+        android:id="@+id/directionBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_marginTop="8dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/direction_banner_bg"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:elevation="4dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tvDirectionIcon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="28sp"
+            android:textColor="#FFFFFF" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tvDirectionText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="15sp"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:fontFamily="@font/montserrat_bold"
+                android:maxLines="2"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/tvDirectionDistance"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="#AAAAAA"
+                android:layout_marginTop="2dp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Minimap — hidden, kept for potential future use -->
+    <FrameLayout
+        android:id="@+id/minimapContainer"
+        android:layout_width="170dp"
+        android:layout_height="170dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="64dp"
+        android:background="@android:color/white"
+        android:padding="4dp"
+        android:elevation="8dp"
+        android:visibility="gone">
+
+        <org.osmdroid.views.MapView
+            android:id="@+id/minimap"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </FrameLayout>
+
+    <!-- Toggle button — switches between text banner and AR overlay -->
+    <TextView
+        android:id="@+id/btnToggleNav"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="12dp"
+        android:layout_marginBottom="64dp"
+        android:background="@drawable/direction_banner_bg"
+        android:text="🧭"
+        android:textSize="20sp"
+        android:gravity="center"
+        android:elevation="4dp" />
 
     <!-- Hint text at the bottom -->
     <TextView
