@@ -301,8 +301,8 @@ public class ARNavigationOverlay extends View implements SensorEventListener {
             distLabel = instructionDistance;
         }
 
-        float pillW   = w * 0.62f;
-        float pillH   = dp(68);
+        float pillW   = w * 0.72f;
+        float pillH   = dp(80);
         float pillY   = h * 0.87f;
         float radius  = dp(16);
 
@@ -310,17 +310,17 @@ public class ARNavigationOverlay extends View implements SensorEventListener {
                      w / 2f + pillW / 2f, pillY + pillH / 2f);
         canvas.drawRoundRect(pillRect, radius, radius, pillPaint);
 
-        // Mission name (small white)
-        textPaint.setTextSize(dp(11));
-        canvas.drawText(missionName.toUpperCase(Locale.US), w / 2f, pillY - dp(14), textPaint);
+        // Row 1 — mission name (small white, top)
+        textPaint.setTextSize(dp(10));
+        canvas.drawText(missionName.toUpperCase(Locale.US), w / 2f, pillY - dp(22), textPaint);
 
-        // Distance (large gold)
-        distPaint.setTextSize(dp(22));
-        canvas.drawText(distLabel, w / 2f - dp(30), pillY + dp(16), distPaint);
+        // Row 2 — direction label (medium white bold, middle)
+        textPaint.setTextSize(dp(15));
+        canvas.drawText(dirLabel, w / 2f, pillY - dp(4), textPaint);
 
-        // Direction label (small gold)
-        distPaint.setTextSize(dp(11));
-        canvas.drawText(dirLabel, w / 2f + dp(30), pillY + dp(16), distPaint);
+        // Row 3 — distance (small gold, bottom)
+        distPaint.setTextSize(dp(12));
+        canvas.drawText(distLabel, w / 2f, pillY + dp(16), distPaint);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────

@@ -39,6 +39,7 @@ import com.google.ar.core.Session;
 import com.google.ar.core.TrackingState;
 import com.google.ar.sceneform.AnchorNode;
 import com.google.ar.sceneform.FrameTime;
+import com.google.ar.sceneform.Node;
 import com.google.ar.sceneform.Scene;
 import com.google.ar.sceneform.math.Vector3;
 import com.google.ar.sceneform.rendering.ModelRenderable;
@@ -58,9 +59,23 @@ import org.osmdroid.views.overlay.Polyline;
 import android.widget.LinearLayout;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Random;
 import java.util.concurrent.CompletableFuture;
+
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.drawable.BitmapDrawable;
+
+import com.google.ar.core.Frame;
+import com.google.ar.core.Plane;
+import com.google.ar.core.Pose;
+import com.google.ar.sceneform.math.Quaternion;
 
 public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInitListener {
 
@@ -79,8 +94,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
     private static final int  LOCATION_PERM_CODE       = 1001;
-    private static final float ACTIVATION_RADIUS_METERS = 50.0f;
+    private static final float ACTIVATION_RADIUS_METERS = 20.0f;
+    private static final float OUT_OF_BOUNDS_RADIUS     = 50.0f;
     private static final long  LOCATION_CHECK_INTERVAL  = 10_000L; // 10 seconds
+    private long lastOutOfBoundsWarnMs = 0;
 
     private double targetLatitude;
     private double targetLongitude;
@@ -91,6 +108,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
     // ── Mission / character data ────────────────────────────────────
     private String missionId;
+    private String missionName;   // location name e.g. "Fort Santiago"
     private String characterName;
     private String characterDialogue;
     private String modelFileName;
@@ -114,12 +132,25 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private View btnToggleNav;
     private boolean useArOverlay = false;
 
-    // ── Minimap (disabled — kept for future use) ────────────────────
+    // ── Minimap ─────────────────────────────────────────────────────
     private MapView minimap;
     private View minimapContainer;
     private Marker userMarker;
     private Marker targetMarker;
     private Polyline routeOverlay;
+
+    // ── Scattered coins ─────────────────────────────────────────────
+    private CompletableFuture<ModelRenderable> coinModelFuture;
+    private final List<Marker> coinMapMarkers = new ArrayList<>();
+    private final List<AnchorNode> coinAnchorNodes = new ArrayList<>();
+    private final List<Node> coinNodes = new ArrayList<>();
+    private boolean coinsSpawned = false;
+    private int coinsCollected = 0;
+    private float coinCollectedValue = 0f;
+    private float coinRotationAngle = 0f;
+    private static final int TOTAL_COINS = 1;
+    private static final float COIN_SCALE = 0.15f;
+    private static final float COIN_VALUE = 0.10f;
 
     // ── Periodic location check ──────────────────────────────────────
     private final float[] distanceResults = new float[1];
@@ -156,6 +187,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             targetLongitude  = extras.getDouble("Longitude", 121.0032413);
             targetAltitude   = extras.getDouble("Altitude", Double.NaN);
             missionId        = extras.getString("MissionId",        "unknown");
+            missionName      = extras.getString("MissionName",      "Mission");
             characterName    = extras.getString("CharacterName",    "Guide");
             characterDialogue= extras.getString("CharacterDialogue","Welcome.");
             modelFileName    = extras.getString("ModelFileName",    "san_bartolome_church");
@@ -185,7 +217,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
         // Set up NavigationDirectionManager
         navManager = new NavigationDirectionManager(this);
-        navManager.setTarget(targetLatitude, targetLongitude, characterName);
+        navManager.setTarget(targetLatitude, targetLongitude, missionName);
         navManager.setListener(new NavigationDirectionManager.DirectionListener() {
             @Override
             public void onDirectionUpdate(NavigationDirectionManager.DirectionStep step) {
@@ -200,7 +232,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
         // Set AR overlay target (always points at final destination)
         if (arNavOverlay != null) {
-            arNavOverlay.setTargetLocation(targetLatitude, targetLongitude, characterName);
+            arNavOverlay.setTargetLocation(targetLatitude, targetLongitude, missionName);
         }
 
         // Toggle button: switch between text banner and AR compass overlay
@@ -231,25 +263,30 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             @Override
             public void onLocationResult(@NonNull LocationResult result) {
                 Location location = result.getLastLocation();
-                if (location == null || isTargetReached) return;
+                if (location == null) return;
 
                 Location.distanceBetween(
                         location.getLatitude(), location.getLongitude(),
                         targetLatitude, targetLongitude, distanceResults);
                 float distance = distanceResults[0];
 
-                // Feed navigation direction manager
-                if (navManager != null) {
-                    navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
-                }
-                // Update AR compass overlay with current position
-                if (arNavOverlay != null) {
-                    arNavOverlay.updateCurrentLocation(
-                            location.getLatitude(), location.getLongitude(), distance);
-                }
-
-                if (distance <= ACTIVATION_RADIUS_METERS) {
-                    onTargetReached();
+                if (!isTargetReached) {
+                    // Feed navigation direction manager
+                    if (navManager != null) {
+                        navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
+                    }
+                    if (arNavOverlay != null) {
+                        arNavOverlay.updateCurrentLocation(
+                                location.getLatitude(), location.getLongitude(), distance);
+                    }
+                    if (distance <= ACTIVATION_RADIUS_METERS) {
+                        onTargetReached();
+                    }
+                } else {
+                    // Already in mission — warn if user wanders out of bounds
+                    if (distance > OUT_OF_BOUNDS_RADIUS) {
+                        warnOutOfBounds();
+                    }
                 }
             }
         };
@@ -262,7 +299,8 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
         requestLocationPermission();
         preloadCharacterModel();
-        setupTapListener();
+        preloadCoinModel();
+        setupMinimap();
     }
 
     @Override
@@ -275,6 +313,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         // Start periodic location check when screen is visible
         locationHandler.post(locationRunnable);
         startLocationUpdates();
+        if (minimap != null) minimap.onResume();
         // Keep direction UI above the AR SurfaceView
         if (arNavOverlay != null) arNavOverlay.bringToFront();
         if (directionBanner != null) directionBanner.bringToFront();
@@ -290,6 +329,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         super.onPause();
         locationHandler.removeCallbacks(locationRunnable);
         stopLocationUpdates();
+        if (minimap != null) minimap.onPause();
         if (arNavOverlay != null) arNavOverlay.stopSensors();
         if (arCam != null && arCam.getArSceneView() != null) {
             arCam.getArSceneView().getScene().removeOnUpdateListener(sceneUpdateListener);
@@ -323,6 +363,12 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private void onSceneUpdate(FrameTime frameTime) {
         if (!geospatialConfigured) {
             configureGeospatialMode();
+        }
+        if (isTargetReached && !coinsSpawned) {
+            tryAutoSpawnCoins();
+        }
+        if (!coinNodes.isEmpty()) {
+            animateCoins();
         }
 
         // One-time diagnostic: after a few frames, check if camera stream is healthy
@@ -533,23 +579,22 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         }
         if (btnToggleNav != null) btnToggleNav.setVisibility(View.GONE);
 
-        // Show character name overlay
+        // Show minimap so player can see coin location
+        if (minimapContainer != null) minimapContainer.setVisibility(View.VISIBLE);
+
         if (tvCharacterName != null) {
-            tvCharacterName.setText(characterName + " appears...");
+            tvCharacterName.setText("A coin is appearing nearby!");
             tvCharacterName.setVisibility(View.VISIBLE);
         }
-        updateHint("Tap a flat surface to place the character");
+        updateHint("Find and tap the floating coin to complete the mission!");
 
-        // Auto-speak the greeting (once per visit)
+        // Auto-speak the mission dialogue (once per visit)
         if (!hasGreeted) {
             hasGreeted = true;
-            if (ttsReady) {
-                speakText(characterDialogue);
-            }
-            // If TTS isn't ready yet, onInit() will call speakText when it initialises
+            if (ttsReady) speakText(characterDialogue);
         }
 
-        Toast.makeText(this, characterName + " has arrived! Tap a surface to place.",
+        Toast.makeText(this, "You reached the mission! Find the floating coin!",
                 Toast.LENGTH_LONG).show();
     }
 
@@ -721,10 +766,9 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         model.setLocalScale(new Vector3(0.01f, 0.01f, 0.01f));
         model.select();
 
-        // Tap the placed model to replay the character dialogue
         model.setOnTapListener((hitResult, node) -> speakText(characterDialogue));
 
-        updateHint("Tap " + characterName + " to hear the story again");
+        updateHint("Tap the coin to hear the story. Collect the 10 scattered coins!");
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -803,6 +847,204 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         } catch (Exception e) {
             // TTS may have been shutdown between the null-check and speak() call
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Out-of-bounds warning
+    // ──────────────────────────────────────────────────────────────────
+
+    private void warnOutOfBounds() {
+        long now = System.currentTimeMillis();
+        if (now - lastOutOfBoundsWarnMs < 20_000L) return;
+        lastOutOfBoundsWarnMs = now;
+        Toast.makeText(this,
+                "⚠️ You are leaving the mission area! Return to collect coins.",
+                Toast.LENGTH_LONG).show();
+        updateHint("⚠️ Out of bounds — come back to the mission area!");
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Coin model preload
+    // ──────────────────────────────────────────────────────────────────
+
+    private void preloadCoinModel() {
+        coinModelFuture = ModelRenderable.builder()
+                .setSource(this, R.raw.intramuros_coin)
+                .setIsFilamentGltf(true)
+                .build();
+        coinModelFuture.exceptionally(t -> {
+            Log.e(TAG, "Failed to load coin model: " + t.getMessage());
+            return null;
+        });
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Minimap setup
+    // ──────────────────────────────────────────────────────────────────
+
+    private void setupMinimap() {
+        if (minimap == null) return;
+        minimap.setTileSource(TileSourceFactory.MAPNIK);
+        minimap.setMultiTouchControls(false);
+        minimap.setClickable(false);
+        minimap.getController().setZoom(18.5);
+        minimap.getController().setCenter(new GeoPoint(targetLatitude, targetLongitude));
+
+        // Blue dot for mission center
+        targetMarker = new Marker(minimap);
+        targetMarker.setPosition(new GeoPoint(targetLatitude, targetLongitude));
+        targetMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER);
+        targetMarker.setIcon(createDotDrawable(Color.parseColor("#2196F3"), 28));
+        targetMarker.setTitle("Mission");
+        minimap.getOverlays().add(targetMarker);
+    }
+
+    private void addCoinMarkerToMinimap(GeoPoint point) {
+        if (minimap == null) return;
+        Marker m = new Marker(minimap);
+        m.setPosition(point);
+        m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER);
+        m.setIcon(createDotDrawable(Color.RED, 20));
+        m.setTitle("Coin");
+        minimap.getOverlays().add(m);
+        coinMapMarkers.add(m);
+        minimap.invalidate();
+    }
+
+    private BitmapDrawable createDotDrawable(int color, int sizePx) {
+        Bitmap bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bmp);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(color);
+        canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx / 2f - 1, paint);
+        return new BitmapDrawable(getResources(), bmp);
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Scattered coin spawning
+    // ──────────────────────────────────────────────────────────────────
+
+    private void tryAutoSpawnCoins() {
+        if (coinModelFuture == null || !coinModelFuture.isDone()
+                || coinModelFuture.isCompletedExceptionally()) return;
+        if (arCam == null || arCam.getArSceneView() == null) return;
+
+        if (coinAnchorNodes.size() >= TOTAL_COINS) {
+            coinsSpawned = true;
+            return;
+        }
+
+        Frame frame = arCam.getArSceneView().getArFrame();
+        if (frame == null || frame.getCamera().getTrackingState() != TrackingState.TRACKING) return;
+
+        Session session = arCam.getArSceneView().getSession();
+        if (session == null) return;
+
+        ModelRenderable coinRenderable;
+        try {
+            coinRenderable = coinModelFuture.get();
+        } catch (Exception e) { return; }
+        if (coinRenderable == null) return;
+
+        Pose cam = frame.getCamera().getPose();
+        float cx = cam.tx(), cy = cam.ty(), cz = cam.tz();
+
+        // Random angle and random distance within mission radius (6–12 m)
+        Random rng = new Random();
+        float angleDeg = rng.nextFloat() * 360f;
+        float radius   = 6f + rng.nextFloat() * 6f; // 6–12 m
+        float dx = (float) (radius * Math.sin(Math.toRadians(angleDeg)));
+        float dz = (float) (-radius * Math.cos(Math.toRadians(angleDeg)));
+        float dy = -0.3f; // chest height
+
+        try {
+            Pose coinPose = Pose.makeTranslation(cx + dx, cy + dy, cz + dz);
+            Anchor anchor = session.createAnchor(coinPose);
+
+            AnchorNode anchorNode = new AnchorNode(anchor);
+            anchorNode.setParent(arCam.getArSceneView().getScene());
+
+            Node coinNode = new Node();
+            coinNode.setParent(anchorNode);
+            coinNode.setRenderable(coinRenderable);
+            coinNode.setLocalScale(new Vector3(COIN_SCALE, COIN_SCALE, COIN_SCALE));
+            coinNode.setOnTapListener((hr, nd) -> collectCoin(0, anchorNode));
+
+            coinAnchorNodes.add(anchorNode);
+            coinNodes.add(coinNode);
+
+            // Minimap red dot
+            double latOff = dz / 111111.0;
+            double lngOff = dx / (111111.0 * Math.cos(Math.toRadians(targetLatitude)));
+            GeoPoint gp = new GeoPoint(targetLatitude + latOff, targetLongitude + lngOff);
+            runOnUiThread(() -> addCoinMarkerToMinimap(gp));
+
+            coinsSpawned = true;
+            runOnUiThread(() -> {
+                Toast.makeText(this,
+                        "A coin is floating nearby! Find and tap it!",
+                        Toast.LENGTH_LONG).show();
+                updateHint("Find the floating coin and tap it to complete the mission!");
+                if (tvCharacterName != null) tvCharacterName.setVisibility(View.GONE);
+            });
+
+        } catch (Exception e) {
+            Log.w(TAG, "Coin placement failed: " + e.getMessage());
+        }
+    }
+
+    private void animateCoins() {
+        coinRotationAngle = (coinRotationAngle + 1.2f) % 360f;
+        float bobY = (float) (Math.sin(System.currentTimeMillis() / 700.0) * 0.06f);
+
+        for (int i = 0; i < coinNodes.size(); i++) {
+            Node node = coinNodes.get(i);
+            if (node == null || node.getParent() == null) continue;
+            // Each coin rotates at same speed but with a slight phase offset
+            float angle = (coinRotationAngle + i * 36f) % 360f;
+            node.setLocalRotation(Quaternion.axisAngle(new Vector3(0f, 1f, 0f), angle));
+            // Bob up and down with individual phase offset
+            float bob = (float) (Math.sin(System.currentTimeMillis() / 700.0 + i * 0.6) * 0.06f);
+            node.setLocalPosition(new Vector3(0f, bob, 0f));
+        }
+    }
+
+    private void collectCoin(int index, AnchorNode anchorNode) {
+        if (anchorNode == null || anchorNode.getParent() == null) return;
+
+        // Detach from scene
+        anchorNode.setParent(null);
+        if (index < coinAnchorNodes.size()) coinAnchorNodes.set(index, null);
+        if (index < coinNodes.size())       coinNodes.set(index, null);
+
+        coinsCollected++;
+        coinCollectedValue += COIN_VALUE;
+
+        // Remove red dot from minimap
+        if (minimap != null && index < coinMapMarkers.size()
+                && coinMapMarkers.get(index) != null) {
+            minimap.getOverlays().remove(coinMapMarkers.get(index));
+            coinMapMarkers.set(index, null);
+            runOnUiThread(() -> minimap.invalidate());
+        }
+
+        // Mark mission complete and show congratulation dialog
+        hasPlacedModel = true;
+        onMissionModelPlaced();
+
+        runOnUiThread(() -> {
+            updateHint("Mission complete! Coin collected.");
+            if (!isFinishing() && !isDestroyed()) {
+                new AlertDialog.Builder(this)
+                        .setTitle("Congratulations!")
+                        .setMessage(String.format(Locale.US,
+                                "You collected the Intramuros Coin at %s!\n\nCoin value: ₱%.2f",
+                                missionName, coinCollectedValue))
+                        .setPositiveButton("Awesome!", (d, w) -> d.dismiss())
+                        .setCancelable(false)
+                        .show();
+            }
+        });
     }
 
     // ──────────────────────────────────────────────────────────────────
