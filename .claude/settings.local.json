@@ -14,7 +14,16 @@
       "mcp__paper__get_screenshot",
       "mcp__paper__get_font_family_info",
       "Bash(python -c \"import socket; s = socket.socket\\(\\); s.settimeout\\(2\\); result = s.connect_ex\\(\\('localhost', 9876\\)\\); print\\('Connected' if result == 0 else f'Cannot connect: error {result}'\\); s.close\\(\\)\")",
-      "Bash(find /c/Users/Mane/Documents/Volver -type f \\\\\\( -name \"*.md\" -o -name \"*.txt\" \\\\\\) | xargs grep -l -i \"blockchain\\\\|wallet\\\\|web3\\\\|nft\" 2>/dev/null || echo \"No matches found\")"
+      "Bash(find /c/Users/Mane/Documents/Volver -type f \\\\\\( -name \"*.md\" -o -name \"*.txt\" \\\\\\) | xargs grep -l -i \"blockchain\\\\|wallet\\\\|web3\\\\|nft\" 2>/dev/null || echo \"No matches found\")",
+      "Read(//c/Users/Mane/**)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(where uvx *)",
+      "Bash(where uv *)",
+      "mcp__blender__get_scene_info"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Mane\\.claude"
     ]
   }
 }
