@@ -50,6 +50,10 @@ public class ARNavigationOverlay extends View implements SensorEventListener {
     private double targetLat, targetLon, currentLat, currentLon;
     private final float[] bearingBuf = new float[2];
 
+    // ── Turn instruction (set by NavigationDirectionManager via Activity) ──
+    private String instructionLabel;
+    private String instructionDistance;
+
     // ── Animation ─────────────────────────────────────────────────────
     private float animPhase = 0f;
 
@@ -148,6 +152,13 @@ public class ARNavigationOverlay extends View implements SensorEventListener {
 
     public void stopSensors() {
         if (sensorManager != null) sensorManager.unregisterListener(this);
+    }
+
+    /** Set the current turn-by-turn instruction to display in the HUD pill. */
+    public void setCurrentInstruction(String label, String distanceText) {
+        this.instructionLabel = label;
+        this.instructionDistance = distanceText;
+        postInvalidate();
     }
 
     // ── Sensor callbacks ──────────────────────────────────────────────
@@ -276,12 +287,19 @@ public class ARNavigationOverlay extends View implements SensorEventListener {
         }
 
         String dirLabel;
-        if (behind)             dirLabel = "↩ TURN AROUND";
+        if (instructionLabel != null && !instructionLabel.isEmpty()) {
+            dirLabel = instructionLabel;
+        } else if (behind)      dirLabel = "↩ TURN AROUND";
         else if (offRight)      dirLabel = "▶▶ TURN RIGHT";
         else if (offLeft)       dirLabel = "◀◀ TURN LEFT";
         else if (diff >  25)    dirLabel = "▲▶ BEAR RIGHT";
         else if (diff < -25)    dirLabel = "◀▲ BEAR LEFT";
         else                    dirLabel = "▲  AHEAD";
+
+        // Override distance display with turn instruction distance if provided
+        if (instructionDistance != null && !instructionDistance.isEmpty()) {
+            distLabel = instructionDistance;
+        }
 
         float pillW   = w * 0.62f;
         float pillH   = dp(68);
