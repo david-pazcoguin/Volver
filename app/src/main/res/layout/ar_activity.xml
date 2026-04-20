@@ -30,11 +30,14 @@
         android:fontFamily="@font/montserrat_bold"
         android:visibility="gone" />
 
-    <!-- AR Navigation Overlay — full screen, sits above the camera feed -->
-    <com.wheic.arapp.ARNavigationOverlay
-        android:id="@+id/arNavOverlay"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+    <!-- Minimap — bottom-right corner, above the hint bar -->
+    <org.osmdroid.views.MapView
+        android:id="@+id/minimap"
+        android:layout_width="160dp"
+        android:layout_height="160dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="64dp" />
 
     <!-- Hint text at the bottom -->
     <TextView
