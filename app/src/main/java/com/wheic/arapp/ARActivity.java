@@ -24,7 +24,11 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.Priority;
 import com.google.ar.core.Anchor;
 import com.google.ar.core.Config;
 import com.google.ar.core.Earth;
@@ -41,6 +45,19 @@ import com.google.ar.sceneform.rendering.ModelRenderable;
 import com.google.ar.sceneform.ux.ArFragment;
 import com.google.ar.sceneform.ux.TransformableNode;
 
+import org.osmdroid.config.Configuration;
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory;
+import org.osmdroid.util.GeoPoint;
+import org.osmdroid.views.MapView;
+import org.osmdroid.views.overlay.Marker;
+import org.osmdroid.bonuspack.routing.OSRMRoadManager;
+import org.osmdroid.bonuspack.routing.Road;
+import org.osmdroid.bonuspack.routing.RoadManager;
+import org.osmdroid.views.overlay.Polyline;
+
+import android.widget.LinearLayout;
+
+import java.util.ArrayList;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -60,6 +77,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
     // ── Location ────────────────────────────────────────────────────
     private FusedLocationProviderClient fusedLocationClient;
+    private LocationCallback locationCallback;
     private static final int  LOCATION_PERM_CODE       = 1001;
     private static final float ACTIVATION_RADIUS_METERS = 50.0f;
     private static final long  LOCATION_CHECK_INTERVAL  = 10_000L; // 10 seconds
@@ -86,6 +104,23 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private TextView tvCharacterName;
     private TextView tvCharacterHint;
 
+    // ── Turn-by-turn directions ──────────────────────────────────────
+    private NavigationDirectionManager navManager;
+    private ARNavigationOverlay arNavOverlay;
+    private LinearLayout directionBanner;
+    private TextView tvDirectionIcon;
+    private TextView tvDirectionText;
+    private TextView tvDirectionDistance;
+    private View btnToggleNav;
+    private boolean useArOverlay = false;
+
+    // ── Minimap (disabled — kept for future use) ────────────────────
+    private MapView minimap;
+    private View minimapContainer;
+    private Marker userMarker;
+    private Marker targetMarker;
+    private Polyline routeOverlay;
+
     // ── Periodic location check ──────────────────────────────────────
     private final float[] distanceResults = new float[1];
     private final Handler locationHandler = new Handler(Looper.getMainLooper());
@@ -106,6 +141,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // osmdroid needs a user-agent before any MapView is inflated
+        Configuration.getInstance().load(this, getPreferences(MODE_PRIVATE));
+        Configuration.getInstance().setUserAgentValue(getPackageName());
+
         setContentView(R.layout.ar_activity);
 
         if (!checkSystemSupport(this)) return;
@@ -136,9 +175,84 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         tvCharacterName = findViewById(R.id.tvCharacterName);
         tvCharacterHint = findViewById(R.id.tvCharacterHint);
 
+        // Turn-by-turn direction views
+        arNavOverlay      = findViewById(R.id.arNavOverlay);
+        directionBanner    = findViewById(R.id.directionBanner);
+        tvDirectionIcon    = findViewById(R.id.tvDirectionIcon);
+        tvDirectionText    = findViewById(R.id.tvDirectionText);
+        tvDirectionDistance = findViewById(R.id.tvDirectionDistance);
+        btnToggleNav       = findViewById(R.id.btnToggleNav);
+
+        // Set up NavigationDirectionManager
+        navManager = new NavigationDirectionManager(this);
+        navManager.setTarget(targetLatitude, targetLongitude, characterName);
+        navManager.setListener(new NavigationDirectionManager.DirectionListener() {
+            @Override
+            public void onDirectionUpdate(NavigationDirectionManager.DirectionStep step) {
+                handleDirectionUpdate(step);
+            }
+            @Override
+            public void onRouteError() {
+                // Keep showing last known direction or fallback
+                Log.w(TAG, "Route error — keeping current direction display");
+            }
+        });
+
+        // Set AR overlay target (always points at final destination)
+        if (arNavOverlay != null) {
+            arNavOverlay.setTargetLocation(targetLatitude, targetLongitude, characterName);
+        }
+
+        // Toggle button: switch between text banner and AR compass overlay
+        if (btnToggleNav != null) {
+            btnToggleNav.setOnClickListener(v -> toggleNavMode());
+        }
+
+        // Minimap kept in layout but hidden (minimapContainer visibility=gone in XML)
+        minimapContainer = findViewById(R.id.minimapContainer);
+        minimap = findViewById(R.id.minimap);
+
         arCam = (ArFragment) getSupportFragmentManager().findFragmentById(R.id.arCameraArea);
+
+        // Show the default "scanning hand" for 5 seconds, then hide it permanently
+        if (arCam != null) {
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                if (arCam != null) {
+                    arCam.getPlaneDiscoveryController().hide();
+                    arCam.getPlaneDiscoveryController().setInstructionView(null);
+                }
+            }, 5000);
+        }
+
         ttsEngine = new TextToSpeech(this, this);
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+
+        locationCallback = new LocationCallback() {
+            @Override
+            public void onLocationResult(@NonNull LocationResult result) {
+                Location location = result.getLastLocation();
+                if (location == null || isTargetReached) return;
+
+                Location.distanceBetween(
+                        location.getLatitude(), location.getLongitude(),
+                        targetLatitude, targetLongitude, distanceResults);
+                float distance = distanceResults[0];
+
+                // Feed navigation direction manager
+                if (navManager != null) {
+                    navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
+                }
+                // Update AR compass overlay with current position
+                if (arNavOverlay != null) {
+                    arNavOverlay.updateCurrentLocation(
+                            location.getLatitude(), location.getLongitude(), distance);
+                }
+
+                if (distance <= ACTIVATION_RADIUS_METERS) {
+                    onTargetReached();
+                }
+            }
+        };
 
         // Configure geospatial mode as soon as the session is created
         if (arCam != null) {
@@ -160,12 +274,23 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         }
         // Start periodic location check when screen is visible
         locationHandler.post(locationRunnable);
+        startLocationUpdates();
+        // Keep direction UI above the AR SurfaceView
+        if (arNavOverlay != null) arNavOverlay.bringToFront();
+        if (directionBanner != null) directionBanner.bringToFront();
+        if (btnToggleNav != null) btnToggleNav.bringToFront();
+        if (tvCharacterName != null) tvCharacterName.bringToFront();
+        if (tvCharacterHint != null) tvCharacterHint.bringToFront();
+        // Start AR overlay sensors if in AR mode
+        if (arNavOverlay != null && useArOverlay) arNavOverlay.startSensors();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         locationHandler.removeCallbacks(locationRunnable);
+        stopLocationUpdates();
+        if (arNavOverlay != null) arNavOverlay.stopSensors();
         if (arCam != null && arCam.getArSceneView() != null) {
             arCam.getArSceneView().getScene().removeOnUpdateListener(sceneUpdateListener);
         }
@@ -175,6 +300,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     @Override
     protected void onDestroy() {
         locationHandler.removeCallbacks(locationRunnable);
+        if (navManager != null) navManager.destroy();
         if (ttsEngine != null) {
             ttsEngine.shutdown();
             ttsEngine = null;
@@ -283,12 +409,54 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         if (requestCode == LOCATION_PERM_CODE
                 && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            startLocationUpdates();
             getLocationAndCheckTarget();
         } else {
             Toast.makeText(this, "Location permission required to activate AR models.",
                     Toast.LENGTH_LONG).show();
         }
     }
+
+    private void startLocationUpdates() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) return;
+
+        // Force an immediate fresh fix so the compass is correct the moment the mission opens
+        fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                .addOnSuccessListener(this, location -> {
+                    if (location != null && !isTargetReached) {
+                        Location.distanceBetween(
+                                location.getLatitude(), location.getLongitude(),
+                                targetLatitude, targetLongitude, distanceResults);
+                        float distance = distanceResults[0];
+                        // Feed navigation direction manager
+                        if (navManager != null) {
+                            navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
+                        }
+                        if (arNavOverlay != null) {
+                            arNavOverlay.updateCurrentLocation(
+                                    location.getLatitude(), location.getLongitude(), distance);
+                        }
+                        if (distance <= ACTIVATION_RADIUS_METERS) {
+                            onTargetReached();
+                        }
+                    }
+                });
+
+        // Then keep updating continuously every 3 seconds
+        LocationRequest request = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000)
+                .setMinUpdateIntervalMillis(1500)
+                .build();
+        fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper());
+    }
+
+    private void stopLocationUpdates() {
+        if (fusedLocationClient != null && locationCallback != null) {
+            fusedLocationClient.removeLocationUpdates(locationCallback);
+        }
+    }
+
+    // Route fetching is now handled by NavigationDirectionManager
 
     private void getLocationAndCheckTarget() {
         if (isGeospatialAvailable()) {
@@ -304,11 +472,16 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                             targetLatitude, targetLongitude, distanceResults);
                     float distance = distanceResults[0];
 
+                    if (navManager != null) {
+                        navManager.onLocationUpdate(cameraPose.getLatitude(), cameraPose.getLongitude());
+                    }
+                    if (arNavOverlay != null) {
+                        arNavOverlay.updateCurrentLocation(
+                                cameraPose.getLatitude(), cameraPose.getLongitude(), distance);
+                    }
+
                     if (distance <= ACTIVATION_RADIUS_METERS) {
                         onTargetReached();
-                    } else {
-                        updateHint(String.format("Move closer to %s. You are %dm away.",
-                                characterName, (int) distance));
                     }
                     return;
                 }
@@ -330,11 +503,16 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                     targetLatitude, targetLongitude, distanceResults);
             float distance = distanceResults[0];
 
+            if (navManager != null) {
+                navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
+            }
+            if (arNavOverlay != null) {
+                arNavOverlay.updateCurrentLocation(
+                        location.getLatitude(), location.getLongitude(), distance);
+            }
+
             if (distance <= ACTIVATION_RADIUS_METERS) {
                 onTargetReached();
-            } else {
-                updateHint(String.format("Move closer to %s. You are %dm away.",
-                        characterName, (int) distance));
             }
         });
     }
@@ -346,6 +524,14 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private void onTargetReached() {
         if (isTargetReached) return; // already triggered
         isTargetReached = true;
+
+        // Hide all direction UI
+        if (directionBanner != null) directionBanner.setVisibility(View.GONE);
+        if (arNavOverlay != null) {
+            arNavOverlay.setVisibility(View.GONE);
+            arNavOverlay.stopSensors();
+        }
+        if (btnToggleNav != null) btnToggleNav.setVisibility(View.GONE);
 
         // Show character name overlay
         if (tvCharacterName != null) {
@@ -371,6 +557,56 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         if (tvCharacterHint != null) {
             tvCharacterHint.setText(text);
             tvCharacterHint.setVisibility(View.VISIBLE);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Turn-by-turn direction display
+    // ──────────────────────────────────────────────────────────────────
+
+    private void handleDirectionUpdate(NavigationDirectionManager.DirectionStep step) {
+        if (isTargetReached || step == null) return;
+
+        if (useArOverlay) {
+            // AR overlay mode: show compass arrows + instruction in HUD pill
+            if (arNavOverlay != null) {
+                arNavOverlay.setCurrentInstruction(step.label, step.distanceText);
+                arNavOverlay.setVisibility(View.VISIBLE);
+            }
+            if (directionBanner != null) directionBanner.setVisibility(View.GONE);
+        } else {
+            // Text banner mode
+            if (tvDirectionIcon != null) tvDirectionIcon.setText(step.icon);
+            if (tvDirectionText != null) tvDirectionText.setText(step.label);
+            if (tvDirectionDistance != null) tvDirectionDistance.setText(step.distanceText);
+            if (directionBanner != null) directionBanner.setVisibility(View.VISIBLE);
+            if (arNavOverlay != null) arNavOverlay.setVisibility(View.GONE);
+        }
+    }
+
+    private void toggleNavMode() {
+        useArOverlay = !useArOverlay;
+
+        if (useArOverlay) {
+            if (arNavOverlay != null) {
+                arNavOverlay.startSensors();
+                arNavOverlay.setVisibility(View.VISIBLE);
+            }
+            if (directionBanner != null) directionBanner.setVisibility(View.GONE);
+            if (btnToggleNav instanceof TextView) ((TextView) btnToggleNav).setText("📝");
+        } else {
+            if (arNavOverlay != null) {
+                arNavOverlay.stopSensors();
+                arNavOverlay.setVisibility(View.GONE);
+            }
+            if (directionBanner != null) directionBanner.setVisibility(View.VISIBLE);
+            if (btnToggleNav instanceof TextView) ((TextView) btnToggleNav).setText("🧭");
+        }
+
+        // Refresh display with latest step
+        if (navManager != null) {
+            NavigationDirectionManager.DirectionStep lastStep = navManager.getLastStep();
+            if (lastStep != null) handleDirectionUpdate(lastStep);
         }
     }
 
