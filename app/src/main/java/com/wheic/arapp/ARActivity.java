@@ -79,7 +79,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
     private static final int  LOCATION_PERM_CODE       = 1001;
-    private static final float ACTIVATION_RADIUS_METERS = 50.0f;
+    private static final float ACTIVATION_RADIUS_METERS = 10.0f;
     private static final long  LOCATION_CHECK_INTERVAL  = 10_000L; // 10 seconds
 
     private double targetLatitude;
