@@ -21,7 +21,10 @@ if (!admin.apps.length) {
 const REQUIRED_MISSIONS = 5;
 
 function getPolygonConfig() {
-  const cfg = (functions.config && functions.config().polygon) || {};
+  let cfg = {};
+  try {
+    cfg = (typeof functions.config === "function" ? functions.config().polygon : null) || {};
+  } catch (_) { /* v7 removes config(); ignore */ }
   return {
     ownerKey:        cfg.owner_key        || process.env.POLYGON_OWNER_KEY,
     contractAddress: cfg.contract_address || process.env.POLYGON_CONTRACT_ADDRESS,
@@ -29,8 +32,8 @@ function getPolygonConfig() {
   };
 }
 
-async function assertEligibleForMint(uid, walletAddress, context) {
-  if (!context.auth) {
+async function assertEligibleForMint(uid, walletAddress, auth) {
+  if (!auth) {
     throw new functions.https.HttpsError("unauthenticated", "Authentication is required.");
   }
   if (typeof uid !== "string" || uid.trim().length === 0) {
@@ -39,7 +42,7 @@ async function assertEligibleForMint(uid, walletAddress, context) {
   if (typeof walletAddress !== "string" || walletAddress.trim().length === 0) {
     throw new functions.https.HttpsError("invalid-argument", "walletAddress must be a non-empty string.");
   }
-  if (uid !== context.auth.uid) {
+  if (uid !== auth.uid) {
     throw new functions.https.HttpsError("permission-denied", "UID mismatch for authenticated caller.");
   }
   if (!ethers.isAddress(walletAddress)) {
@@ -103,11 +106,13 @@ async function assertEligibleForMint(uid, walletAddress, context) {
  * Mints the Intramuros Souvenir NFT to the user's wallet.
  * Gas is paid by the owner wallet configured in server secrets.
  */
-exports.mintSouvenir = functions.https.onCall(async (data, context) => {
-  const uid = data && data.uid;
-  const walletAddress = data && data.walletAddress;
+exports.mintSouvenir = functions.https.onCall(async (request) => {
+  const data = request.data || {};
+  const auth = request.auth;
+  const uid = data.uid;
+  const walletAddress = data.walletAddress;
 
-  const { userRef, storedWallet } = await assertEligibleForMint(uid, walletAddress, context);
+  const { userRef, storedWallet } = await assertEligibleForMint(uid, walletAddress, auth);
 
   const { ownerKey, contractAddress, rpcUrl } = getPolygonConfig();
   if (!ownerKey || !contractAddress || !rpcUrl) {
@@ -165,16 +170,4 @@ exports.mintSouvenir = functions.https.onCall(async (data, context) => {
       "Failed to mint souvenir on-chain."
     );
   }
-});
-
-/**
- * Legacy whitelist function — retained for backward compatibility during
- * migration. Safe to remove once no client version calls it.
- * (Currently disabled: the new shrunk contract has no whitelistAddress.)
- */
-exports.whitelistWallet = functions.https.onCall(async () => {
-  throw new functions.https.HttpsError(
-    "unavailable",
-    "whitelistWallet has been replaced by mintSouvenir. Update the app."
-  );
 });

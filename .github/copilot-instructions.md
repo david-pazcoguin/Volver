@@ -66,7 +66,7 @@ Each folder contains:
 
 ## Deployed Addresses
 
-- **Contract (Amoy)**: `0xd8b934580fcE35a11B58C6D73aDeE468a2833fa8` — `IntramurosSouvenir` ERC-721
+- **Contract (Mainnet)**: `0x8ba8cE35eE0F9C37CFa29A51CBb16fBaa6A145a8` — `IntramurosSouvenir` ERC-721
 - **Thirdweb Client ID** (reserved for Path B): `14483272c69d9087fc22542a79294900`
 
 Mainnet deployment is pending — see README *Future Roadmap → Path C*.

@@ -1,0 +1,12 @@
+{
+  "name": "Intramuros Souvenir",
+  "description": "Awarded for completing all 5 AR missions through the Walled City of Intramuros, Manila. A digital keepsake of your journey through Fort Santiago, Baluarte de San Diego, Casa Manila, Museo de Intramuros, and Centro de Turismo.",
+  "image": "ipfs://bafkreid3d5smc4bjovlkxy46k3b2vv4uykxwpmlcyh6pawpnrg4e2tclmy",
+  "external_url": "https://volver.app",
+  "attributes": [
+    { "trait_type": "City",      "value": "Intramuros, Manila" },
+    { "trait_type": "Edition",   "value": "Walled City Key" },
+    { "trait_type": "Missions",  "value": 5 },
+    { "trait_type": "Tour",      "value": "Volver AR" }
+  ]
+}
