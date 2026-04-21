@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Volver is an Android AR tour guide app for **Intramuros, Manila**. Users complete 5 location-based AR missions and mint a **Polygon ERC-721 NFT passport**.
+Volver is an Android AR tour guide app for **Intramuros, Manila**. Users complete 5 location-based AR missions and receive a **Polygon ERC-721 NFT souvenir** (`IntramurosSouvenir`), minted gaslessly on their behalf by the `mintSouvenir` Cloud Function.
 
 ## Quick Reference
 
@@ -56,11 +56,23 @@ Each folder contains:
 
 - One activity per file; business logic in helpers/services
 - `MissionCompletionHelper` for all Firestore mission CRUD
-- `WalletManager` singleton for all wallet state
-- `PolygonService` for all blockchain transactions
+- `WalletManager` singleton for all wallet state (registers BouncyCastle provider at init)
+- `PolygonService` for blockchain config + explorer URL helpers
+- Minting is performed server-side by `mintSouvenir` (Cloud Function) via `adminMintTo` — user pays zero gas, owner wallet pays
 - Button debounce (2s) on sensitive operations
 - `Log.e()` for debugging — some ROMs suppress `Log.d()`/`Log.w()`
+- Never display `e.getMessage()` to users; surface to Crashlytics only
+- Edge-to-edge insets are applied globally in `VolverApplication` — don't re-apply per activity
+
+## Deployed Addresses
+
+- **Contract (Amoy)**: `0xd8b934580fcE35a11B58C6D73aDeE468a2833fa8` — `IntramurosSouvenir` ERC-721
+- **Thirdweb Client ID** (reserved for Path B): `14483272c69d9087fc22542a79294900`
+
+Mainnet deployment is pending — see README *Future Roadmap → Path C*.
 
 ## Legacy
 
 `backend/` contains deprecated PHP files. Do not extend or modify — all backend logic is now in Firebase.
+
+Earlier versions of the contract exposed `whitelistAddress` / `claimPassport` and the app had a `whitelistWallet` Cloud Function + MetaMask deep-link path. All of that was retired when the contract was shrunk to `IntramurosSouvenir` and minting moved to the gasless `mintSouvenir` flow. The legacy `whitelistWallet` export still exists in `functions/index.js` but returns `unavailable` — safe to delete once no deployed client depends on it.

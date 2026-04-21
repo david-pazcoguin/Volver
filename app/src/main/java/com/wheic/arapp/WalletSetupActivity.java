@@ -199,8 +199,14 @@ public class WalletSetupActivity extends AppCompatActivity {
     private void generateAndShowEmbeddedWallet() {
         WalletManager.EmbeddedWallet wallet = walletManager.generateEmbeddedWallet();
         if (wallet == null) {
-            Toast.makeText(this, "Failed to generate wallet. Please try again.",
-                    Toast.LENGTH_LONG).show();
+            String userMsg = "Failed to generate wallet. Please try again.";
+            if (BuildConfig.DEBUG) {
+                String detail = walletManager.getLastGenerationError();
+                if (detail != null && !detail.isEmpty()) {
+                    userMsg = "[DEBUG] " + detail;
+                }
+            }
+            Toast.makeText(this, userMsg, Toast.LENGTH_LONG).show();
             return;
         }
         tvGeneratedAddress.setText(wallet.address);
@@ -218,13 +224,9 @@ public class WalletSetupActivity extends AppCompatActivity {
                 new MissionCompletionHelper.CompletionCallback() {
                     @Override
                     public void onSuccess() {
-                        // Also request whitelist if all missions are already complete
-                        MissionCompletionHelper.requestWhitelist(
-                                WalletSetupActivity.this, address,
-                                new MissionCompletionHelper.CompletionCallback() {
-                                    @Override public void onSuccess() { proceedToNFTClaim(); }
-                                    @Override public void onError(String msg) { proceedToNFTClaim(); }
-                                });
+                        // No whitelist step needed — the Cloud Function mintSouvenir
+                        // will mint directly to this address when the user taps Claim.
+                        proceedToNFTClaim();
                     }
 
                     @Override

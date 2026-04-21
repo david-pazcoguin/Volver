@@ -20,12 +20,15 @@ service cloud.firestore {
 
       // Allow updates only for the owner and only for mutable profile/progress fields.
       // email and createdAt are immutable — they can only be set during create.
+      // Souvenir mint fields (souvenirMinted, souvenirTxHash, souvenirTokenId,
+      // souvenirMintedAt) are written server-side by the mintSouvenir Cloud
+      // Function via admin SDK and therefore intentionally excluded from the
+      // client update allowlist.
       allow update: if request.auth != null
                     && request.auth.uid == uid
                     && request.resource.data.diff(resource.data).affectedKeys()
                        .hasOnly(['username', 'firstName', 'lastName',
-                                 'walletAddress', 'allComplete',
-                                 'whitelisted', 'whitelistedAt']);
+                                 'walletAddress', 'allComplete']);
 
       // Never allow profile deletes from clients.
       allow delete: if false;

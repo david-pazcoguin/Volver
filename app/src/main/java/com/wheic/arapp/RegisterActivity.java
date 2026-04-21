@@ -170,7 +170,14 @@ public class RegisterActivity extends AppCompatActivity {
                                 .collection("users")
                                 .document(user.getUid())
                                 .set(userData)
-                                .addOnSuccessListener(unused -> finish())
+                                .addOnSuccessListener(unused -> {
+                                    // Cache the first name locally so HomeActivity can greet
+                                    // the user immediately, even before the Firestore read completes.
+                                    SecurePrefs.get(RegisterActivity.this).edit()
+                                            .putString("firstName", firstName)
+                                            .apply();
+                                    finish();
+                                })
                                 .addOnFailureListener(e -> Toast.makeText(RegisterActivity.this, "Failed to save profile.", Toast.LENGTH_SHORT).show());
                     } else {
                         Exception exception = task.getException();

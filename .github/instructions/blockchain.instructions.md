@@ -8,12 +8,13 @@ Read `ai-workflows/04-blockchain-nft/context.md` for full deployment and archite
 
 ## Critical Constraints
 
-- **Two wallet modes**: External (address only, MetaMask deep link) and Embedded (AES-256-GCM encrypted keypair)
-- **All config from BuildConfig** — contract address, RPC URL, chain ID from `gradle.properties`
-- **Private keys encrypted** with Android Keystore AES-256-GCM via `WalletManager`
-- **`FLAG_SECURE`** on wallet and NFT screens — no screenshots
-- **Clipboard auto-clear** after 30 seconds when copying private key
+- **Gasless Path A** — user pays zero. The `mintSouvenir` Cloud Function signs `adminMintTo` from the owner wallet. Do not reintroduce client-side minting.
+- **Deployed contract (Amoy)** — `0xd8b934580fcE35a11B58C6D73aDeE468a2833fa8` (`IntramurosSouvenir`, ERC-721 + Ownable)
+- **Two wallet modes** — External (address only, pasted/QR) and Embedded (AES-256-GCM encrypted keypair, BouncyCastle provider registered in `WalletManager.generateEmbeddedWallet()`)
+- **All Android config from BuildConfig** — contract address, RPC URL, chain ID come from `gradle.properties`
+- **Owner private key** — lives in Firebase functions config/secrets (`polygon.owner_key`); never in the app, never in source, never in logs
+- **`FLAG_SECURE`** on `WalletSetupActivity` and `NFTClaimActivity`
+- **Clipboard auto-clear** after 30 seconds when copying an embedded private key
 - **Button debounce** (2s) on wallet confirm and NFT mint
-- **Web3j timeouts**: 15s connect / 30s read+write
-- **Never hardcode** contract addresses or RPC URLs in Java source
-- **Never expose** private keys in logs or error messages
+- **Dedup** lives in Firestore (`souvenirMinted`) + Cloud Function triple-check, not in the contract. Do not add `hasMinted` back to the contract unless deliberately reverting Path A.
+- **Thirdweb Client ID** (`THIRDWEB_CLIENT_ID` in `gradle.properties`) is reserved for Path B In-App Wallet migration — do not wire it into Path A code paths.

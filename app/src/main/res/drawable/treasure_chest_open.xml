@@ -1,0 +1,81 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="160dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+
+    <!-- Glow behind (gold halo) -->
+    <path
+        android:fillColor="#40FFD700"
+        android:pathData="M4,30 L4,60 L60,60 L60,30 Z" />
+
+    <!-- Chest body -->
+    <path
+        android:fillColor="#8B4513"
+        android:pathData="M6,30 L6,54 Q6,58 10,58 L54,58 Q58,58 58,54 L58,30 Z" />
+
+    <!-- Chest body shadow -->
+    <path
+        android:fillColor="#5D2E0C"
+        android:pathData="M6,30 L6,54 Q6,58 10,58 L14,58 L14,30 Z" />
+
+    <!-- Inner chest cavity (dark) -->
+    <path
+        android:fillColor="#2B1810"
+        android:pathData="M10,30 L10,50 L54,50 L54,30 Z" />
+
+    <!-- Gold coins / treasure pile -->
+    <path
+        android:fillColor="#FFD700"
+        android:pathData="M12,40 Q16,34 22,38 Q28,32 34,38 Q40,34 46,38 Q52,36 54,40 L54,50 L12,50 Z" />
+
+    <!-- Coin highlights -->
+    <path
+        android:fillColor="#FFF4B0"
+        android:pathData="M18,38 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
+    <path
+        android:fillColor="#FFF4B0"
+        android:pathData="M32,36 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
+    <path
+        android:fillColor="#FFF4B0"
+        android:pathData="M44,38 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
+
+    <!-- Sparkles -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M26,32 L27,34 L29,35 L27,36 L26,38 L25,36 L23,35 L25,34 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,30 L40.7,31.5 L42,32 L40.7,32.5 L40,34 L39.3,32.5 L38,32 L39.3,31.5 Z" />
+
+    <!-- Horizontal metal band -->
+    <path
+        android:fillColor="#D4A017"
+        android:pathData="M6,50 L58,50 L58,54 L6,54 Z" />
+
+    <!-- Vertical metal strip front -->
+    <path
+        android:fillColor="#D4A017"
+        android:pathData="M29,50 L35,50 L35,58 L29,58 Z" />
+
+    <!-- Lid (tilted back, at top edge) -->
+    <path
+        android:fillColor="#703814"
+        android:pathData="M6,8 Q6,4 10,4 L54,4 Q58,4 58,8 L58,14 Q58,18 54,18 L10,18 Q6,18 6,14 Z" />
+
+    <!-- Lid dome highlight -->
+    <path
+        android:fillColor="#A0522D"
+        android:pathData="M10,4 L54,4 Q58,4 58,8 L58,10 L6,10 L6,8 Q6,4 10,4 Z" />
+
+    <!-- Lid metal band -->
+    <path
+        android:fillColor="#D4A017"
+        android:pathData="M6,14 L58,14 L58,17 L6,17 Z" />
+
+    <!-- Hinge shadow under lid -->
+    <path
+        android:fillColor="#2B1810"
+        android:pathData="M6,18 L58,18 L58,22 L6,22 Z" />
+
+</vector>
