@@ -55,6 +55,7 @@ import org.osmdroid.bonuspack.routing.Road;
 import org.osmdroid.bonuspack.routing.RoadManager;
 import org.osmdroid.views.overlay.Polyline;
 
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 
 import java.util.ArrayList;
@@ -91,6 +92,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
     // ── Mission / character data ────────────────────────────────────
     private String missionId;
+    private String missionName;
     private String characterName;
     private String characterDialogue;
     private String modelFileName;
@@ -101,18 +103,16 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private boolean ttsReady = false;
 
     // ── UI ──────────────────────────────────────────────────────────
+    private TextView tvLocateLabel;
     private TextView tvCharacterName;
     private TextView tvCharacterHint;
 
     // ── Turn-by-turn directions ──────────────────────────────────────
     private NavigationDirectionManager navManager;
-    private ARNavigationOverlay arNavOverlay;
     private LinearLayout directionBanner;
     private TextView tvDirectionIcon;
     private TextView tvDirectionText;
     private TextView tvDirectionDistance;
-    private View btnToggleNav;
-    private boolean useArOverlay = false;
 
     // ── Minimap (disabled — kept for future use) ────────────────────
     private MapView minimap;
@@ -156,6 +156,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             targetLongitude  = extras.getDouble("Longitude", 121.0032413);
             targetAltitude   = extras.getDouble("Altitude", Double.NaN);
             missionId        = extras.getString("MissionId",        "unknown");
+            missionName      = extras.getString("MissionName",      "Mission");
             characterName    = extras.getString("CharacterName",    "Guide");
             characterDialogue= extras.getString("CharacterDialogue","Welcome.");
             modelFileName    = extras.getString("ModelFileName",    "san_bartolome_church");
@@ -172,16 +173,29 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         username = SecurePrefs.get(this).getString("username", "");
 
         // Bind character overlay views (defined in ar_activity.xml)
+        tvLocateLabel = findViewById(R.id.tvLocateLabel);
         tvCharacterName = findViewById(R.id.tvCharacterName);
         tvCharacterHint = findViewById(R.id.tvCharacterHint);
 
+        // Show locate label during navigation phase
+        if (tvLocateLabel != null) {
+            tvLocateLabel.setText("Locate \"" + missionName + "\"");
+            tvLocateLabel.setVisibility(View.VISIBLE);
+            // Position the direction banner just below the locate label once it's laid out
+            tvLocateLabel.post(() -> {
+                if (directionBanner != null) {
+                    FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) directionBanner.getLayoutParams();
+                    lp.topMargin = tvLocateLabel.getHeight() + 8;
+                    directionBanner.setLayoutParams(lp);
+                }
+            });
+        }
+
         // Turn-by-turn direction views
-        arNavOverlay      = findViewById(R.id.arNavOverlay);
         directionBanner    = findViewById(R.id.directionBanner);
         tvDirectionIcon    = findViewById(R.id.tvDirectionIcon);
         tvDirectionText    = findViewById(R.id.tvDirectionText);
         tvDirectionDistance = findViewById(R.id.tvDirectionDistance);
-        btnToggleNav       = findViewById(R.id.btnToggleNav);
 
         // Set up NavigationDirectionManager
         navManager = new NavigationDirectionManager(this);
@@ -197,16 +211,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 Log.w(TAG, "Route error — keeping current direction display");
             }
         });
-
-        // Set AR overlay target (always points at final destination)
-        if (arNavOverlay != null) {
-            arNavOverlay.setTargetLocation(targetLatitude, targetLongitude, characterName);
-        }
-
-        // Toggle button: switch between text banner and AR compass overlay
-        if (btnToggleNav != null) {
-            btnToggleNav.setOnClickListener(v -> toggleNavMode());
-        }
 
         // Minimap kept in layout but hidden (minimapContainer visibility=gone in XML)
         minimapContainer = findViewById(R.id.minimapContainer);
@@ -242,12 +246,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 if (navManager != null) {
                     navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
                 }
-                // Update AR compass overlay with current position
-                if (arNavOverlay != null) {
-                    arNavOverlay.updateCurrentLocation(
-                            location.getLatitude(), location.getLongitude(), distance);
-                }
-
                 if (distance <= ACTIVATION_RADIUS_METERS) {
                     onTargetReached();
                 }
@@ -276,13 +274,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         locationHandler.post(locationRunnable);
         startLocationUpdates();
         // Keep direction UI above the AR SurfaceView
-        if (arNavOverlay != null) arNavOverlay.bringToFront();
+        if (tvLocateLabel != null) tvLocateLabel.bringToFront();
         if (directionBanner != null) directionBanner.bringToFront();
-        if (btnToggleNav != null) btnToggleNav.bringToFront();
         if (tvCharacterName != null) tvCharacterName.bringToFront();
         if (tvCharacterHint != null) tvCharacterHint.bringToFront();
-        // Start AR overlay sensors if in AR mode
-        if (arNavOverlay != null && useArOverlay) arNavOverlay.startSensors();
     }
 
     @Override
@@ -290,7 +285,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         super.onPause();
         locationHandler.removeCallbacks(locationRunnable);
         stopLocationUpdates();
-        if (arNavOverlay != null) arNavOverlay.stopSensors();
         if (arCam != null && arCam.getArSceneView() != null) {
             arCam.getArSceneView().getScene().removeOnUpdateListener(sceneUpdateListener);
         }
@@ -433,10 +427,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                         if (navManager != null) {
                             navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
                         }
-                        if (arNavOverlay != null) {
-                            arNavOverlay.updateCurrentLocation(
-                                    location.getLatitude(), location.getLongitude(), distance);
-                        }
                         if (distance <= ACTIVATION_RADIUS_METERS) {
                             onTargetReached();
                         }
@@ -475,10 +465,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                     if (navManager != null) {
                         navManager.onLocationUpdate(cameraPose.getLatitude(), cameraPose.getLongitude());
                     }
-                    if (arNavOverlay != null) {
-                        arNavOverlay.updateCurrentLocation(
-                                cameraPose.getLatitude(), cameraPose.getLongitude(), distance);
-                    }
 
                     if (distance <= ACTIVATION_RADIUS_METERS) {
                         onTargetReached();
@@ -506,10 +492,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             if (navManager != null) {
                 navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
             }
-            if (arNavOverlay != null) {
-                arNavOverlay.updateCurrentLocation(
-                        location.getLatitude(), location.getLongitude(), distance);
-            }
 
             if (distance <= ACTIVATION_RADIUS_METERS) {
                 onTargetReached();
@@ -525,13 +507,9 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         if (isTargetReached) return; // already triggered
         isTargetReached = true;
 
-        // Hide all direction UI
+        // Hide direction UI
+        if (tvLocateLabel != null) tvLocateLabel.setVisibility(View.GONE);
         if (directionBanner != null) directionBanner.setVisibility(View.GONE);
-        if (arNavOverlay != null) {
-            arNavOverlay.setVisibility(View.GONE);
-            arNavOverlay.stopSensors();
-        }
-        if (btnToggleNav != null) btnToggleNav.setVisibility(View.GONE);
 
         // Show character name overlay
         if (tvCharacterName != null) {
@@ -567,47 +545,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private void handleDirectionUpdate(NavigationDirectionManager.DirectionStep step) {
         if (isTargetReached || step == null) return;
 
-        if (useArOverlay) {
-            // AR overlay mode: show compass arrows + instruction in HUD pill
-            if (arNavOverlay != null) {
-                arNavOverlay.setCurrentInstruction(step.label, step.distanceText);
-                arNavOverlay.setVisibility(View.VISIBLE);
-            }
-            if (directionBanner != null) directionBanner.setVisibility(View.GONE);
-        } else {
-            // Text banner mode
-            if (tvDirectionIcon != null) tvDirectionIcon.setText(step.icon);
-            if (tvDirectionText != null) tvDirectionText.setText(step.label);
-            if (tvDirectionDistance != null) tvDirectionDistance.setText(step.distanceText);
-            if (directionBanner != null) directionBanner.setVisibility(View.VISIBLE);
-            if (arNavOverlay != null) arNavOverlay.setVisibility(View.GONE);
-        }
-    }
-
-    private void toggleNavMode() {
-        useArOverlay = !useArOverlay;
-
-        if (useArOverlay) {
-            if (arNavOverlay != null) {
-                arNavOverlay.startSensors();
-                arNavOverlay.setVisibility(View.VISIBLE);
-            }
-            if (directionBanner != null) directionBanner.setVisibility(View.GONE);
-            if (btnToggleNav instanceof TextView) ((TextView) btnToggleNav).setText("📝");
-        } else {
-            if (arNavOverlay != null) {
-                arNavOverlay.stopSensors();
-                arNavOverlay.setVisibility(View.GONE);
-            }
-            if (directionBanner != null) directionBanner.setVisibility(View.VISIBLE);
-            if (btnToggleNav instanceof TextView) ((TextView) btnToggleNav).setText("🧭");
-        }
-
-        // Refresh display with latest step
-        if (navManager != null) {
-            NavigationDirectionManager.DirectionStep lastStep = navManager.getLastStep();
-            if (lastStep != null) handleDirectionUpdate(lastStep);
-        }
+        if (tvDirectionIcon != null) tvDirectionIcon.setText(step.icon);
+        if (tvDirectionText != null) tvDirectionText.setText(step.label);
+        if (tvDirectionDistance != null) tvDirectionDistance.setText(step.distanceText);
+        if (directionBanner != null) directionBanner.setVisibility(View.VISIBLE);
     }
 
     // ──────────────────────────────────────────────────────────────────
