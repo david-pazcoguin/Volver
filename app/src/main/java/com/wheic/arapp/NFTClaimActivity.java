@@ -1,8 +1,6 @@
 package com.wheic.arapp;
 
-import android.content.Context;
 import android.content.Intent;
-import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
@@ -14,24 +12,29 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.functions.FirebaseFunctions;
+
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * NFT claim screen — shown after all 5 missions are complete and the wallet is set up.
  *
- * Two minting paths:
- *   • Embedded wallet — signs and broadcasts the transaction directly via Web3j.
- *   • External wallet — opens a MetaMask deep link; user approves and pays gas there.
+ * Path A (current): mint is performed server-side by the mintSouvenir Cloud Function,
+ * which signs the transaction with the owner wallet. The user pays zero gas and never
+ * submits a transaction.
  *
- * BEFORE RELEASE:
- *   1. Deploy IntramurosNFT.sol to Polygon Amoy (testnet) or mainnet.
- *   2. Set PolygonService.NFT_CONTRACT_ADDRESS to the deployed address.
- *   3. Switch PolygonService.RPC_URL / CHAIN_ID to mainnet when ready.
+ * Path B (future): replace WalletManager with Thirdweb In-App Wallet (Google sign-in),
+ * and either keep this CF path or switch to Thirdweb Engine gasless mint directly.
  */
 public class NFTClaimActivity extends AppCompatActivity {
 
     private static final long DEBOUNCE_MILLIS = 2000;
 
-    private TextView  tvWalletAddress, tvMintStatus;
-    private Button    btnMintNFT;
+    private TextView    tvWalletAddress, tvMintStatus;
+    private Button      btnMintNFT;
     private ProgressBar progressMint;
 
     private WalletManager walletManager;
@@ -64,11 +67,21 @@ public class NFTClaimActivity extends AppCompatActivity {
 
         tvWalletAddress.setText(walletManager.getWalletAddress());
 
+        // If we've already claimed locally, reflect that immediately.
+        if (SecurePrefs.get(this).getBoolean("nft_claimed", false)) {
+            btnMintNFT.setEnabled(false);
+            btnMintNFT.setText("Minted ✓");
+            btnMintNFT.setBackgroundTintList(
+                    android.content.res.ColorStateList.valueOf(0xFF2E7D32));
+            tvMintStatus.setVisibility(View.VISIBLE);
+            tvMintStatus.setText("Your Intramuros Souvenir has already been minted to this wallet.");
+        }
+
         btnMintNFT.setOnClickListener(v -> startMinting());
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Minting logic
+    // Minting logic — Cloud Function sponsored mint (gasless to user)
     // ──────────────────────────────────────────────────────────────
 
     private void startMinting() {
@@ -82,83 +95,52 @@ public class NFTClaimActivity extends AppCompatActivity {
             return;
         }
 
-        btnMintNFT.setEnabled(false);
-        progressMint.setVisibility(View.VISIBLE);
-        tvMintStatus.setVisibility(View.VISIBLE);
-        tvMintStatus.setText("Checking eligibility on-chain...");
-
-        String address = walletManager.getWalletAddress();
-        PolygonService.checkEligibility(address, new PolygonService.EligibilityCallback() {
-            @Override public void onResult(PolygonService.Eligibility r) {
-                runOnUiThread(() -> {
-                    if (r.alreadyMinted) {
-                        showError("This wallet has already claimed its Intramuros Passport.");
-                        return;
-                    }
-                    if (!r.whitelisted) {
-                        showError("Wallet not whitelisted yet. Please try again in a moment.");
-                        return;
-                    }
-                    tvMintStatus.setText("Preparing transaction...");
-                    if (walletManager.isEmbeddedWallet()) {
-                        mintWithEmbeddedWallet();
-                    } else {
-                        mintWithExternalWallet();
-                    }
-                });
-            }
-            @Override public void onError(String msg) {
-                runOnUiThread(() -> showError("Eligibility check failed: " + msg));
-            }
-        });
-    }
-
-    /** Embedded wallet path: sign and broadcast via Web3j. */
-    private void mintWithEmbeddedWallet() {
-        tvMintStatus.setText("Signing and broadcasting on Polygon...");
-
-        String privateKey = walletManager.getPrivateKey();
-        if (privateKey == null) {
-            showError("Private key not found. Please set up your wallet again.");
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) {
+            showError("Please sign in again before claiming your souvenir.");
             return;
         }
 
-        PolygonService.mintWithEmbeddedWallet(privateKey, new PolygonService.TxCallback() {
-            @Override
-            public void onSuccess(String txHash) {
-                runOnUiThread(() -> showSuccess(txHash));
-            }
-
-            @Override
-            public void onError(String errorMessage) {
-                runOnUiThread(() -> showError("Minting failed: " + errorMessage));
-            }
-        });
-    }
-
-    /**
-     * External wallet path: open MetaMask with pre-filled transaction.
-     * The user approves the transaction and pays gas inside MetaMask.
-     */
-    private void mintWithExternalWallet() {
-        tvMintStatus.setText("Opening wallet app...");
-
-        String deepLink = PolygonService.buildMetaMaskDeepLink();
-        Intent intent   = new Intent(Intent.ACTION_VIEW, Uri.parse(deepLink));
-
-        if (intent.resolveActivity(getPackageManager()) != null) {
-            startActivity(intent);
-            // Restore UI state — transaction outcome is handled externally
-            btnMintNFT.setEnabled(true);
-            progressMint.setVisibility(View.GONE);
-            tvMintStatus.setText("Complete the transaction in your wallet app, then return here.");
-        } else {
-            // MetaMask not installed — show the deep link as a fallback
-            showError("No wallet app found. Install MetaMask from the Play Store, then try again.");
-            tvMintStatus.setText("Deep link: " + deepLink);
-            btnMintNFT.setEnabled(true);
-            progressMint.setVisibility(View.GONE);
+        String address = walletManager.getWalletAddress();
+        if (address == null || address.isEmpty()) {
+            showError("Wallet not found. Please complete wallet setup.");
+            return;
         }
+
+        btnMintNFT.setEnabled(false);
+        progressMint.setVisibility(View.VISIBLE);
+        tvMintStatus.setVisibility(View.VISIBLE);
+        tvMintStatus.setText("Minting your souvenir on Polygon...");
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("uid", user.getUid());
+        payload.put("walletAddress", address);
+
+        FirebaseFunctions.getInstance()
+                .getHttpsCallable("mintSouvenir")
+                .call(payload)
+                .addOnSuccessListener(result -> {
+                    String txHash = null;
+                    Object data = result.getData();
+                    if (data instanceof Map) {
+                        Object hash = ((Map<?, ?>) data).get("txHash");
+                        if (hash instanceof String) txHash = (String) hash;
+                    }
+                    showSuccess(txHash);
+                })
+                .addOnFailureListener(e -> {
+                    com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
+                    String msg = (e.getMessage() != null) ? e.getMessage() : "Unknown error";
+                    // Detect "already minted" server response and sync local flag.
+                    if (msg.toLowerCase().contains("already")) {
+                        SecurePrefs.get(NFTClaimActivity.this).edit()
+                                .putBoolean("nft_claimed", true)
+                                .apply();
+                        showError("This wallet has already claimed its Intramuros Souvenir.");
+                    } else {
+                        showError("Minting failed: " + msg);
+                    }
+                });
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -172,8 +154,19 @@ public class NFTClaimActivity extends AppCompatActivity {
         btnMintNFT.setBackgroundTintList(
                 android.content.res.ColorStateList.valueOf(0xFF2E7D32)); // green
 
-        tvMintStatus.setText("Your Intramuros Passport has been minted!\n\nTransaction:\n" + txHash
-                + "\n\nView on PolygonScan: " + PolygonService.getPolygonScanTxUrl(txHash));
+        // Persist claim state so the treasure chest on HomeActivity switches to the
+        // "opened" variant and can be dismissed.
+        SecurePrefs.get(this).edit()
+                .putBoolean("nft_claimed", true)
+                .putBoolean("chest_dismissed", false)
+                .apply();
+
+        StringBuilder msg = new StringBuilder("Your Intramuros Souvenir has been minted!");
+        if (txHash != null && !txHash.isEmpty()) {
+            msg.append("\n\nTransaction:\n").append(txHash);
+            msg.append("\n\nView on PolygonScan: ").append(PolygonService.getPolygonScanTxUrl(txHash));
+        }
+        tvMintStatus.setText(msg.toString());
         tvMintStatus.setVisibility(View.VISIBLE);
 
         Toast.makeText(this, "NFT minted successfully!", Toast.LENGTH_LONG).show();
@@ -187,3 +180,4 @@ public class NFTClaimActivity extends AppCompatActivity {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
     }
 }
+

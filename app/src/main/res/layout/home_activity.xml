@@ -83,43 +83,59 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content" />
 
-    <!-- NFT claim banner (visible only when all missions complete) -->
-    <androidx.cardview.widget.CardView
-        android:id="@+id/cardNFTClaim"
+    <!-- Treasure chest reward (shown only when all missions complete) -->
+    <LinearLayout
+        android:id="@+id/treasureChestContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="15dp"
-        android:layout_marginEnd="15dp"
-        android:layout_marginTop="10dp"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingTop="12dp"
+        android:paddingBottom="8dp"
         android:visibility="gone"
-        app:cardCornerRadius="10dp"
-        app:cardBackgroundColor="#8B4513"
-        app:cardElevation="4dp">
+        android:background="@android:color/transparent"
+        android:clickable="true"
+        android:focusable="true"
+        android:contentDescription="Treasure chest — tap to claim NFT">
 
-        <LinearLayout
-            android:layout_width="match_parent"
+        <ImageView
+            android:id="@+id/imgTreasureChest"
+            android:layout_width="160dp"
+            android:layout_height="160dp"
+            android:src="@drawable/treasure_chest_closed" />
+
+        <TextView
+            android:id="@+id/tvTreasureCaption"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="16dp">
+            android:layout_marginTop="4dp"
+            android:text="A treasure has appeared…"
+            android:textColor="#8B4513"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:fontFamily="@font/montserrat_bold" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="All missions complete!"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="#FFFFFF"
-                android:fontFamily="@font/montserrat_bold" />
+        <TextView
+            android:id="@+id/tvTreasureHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Tap to open"
+            android:textColor="#AA7B3C"
+            android:textSize="12sp"
+            android:fontFamily="@font/montserrat_regular" />
+    </LinearLayout>
 
-            <TextView
-                android:id="@+id/tvNFTClaimStatus"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Tap to claim your Walled City Key NFT →"
-                android:textSize="12sp"
-                android:textColor="#FFD9B3"
-                android:layout_marginTop="2dp" />
-        </LinearLayout>
+    <!-- Legacy NFT claim card — retained for backward compat, kept hidden -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/cardNFTClaim"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tvNFTClaimStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
     </androidx.cardview.widget.CardView>
 
     <TextView

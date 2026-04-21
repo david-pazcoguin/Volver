@@ -24,15 +24,16 @@
 
 ## Deployment Checklist (Before Production)
 
-- [ ] Replace `PASSPORT_URI` in `IntramurosNFT.sol` with real IPFS metadata CID
-- [ ] Deploy smart contract to Polygon Mainnet (chain 137)
-- [ ] Update `gradle.properties`: contract address, mainnet RPC, chain ID 137
-- [ ] Update Cloud Function config for mainnet
+- [ ] Upload real souvenir metadata to IPFS and call `setTokenUri("ipfs://<cid>")` on the deployed contract (owner-only; all tokens share one URI)
+- [ ] Deploy a fresh `IntramurosSouvenir` to Polygon Mainnet (chain 137)
+- [ ] Update `gradle.properties`: mainnet contract address, mainnet RPC (`https://polygon-rpc.com`), `POLYGON_CHAIN_ID=137L`
+- [ ] Update Cloud Function config: `firebase functions:config:set polygon.owner_key=... polygon.contract_address=... polygon.rpc_url=...` then `firebase deploy --only functions`
+- [ ] Fund the mainnet owner wallet with enough POL for expected mint volume
 - [ ] Verify `google-services.json` is NOT committed
 - [ ] Verify `local.properties` is NOT committed
 - [ ] Update network security config certificate pin for mainnet RPC
 - [ ] Run release build
-- [ ] Test full flow: register → 5 missions → wallet setup → mint NFT
+- [ ] Test full flow: register → 5 missions → wallet setup → mint souvenir (gasless)
 
 ## Firebase Deployment
 

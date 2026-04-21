@@ -10,6 +10,7 @@ import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.os.Build;
@@ -170,6 +171,17 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         if (!checkSystemSupport(this)) return;
+
+        // Auth guard — every activity that writes to Firestore must ensure
+        // the user is signed in. Without this, a coin tap would silently fail.
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().getCurrentUser() == null) {
+            Toast.makeText(this, "Please sign in to play missions.", Toast.LENGTH_LONG).show();
+            startActivity(new Intent(this, LoginActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK));
+            finish();
+            return;
+        }
+
         // osmdroid needs a user-agent before any MapView is inflated
         Configuration.getInstance().load(this, getPreferences(MODE_PRIVATE));
         Configuration.getInstance().setUserAgentValue(getPackageName());
@@ -707,46 +719,62 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     // ──────────────────────────────────────────────────────────────────
 
     /**
-     * Called once the character model is successfully placed.
-     * Reports completion to the backend and checks whether all missions are done.
+     * Called once the mission objective is met (coin tapped, or fallback
+     * model placed). Reports completion to the backend, then fetches the
+     * overall progress so the caller can branch on the all-missions-complete
+     * outcome without racing a second dialog.
+     *
+     * Both callbacks may be null — pass null when the caller only needs the
+     * fire-and-forget behavior of the legacy plane-tap flow.
+     *
+     * @param onSuccess receives {@code true} when this mission completed the
+     *                  full set of 5, {@code false} otherwise.
      */
-    private void onMissionModelPlaced() {
-        if (username.isEmpty() || missionId.equals("unknown")) return;
+    private void onMissionModelPlaced(java.util.function.Consumer<Boolean> onSuccess,
+                                      java.util.function.Consumer<String> onError) {
+        if (username.isEmpty() || missionId.equals("unknown")) {
+            if (onError != null) onError.accept("Mission data missing.");
+            return;
+        }
 
         MissionCompletionHelper.completeMission(this, missionId,
                 new MissionCompletionHelper.CompletionCallback() {
                     @Override
                     public void onSuccess() {
-                        checkForAllMissionsComplete();
+                        MissionCompletionHelper.getMissionProgress(ARActivity.this,
+                                new MissionCompletionHelper.ProgressCallback() {
+                                    @Override
+                                    public void onResult(java.util.Set<String> ids, boolean allComplete) {
+                                        if (onSuccess != null) onSuccess.accept(allComplete);
+                                    }
+
+                                    @Override
+                                    public void onError(String message) {
+                                        // Completion itself succeeded — treat as "not all complete"
+                                        // rather than blocking the user with an error dialog.
+                                        Log.w(TAG, "Progress check failed: " + message);
+                                        if (onSuccess != null) onSuccess.accept(false);
+                                    }
+                                });
                     }
 
                     @Override
                     public void onError(String message) {
                         Log.w(TAG, "Mission completion sync failed: " + message);
-                        // The user's progress is safe on the server for future syncs
+                        if (onError != null) onError.accept(message);
                     }
                 });
     }
 
-    private void checkForAllMissionsComplete() {
-        MissionCompletionHelper.getMissionProgress(this,
-                new MissionCompletionHelper.ProgressCallback() {
-                    @Override
-                    public void onResult(java.util.Set<String> completedIds, boolean allComplete) {
-                        if (allComplete) {
-                            runOnUiThread(() -> showNFTUnlockedDialog());
-                        }
-                    }
-
-                    @Override
-                    public void onError(String message) { /* ignore */ }
-                });
+    /** Fire-and-forget overload for the legacy plane-tap placement flow. */
+    private void onMissionModelPlaced() {
+        onMissionModelPlaced(null, null);
     }
 
     private void showNFTUnlockedDialog() {
         if (isFinishing() || isDestroyed()) return;
         new AlertDialog.Builder(this)
-                .setTitle("Intramuros Passport Complete!")
+                .setTitle("Intramuros Souvenir Complete!")
                 .setMessage("You have visited all 5 sites. Return to the home screen to claim your Walled City Key NFT.")
                 .setPositiveButton("Go to Home", (d, w) -> finish())
                 .setNegativeButton("Stay in AR", null)
@@ -945,23 +973,66 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             runOnUiThread(() -> minimap.invalidate());
         }
 
-        // Mark mission complete and show congratulation dialog
+        // Optimistic UI — instant feedback, but the final dialog is deferred
+        // until Firestore (including its offline queue) confirms the write.
         hasPlacedModel = true;
-        onMissionModelPlaced();
+        updateHint("Saving your progress...");
+        boolean offline = !NetworkUtils.isConnected(this);
 
-        runOnUiThread(() -> {
+        onMissionModelPlaced(allComplete -> runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) return;
             updateHint("Mission complete! Coin collected.");
-            if (!isFinishing() && !isDestroyed()) {
-                new AlertDialog.Builder(this)
-                        .setTitle("Congratulations!")
-                        .setMessage(String.format(Locale.US,
-                                "You collected the Intramuros Coin at %s!\n\nCoin value: ₱%.2f",
-                                missionName, coinCollectedValue))
-                        .setPositiveButton("Awesome!", (d, w) -> d.dismiss())
-                        .setCancelable(false)
-                        .show();
+            if (allComplete) {
+                showNFTUnlockedDialog();
+            } else {
+                showMissionCompleteDialog(offline);
             }
-        });
+        }), errorMessage -> runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            updateHint("Couldn't save your progress. Please try again when online.");
+            new AlertDialog.Builder(this)
+                    .setTitle("Progress not saved")
+                    .setMessage("We collected the coin, but couldn't record your mission:\n\n"
+                            + errorMessage
+                            + "\n\nPlease check your connection and tap 'Retry'.")
+                    .setPositiveButton("Retry", (d, w) -> retryMissionCompletion())
+                    .setNegativeButton("Close", null)
+                    .show();
+        }));
+    }
+
+    /** Standard per-mission completion dialog. Auto-returns to Home on dismiss. */
+    private void showMissionCompleteDialog(boolean offline) {
+        String body = String.format(Locale.US,
+                "You collected the Intramuros Coin at %s!\n\nCoin value: ₱%.2f%s",
+                missionName, coinCollectedValue,
+                offline
+                        ? "\n\nYou're offline — your progress will sync automatically."
+                        : "");
+        new AlertDialog.Builder(this)
+                .setTitle("Congratulations!")
+                .setMessage(body)
+                .setPositiveButton("Return to Home", (d, w) -> finish())
+                .setCancelable(false)
+                .show();
+    }
+
+    /** Retries the server-side completion write after a previous failure. */
+    private void retryMissionCompletion() {
+        updateHint("Saving your progress...");
+        boolean offline = !NetworkUtils.isConnected(this);
+        onMissionModelPlaced(allComplete -> runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            updateHint("Mission complete! Progress synced.");
+            if (allComplete) {
+                showNFTUnlockedDialog();
+            } else {
+                showMissionCompleteDialog(offline);
+            }
+        }), errorMessage -> runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            Toast.makeText(this, "Still can't sync: " + errorMessage, Toast.LENGTH_LONG).show();
+        }));
     }
 
     // ──────────────────────────────────────────────────────────────────
