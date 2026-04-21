@@ -1,11 +1,13 @@
 package com.wheic.arapp;
 
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -36,6 +38,8 @@ public class NFTClaimActivity extends AppCompatActivity {
     private TextView    tvWalletAddress, tvMintStatus;
     private Button      btnMintNFT;
     private ProgressBar progressMint;
+    private LinearLayout layoutMintActions;
+    private Button       btnViewTx, btnViewWallet, btnViewOpenSea;
 
     private WalletManager walletManager;
     private long lastMintClickTime = 0;
@@ -57,6 +61,17 @@ public class NFTClaimActivity extends AppCompatActivity {
         tvMintStatus    = findViewById(R.id.tvMintStatus);
         btnMintNFT      = findViewById(R.id.btnMintNFT);
         progressMint    = findViewById(R.id.progressMint);
+        layoutMintActions = findViewById(R.id.layoutMintActions);
+        btnViewTx       = findViewById(R.id.btnViewTx);
+        btnViewWallet   = findViewById(R.id.btnViewWallet);
+        btnViewOpenSea  = findViewById(R.id.btnViewOpenSea);
+
+        // Wallet-level links work even before we know the tx hash.
+        String wallet = walletManager.getWalletAddress();
+        btnViewWallet.setOnClickListener(v ->
+                openUrl(PolygonService.getPolygonScanAddressUrl(wallet)));
+        btnViewOpenSea.setOnClickListener(v ->
+                openUrl(PolygonService.getOpenSeaUrl(wallet)));
 
         // Guard: wallet must be set up before reaching this screen
         if (!walletManager.hasWallet()) {
@@ -75,6 +90,9 @@ public class NFTClaimActivity extends AppCompatActivity {
                     android.content.res.ColorStateList.valueOf(0xFF2E7D32));
             tvMintStatus.setVisibility(View.VISIBLE);
             tvMintStatus.setText("Your Intramuros Souvenir has already been minted to this wallet.");
+            // Show wallet-level links (tx hash is not persisted across launches).
+            btnViewTx.setVisibility(View.GONE);
+            layoutMintActions.setVisibility(View.VISIBLE);
         }
 
         btnMintNFT.setOnClickListener(v -> startMinting());
@@ -110,10 +128,26 @@ public class NFTClaimActivity extends AppCompatActivity {
         btnMintNFT.setEnabled(false);
         progressMint.setVisibility(View.VISIBLE);
         tvMintStatus.setVisibility(View.VISIBLE);
+        tvMintStatus.setText("Saving wallet...");
+
+        // Ensure the server-side profile has our walletAddress before minting.
+        // The CF rejects the mint if the stored walletAddress is missing or
+        // mismatched, so we always refresh it right before the call.
+        MissionCompletionHelper.saveWalletAddress(this, address,
+                new MissionCompletionHelper.CompletionCallback() {
+                    @Override public void onSuccess() { callMintFunction(user.getUid(), address); }
+                    @Override public void onError(String msg) {
+                        // Not fatal — try minting anyway; server will return a clear error if it mismatches.
+                        callMintFunction(user.getUid(), address);
+                    }
+                });
+    }
+
+    private void callMintFunction(String uid, String address) {
         tvMintStatus.setText("Minting your souvenir on Polygon...");
 
         Map<String, Object> payload = new HashMap<>();
-        payload.put("uid", user.getUid());
+        payload.put("uid", uid);
         payload.put("walletAddress", address);
 
         FirebaseFunctions.getInstance()
@@ -164,12 +198,28 @@ public class NFTClaimActivity extends AppCompatActivity {
         StringBuilder msg = new StringBuilder("Your Intramuros Souvenir has been minted!");
         if (txHash != null && !txHash.isEmpty()) {
             msg.append("\n\nTransaction:\n").append(txHash);
-            msg.append("\n\nView on PolygonScan: ").append(PolygonService.getPolygonScanTxUrl(txHash));
+            final String txUrl = PolygonService.getPolygonScanTxUrl(txHash);
+            btnViewTx.setVisibility(View.VISIBLE);
+            btnViewTx.setOnClickListener(v -> openUrl(txUrl));
+        } else {
+            btnViewTx.setVisibility(View.GONE);
         }
         tvMintStatus.setText(msg.toString());
         tvMintStatus.setVisibility(View.VISIBLE);
+        layoutMintActions.setVisibility(View.VISIBLE);
 
         Toast.makeText(this, "NFT minted successfully!", Toast.LENGTH_LONG).show();
+    }
+
+    /** Opens a URL in the user's default browser. Safe if no browser is available. */
+    private void openUrl(String url) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+        } catch (android.content.ActivityNotFoundException e) {
+            Toast.makeText(this, "No browser available to open link.", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void showError(String message) {

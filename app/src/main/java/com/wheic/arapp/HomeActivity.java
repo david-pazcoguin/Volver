@@ -320,18 +320,12 @@ public class HomeActivity extends AppCompatActivity {
 
         SharedPreferences sh = SecurePrefs.get(this);
         boolean claimed   = sh.getBoolean(PREF_NFT_CLAIMED, false);
-        boolean dismissed = sh.getBoolean(PREF_CHEST_DISMISS, false);
-
-        if (claimed && dismissed) {
-            treasureChestContainer.setVisibility(View.GONE);
-            return;
-        }
 
         if (claimed) {
-            // Show open chest — tap to dismiss
+            // Show open chest permanently — tap to view the minted NFT.
             imgTreasureChest.setImageResource(R.drawable.treasure_chest_open);
-            tvTreasureCaption.setText("Your passport is claimed!");
-            tvTreasureHint.setText("Tap to dismiss");
+            tvTreasureCaption.setText("Your Intramuros Souvenir");
+            tvTreasureHint.setText("Tap to view");
             revealChestIfNeeded();
         } else {
             // Show closed chest — tap to open & claim
@@ -398,17 +392,9 @@ public class HomeActivity extends AppCompatActivity {
         boolean claimed = sh.getBoolean(PREF_NFT_CLAIMED, false);
 
         if (claimed) {
-            // Dismiss opened chest
-            sh.edit().putBoolean(PREF_CHEST_DISMISS, true).apply();
-            treasureChestContainer.animate()
-                    .alpha(0f).scaleX(0.6f).scaleY(0.6f)
-                    .setDuration(300)
-                    .withEndAction(() -> {
-                        if (treasureChestContainer != null) {
-                            treasureChestContainer.setVisibility(View.GONE);
-                        }
-                    })
-                    .start();
+            // Already claimed — jump straight to the NFT view so the user can
+            // re-open the PolygonScan / OpenSea links any time.
+            launchNFTClaimFlow();
             return;
         }
 

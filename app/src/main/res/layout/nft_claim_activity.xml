@@ -41,7 +41,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="All 5 Intramuros missions complete.\nYour passport NFT awaits."
+            android:text="All 5 Intramuros missions complete.\nYour souvenir NFT awaits."
             android:textSize="14sp"
             android:textColor="#666666"
             android:gravity="center"
@@ -67,7 +67,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center"
-                    android:text="INTRAMUROS\nPASSPORT"
+                    android:text="INTRAMUROS\nSOUVENIR"
                     android:textSize="20sp"
                     android:textStyle="bold"
                     android:textColor="#FFFFFF"
@@ -136,7 +136,7 @@
             android:id="@+id/btnMintNFT"
             android:layout_width="match_parent"
             android:layout_height="56dp"
-            android:text="Mint My Passport NFT"
+            android:text="Mint My Souvenir NFT"
             android:textSize="16sp"
             android:textStyle="bold"
             android:textColor="#FFFFFF"
@@ -162,6 +162,45 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:visibility="gone" />
+
+        <!-- Post-mint action buttons (shown after successful mint) -->
+        <LinearLayout
+            android:id="@+id/layoutMintActions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="16dp"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/btnViewTx"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="View Transaction on PolygonScan"
+                android:textSize="14sp"
+                android:textColor="#8B4513"
+                android:backgroundTint="#FFFFFF"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/btnViewWallet"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="View My NFTs on PolygonScan"
+                android:textSize="14sp"
+                android:textColor="#8B4513"
+                android:backgroundTint="#FFFFFF"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/btnViewOpenSea"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="View on OpenSea"
+                android:textSize="14sp"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#2081E2" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"

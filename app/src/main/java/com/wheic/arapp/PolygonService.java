@@ -63,6 +63,28 @@ public class PolygonService {
         return base + txHash;
     }
 
+    /**
+     * PolygonScan wallet page — token transfers tab, where users see the NFT
+     * they received along with any other ERC-20/ERC-721 activity.
+     */
+    public static String getPolygonScanAddressUrl(String walletAddress) {
+        String base = (CHAIN_ID == 137)
+                ? "https://polygonscan.com/address/"
+                : "https://amoy.polygonscan.com/address/";
+        return base + walletAddress + "#tokentxns";
+    }
+
+    /**
+     * OpenSea profile for the wallet. On mainnet this shows the actual NFT
+     * artwork; testnet uses testnets.opensea.io (limited indexing).
+     */
+    public static String getOpenSeaUrl(String walletAddress) {
+        String base = (CHAIN_ID == 137)
+                ? "https://opensea.io/"
+                : "https://testnets.opensea.io/";
+        return base + walletAddress;
+    }
+
     /** Single background thread for blockchain operations. */
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
 
