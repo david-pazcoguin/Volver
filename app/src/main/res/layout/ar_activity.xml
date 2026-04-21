@@ -49,13 +49,13 @@
         android:fontFamily="@font/montserrat_bold"
         android:visibility="gone" />
 
-    <!-- Direction banner — turn-by-turn instruction below the locate label -->
+    <!-- Direction banner — turn-by-turn instruction at the bottom -->
     <LinearLayout
         android:id="@+id/directionBanner"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="top"
-        android:layout_marginTop="52dp"
+        android:layout_gravity="bottom"
+        android:layout_marginBottom="24dp"
         android:layout_marginStart="12dp"
         android:layout_marginEnd="12dp"
         android:background="@drawable/direction_banner_bg"

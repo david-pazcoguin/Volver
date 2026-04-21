@@ -55,7 +55,6 @@ import org.osmdroid.bonuspack.routing.Road;
 import org.osmdroid.bonuspack.routing.RoadManager;
 import org.osmdroid.views.overlay.Polyline;
 
-import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 
 import java.util.ArrayList;
@@ -181,14 +180,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         if (tvLocateLabel != null) {
             tvLocateLabel.setText("Locate \"" + missionName + "\"");
             tvLocateLabel.setVisibility(View.VISIBLE);
-            // Position the direction banner just below the locate label once it's laid out
-            tvLocateLabel.post(() -> {
-                if (directionBanner != null) {
-                    FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) directionBanner.getLayoutParams();
-                    lp.topMargin = tvLocateLabel.getHeight() + 8;
-                    directionBanner.setLayoutParams(lp);
-                }
-            });
         }
 
         // Turn-by-turn direction views
