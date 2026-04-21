@@ -93,15 +93,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     // ── Location ────────────────────────────────────────────────────
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
-    private static final int  LOCATION_PERM_CODE       = 1001;
-<<<<<<< HEAD
-    private static final float ACTIVATION_RADIUS_METERS = 20.0f;
-    private static final float OUT_OF_BOUNDS_RADIUS     = 50.0f;
-=======
-    private static final float ACTIVATION_RADIUS_METERS = 10.0f;
->>>>>>> main
-    private static final long  LOCATION_CHECK_INTERVAL  = 10_000L; // 10 seconds
-    private long lastOutOfBoundsWarnMs = 0;
+    private static final int   LOCATION_PERM_CODE        = 1001;
+    private static final float ACTIVATION_RADIUS_METERS  = 10.0f;
+    private static final long  LOCATION_CHECK_INTERVAL   = 10_000L;  // when searching for target
+    private static final long  LOCATION_CHECK_INTERVAL_IDLE = 30_000L; // after target reached
 
     private double targetLatitude;
     private double targetLongitude;
@@ -112,11 +107,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
     // ── Mission / character data ────────────────────────────────────
     private String missionId;
-<<<<<<< HEAD
     private String missionName;   // location name e.g. "Fort Santiago"
-=======
-    private String missionName;
->>>>>>> main
     private String characterName;
     private String characterDialogue;
     private String modelFileName;
@@ -178,26 +169,32 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (!checkSystemSupport(this)) return;
         // osmdroid needs a user-agent before any MapView is inflated
         Configuration.getInstance().load(this, getPreferences(MODE_PRIVATE));
         Configuration.getInstance().setUserAgentValue(getPackageName());
 
         setContentView(R.layout.ar_activity);
 
-        if (!checkSystemSupport(this)) return;
-
-        // Unpack intent extras
+        // Unpack intent extras — fail closed if no mission was supplied
         Bundle extras = getIntent().getExtras();
-        if (extras != null) {
-            targetLatitude   = extras.getDouble("Latitude",  14.6495872);
-            targetLongitude  = extras.getDouble("Longitude", 121.0032413);
-            targetAltitude   = extras.getDouble("Altitude", Double.NaN);
-            missionId        = extras.getString("MissionId",        "unknown");
-            missionName      = extras.getString("MissionName",      "Mission");
-            characterName    = extras.getString("CharacterName",    "Guide");
-            characterDialogue= extras.getString("CharacterDialogue","Welcome.");
-            modelFileName    = extras.getString("ModelFileName",    "san_bartolome_church");
+        if (extras == null
+                || !extras.containsKey("Latitude")
+                || !extras.containsKey("Longitude")
+                || !extras.containsKey("MissionId")) {
+            Toast.makeText(this, "Mission data missing. Please open a mission from the home screen.",
+                    Toast.LENGTH_LONG).show();
+            finish();
+            return;
         }
+        targetLatitude   = extras.getDouble("Latitude");
+        targetLongitude  = extras.getDouble("Longitude");
+        targetAltitude   = extras.getDouble("Altitude", Double.NaN);
+        missionId        = extras.getString("MissionId",        "unknown");
+        missionName      = extras.getString("MissionName",      "Mission");
+        characterName    = extras.getString("CharacterName",    "Guide");
+        characterDialogue= extras.getString("CharacterDialogue","Welcome.");
+        modelFileName    = extras.getString("ModelFileName",    "san_bartolome_church");
 
         // Validate coordinates
         if (targetLatitude < -90 || targetLatitude > 90
@@ -241,19 +238,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             }
         });
 
-<<<<<<< HEAD
-        // Set AR overlay target (always points at final destination)
-        if (arNavOverlay != null) {
-            arNavOverlay.setTargetLocation(targetLatitude, targetLongitude, missionName);
-        }
-
-        // Toggle button: switch between text banner and AR compass overlay
-        if (btnToggleNav != null) {
-            btnToggleNav.setOnClickListener(v -> toggleNavMode());
-        }
-
-=======
->>>>>>> main
         // Minimap kept in layout but hidden (minimapContainer visibility=gone in XML)
         minimapContainer = findViewById(R.id.minimapContainer);
         minimap = findViewById(R.id.minimap);
@@ -284,32 +268,13 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                         targetLatitude, targetLongitude, distanceResults);
                 float distance = distanceResults[0];
 
-<<<<<<< HEAD
                 if (!isTargetReached) {
-                    // Feed navigation direction manager
                     if (navManager != null) {
                         navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
-                    }
-                    if (arNavOverlay != null) {
-                        arNavOverlay.updateCurrentLocation(
-                                location.getLatitude(), location.getLongitude(), distance);
                     }
                     if (distance <= ACTIVATION_RADIUS_METERS) {
                         onTargetReached();
                     }
-                } else {
-                    // Already in mission — warn if user wanders out of bounds
-                    if (distance > OUT_OF_BOUNDS_RADIUS) {
-                        warnOutOfBounds();
-                    }
-=======
-                // Feed navigation direction manager
-                if (navManager != null) {
-                    navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
-                }
-                if (distance <= ACTIVATION_RADIUS_METERS) {
-                    onTargetReached();
->>>>>>> main
                 }
             }
         };
@@ -349,11 +314,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         super.onPause();
         locationHandler.removeCallbacks(locationRunnable);
         stopLocationUpdates();
-<<<<<<< HEAD
         if (minimap != null) minimap.onPause();
-        if (arNavOverlay != null) arNavOverlay.stopSensors();
-=======
->>>>>>> main
         if (arCam != null && arCam.getArSceneView() != null) {
             arCam.getArSceneView().getScene().removeOnUpdateListener(sceneUpdateListener);
         }
@@ -738,7 +699,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
         model.setOnTapListener((hitResult, node) -> speakText(characterDialogue));
 
-        updateHint("Tap the coin to hear the story. Collect the 10 scattered coins!");
+        updateHint("Tap the coin to hear the story. Collect the coin to complete this mission!");
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -817,20 +778,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         } catch (Exception e) {
             // TTS may have been shutdown between the null-check and speak() call
         }
-    }
-
-    // ──────────────────────────────────────────────────────────────────
-    // Out-of-bounds warning
-    // ──────────────────────────────────────────────────────────────────
-
-    private void warnOutOfBounds() {
-        long now = System.currentTimeMillis();
-        if (now - lastOutOfBoundsWarnMs < 20_000L) return;
-        lastOutOfBoundsWarnMs = now;
-        Toast.makeText(this,
-                "⚠️ You are leaving the mission area! Return to collect coins.",
-                Toast.LENGTH_LONG).show();
-        updateHint("⚠️ Out of bounds — come back to the mission area!");
     }
 
     // ──────────────────────────────────────────────────────────────────

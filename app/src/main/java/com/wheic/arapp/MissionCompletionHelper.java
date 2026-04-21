@@ -1,8 +1,6 @@
 package com.wheic.arapp;
 
 import android.content.Context;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
 import android.widget.Toast;
 
 import com.google.firebase.auth.FirebaseAuth;
@@ -43,20 +41,13 @@ public class MissionCompletionHelper {
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Connectivity helper
+
+    // Mission tracking
     // ──────────────────────────────────────────────────────────────
 
     private static boolean isConnected(Context context) {
-        ConnectivityManager cm = (ConnectivityManager)
-                context.getSystemService(Context.CONNECTIVITY_SERVICE);
-        if (cm == null) return false;
-        NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
-        return activeNetwork != null && activeNetwork.isConnectedOrConnecting();
+        return NetworkUtils.isConnected(context);
     }
-
-    // ──────────────────────────────────────────────────────────────
-    // Mission tracking
-    // ──────────────────────────────────────────────────────────────
 
     /** Mark a single mission as complete for the current user. */
     public static void completeMission(Context context, String missionId,
@@ -78,26 +69,26 @@ public class MissionCompletionHelper {
         FirebaseFirestore db = FirebaseConfig.getFirestore();
         db.runTransaction(transaction -> {
             com.google.firebase.firestore.DocumentReference missionRef = db
-                    .collection("users")
+                    .collection(FirebaseConfig.COLLECTION_USERS)
                     .document(user.getUid())
-                    .collection("missions")
+                    .collection(FirebaseConfig.COLLECTION_MISSIONS)
                     .document(missionId);
 
             com.google.firebase.firestore.DocumentSnapshot existing = transaction.get(missionRef);
-            Boolean alreadyCompleted = existing.getBoolean("completed");
+            Boolean alreadyCompleted = existing.getBoolean(FirebaseConfig.FIELD_COMPLETED);
 
             if (existing.exists() && Boolean.TRUE.equals(alreadyCompleted)) {
                 return null;
             }
 
             Map<String, Object> missionData = new HashMap<>();
-            missionData.put("completed", true);
-            missionData.put("completedAt", FieldValue.serverTimestamp());
-            missionData.put("missionId", missionId);
+            missionData.put(FirebaseConfig.FIELD_COMPLETED, true);
+            missionData.put(FirebaseConfig.FIELD_COMPLETED_AT, FieldValue.serverTimestamp());
+            missionData.put(FirebaseConfig.FIELD_MISSION_ID, missionId);
             transaction.set(missionRef, missionData);
             return null;
         }).addOnSuccessListener(unused -> callback.onSuccess())
-                .addOnFailureListener(e -> callback.onError("Network error"));
+                .addOnFailureListener(e -> { com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e); callback.onError("Network error"); });
     }
 
     /** Fetch which missions the user has already finished. */
@@ -118,31 +109,31 @@ public class MissionCompletionHelper {
         }
 
         FirebaseFirestore db = FirebaseConfig.getFirestore();
-        db.collection("users")
+        db.collection(FirebaseConfig.COLLECTION_USERS)
                 .document(user.getUid())
-                .collection("missions")
-                .whereEqualTo("completed", true)
+                .collection(FirebaseConfig.COLLECTION_MISSIONS)
+                .whereEqualTo(FirebaseConfig.FIELD_COMPLETED, true)
                 .limit(TOTAL_LANDMARKS)
                 .get()
                 .addOnSuccessListener(querySnapshot -> {
                     Set<String> completed = new HashSet<>();
                     querySnapshot.getDocuments().forEach(doc -> {
-                        String id = doc.getString("missionId");
+                        String id = doc.getString(FirebaseConfig.FIELD_MISSION_ID);
                         completed.add(id != null ? id : doc.getId());
                     });
 
                     boolean allComplete = completed.size() == TOTAL_LANDMARKS;
                     if (allComplete) {
-                        db.collection("users")
+                        db.collection(FirebaseConfig.COLLECTION_USERS)
                                 .document(user.getUid())
-                                .update("allComplete", true)
+                                .update(FirebaseConfig.FIELD_ALL_COMPLETE, true)
                                 .addOnSuccessListener(unused -> callback.onResult(completed, true))
-                                .addOnFailureListener(e -> callback.onError("Network error"));
+                                .addOnFailureListener(e -> { com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e); callback.onError("Network error"); });
                     } else {
                         callback.onResult(completed, false);
                     }
                 })
-                .addOnFailureListener(e -> callback.onError("Network error"));
+                .addOnFailureListener(e -> { com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e); callback.onError("Network error"); });
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -167,11 +158,11 @@ public class MissionCompletionHelper {
         }
 
         FirebaseConfig.getFirestore()
-                .collection("users")
+                .collection(FirebaseConfig.COLLECTION_USERS)
                 .document(user.getUid())
-                .update("walletAddress", walletAddress)
+                .update(FirebaseConfig.FIELD_WALLET, walletAddress)
                 .addOnSuccessListener(unused -> callback.onSuccess())
-                .addOnFailureListener(e -> callback.onError("Network error"));
+                .addOnFailureListener(e -> { com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e); callback.onError("Network error"); });
     }
 
     /**
@@ -194,12 +185,12 @@ public class MissionCompletionHelper {
 
         Map<String, Object> data = new HashMap<>();
         data.put("uid", user.getUid());
-        data.put("walletAddress", walletAddress);
+        data.put(FirebaseConfig.FIELD_WALLET, walletAddress);
 
         FirebaseFunctions.getInstance()
                 .getHttpsCallable("whitelistWallet")
                 .call(data)
                 .addOnSuccessListener(httpsCallableResult -> callback.onSuccess())
-                .addOnFailureListener(e -> callback.onError("Network error"));
+                .addOnFailureListener(e -> { com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e); callback.onError("Network error"); });
     }
 }

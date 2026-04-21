@@ -3,6 +3,7 @@ package com.wheic.arapp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.FirebaseFirestoreSettings;
+import com.google.firebase.firestore.PersistentCacheSettings;
 import com.google.firebase.functions.FirebaseFunctions;
 
 public final class FirebaseConfig {
@@ -11,25 +12,34 @@ public final class FirebaseConfig {
     public static final String FIELD_WALLET = "walletAddress";
     public static final String FIELD_ALL_COMPLETE = "allComplete";
     public static final String FIELD_WHITELISTED = "whitelisted";
+    public static final String FIELD_MISSION_ID = "missionId";
+    public static final String FIELD_COMPLETED = "completed";
+    public static final String FIELD_COMPLETED_AT = "completedAt";
 
-    private static volatile boolean firestoreInitialized = false;
+    private static volatile FirebaseFirestore firestore;
 
-    private FirebaseConfig() {
-        // Utility class
-    }
+    private FirebaseConfig() { /* utility class */ }
 
-    public static synchronized FirebaseFirestore getFirestore() {
-        FirebaseFirestore db = FirebaseFirestore.getInstance();
-        if (!firestoreInitialized) {
-            FirebaseFirestoreSettings settings =
-                    new FirebaseFirestoreSettings.Builder()
-                            .setPersistenceEnabled(true)
-                            .setCacheSizeBytes(FirebaseFirestoreSettings.CACHE_SIZE_UNLIMITED)
-                            .build();
-            db.setFirestoreSettings(settings);
-            firestoreInitialized = true;
+    public static FirebaseFirestore getFirestore() {
+        FirebaseFirestore local = firestore;
+        if (local == null) {
+            synchronized (FirebaseConfig.class) {
+                local = firestore;
+                if (local == null) {
+                    local = FirebaseFirestore.getInstance();
+                    FirebaseFirestoreSettings settings =
+                            new FirebaseFirestoreSettings.Builder()
+                                    .setLocalCacheSettings(
+                                            PersistentCacheSettings.newBuilder()
+                                                    .setSizeBytes(FirebaseFirestoreSettings.CACHE_SIZE_UNLIMITED)
+                                                    .build())
+                                    .build();
+                    local.setFirestoreSettings(settings);
+                    firestore = local;
+                }
+            }
         }
-        return db;
+        return local;
     }
 
     public static FirebaseAuth getAuth() {

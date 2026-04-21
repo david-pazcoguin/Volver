@@ -28,31 +28,30 @@ contract IntramurosPassport is ERC721URIStorage, Ownable {
 
     uint256 private _tokenIds;
 
-    /**
-     * IPFS URI pointing to the NFT metadata JSON.
-     * Example metadata JSON:
-     * {
-     *   "name": "Intramuros Passport — Walled City Key",
-     *   "description": "Awarded for completing all 5 Intramuros AR missions.",
-     *   "image": "ipfs://<YOUR_IMAGE_CID>",
-     *   "attributes": [{ "trait_type": "Edition", "value": "Founding Explorer" }]
-     * }
-     *
-     * Upload the image + JSON to Pinata (pinata.cloud) or NFT.Storage,
-     * then replace the CID below.
-     */
-    string public constant PASSPORT_URI = "ipfs://YOUR_METADATA_CID_HERE";
+    /// Prevents double-minting
+    mapping(address => bool) public hasMinted;
 
     /// Addresses whitelisted by the backend after mission verification
     mapping(address => bool) public isWhitelisted;
 
-    /// Prevents double-minting
-    mapping(address => bool) public hasMinted;
-
     event AddressWhitelisted(address indexed user);
     event PassportMinted(address indexed user, uint256 tokenId);
 
-    constructor() ERC721("Intramuros Passport", "IPSP") Ownable(msg.sender) {}
+    constructor(string memory metadataUri) ERC721("Intramuros Passport", "IPSP") Ownable(msg.sender) {
+        require(bytes(metadataUri).length > 0, "metadataUri required");
+        // Guard against deploying the placeholder by mistake.
+        require(
+            keccak256(bytes(metadataUri)) != keccak256(bytes("ipfs://YOUR_METADATA_CID_HERE")),
+            "Replace placeholder URI before deploy"
+        );
+        _passportUri = metadataUri;
+    }
+
+    string private _passportUri;
+
+    function passportUri() external view returns (string memory) {
+        return _passportUri;
+    }
 
     // ─────────────────────────────────────────────────────────────
     // Owner functions
@@ -95,7 +94,7 @@ contract IntramurosPassport is ERC721URIStorage, Ownable {
         uint256 tokenId = _tokenIds;
 
         _safeMint(msg.sender, tokenId);
-        _setTokenURI(tokenId, PASSPORT_URI);
+        _setTokenURI(tokenId, _passportUri);
 
         emit PassportMinted(msg.sender, tokenId);
     }
