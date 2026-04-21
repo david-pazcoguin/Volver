@@ -10,7 +10,7 @@ public class ARHelper {
     // AR character name shown as an overlay when the user arrives at the location
     String characterName;
 
-    // Dialogue the character speaks via TTS when the user enters the 50m radius
+    // Dialogue the character speaks via TTS when the user enters the 10m radius
     String characterDialogue;
 
     // GLB filename (without extension) in res/raw/ — e.g. "rizal_character"
