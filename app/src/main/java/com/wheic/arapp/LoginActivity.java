@@ -9,8 +9,6 @@ import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
-import android.text.method.HideReturnsTransformationMethod;
-import android.text.method.PasswordTransformationMethod;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -50,21 +48,7 @@ public class LoginActivity extends AppCompatActivity {
         tvRegister = findViewById(R.id.tvRegister);
         tvShowHide = findViewById(R.id.tvShowHide);
 
-        tvShowHide.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                if(tvShowHide.getText().toString().equals("SHOW"))
-                {
-                    tvShowHide.setText("HIDE");
-                    txtPassword.setTransformationMethod(HideReturnsTransformationMethod.getInstance());
-                }
-                else
-                {
-                    tvShowHide.setText("SHOW");
-                    txtPassword.setTransformationMethod(PasswordTransformationMethod.getInstance());
-                }
-            }
-        });
+        PasswordToggleHelper.attach(tvShowHide, txtPassword);
 
         TextWatcher loginWatcher = new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}

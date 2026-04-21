@@ -62,6 +62,23 @@ exports.whitelistWallet = functions.https.onCall(async (data, context) => {
   }
 
   const userData = userSnap.data() || {};
+
+  // SECURITY: ignore the wallet address from the client — use the one
+  // stored in Firestore (which was written through authenticated rules).
+  const storedWallet = userData.walletAddress;
+  if (typeof storedWallet !== "string" || !ethers.isAddress(storedWallet)) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "No valid wallet address on file. Save your wallet first."
+    );
+  }
+  if (storedWallet.toLowerCase() !== walletAddress.toLowerCase()) {
+    throw new functions.https.HttpsError(
+      "permission-denied",
+      "Wallet address does not match the one saved to your profile."
+    );
+  }
+
   if (userData.allComplete !== true) {
     throw new functions.https.HttpsError(
       "failed-precondition",
@@ -81,10 +98,10 @@ exports.whitelistWallet = functions.https.onCall(async (data, context) => {
     );
   }
 
-  const polygonConfig = functions.config().polygon || {};
-  const ownerKey = polygonConfig.owner_key;
-  const contractAddress = polygonConfig.contract_address;
-  const rpcUrl = polygonConfig.rpc_url;
+  const polygonConfig = (functions.config && functions.config().polygon) || {};
+  const ownerKey        = polygonConfig.owner_key        || process.env.POLYGON_OWNER_KEY;
+  const contractAddress = polygonConfig.contract_address || process.env.POLYGON_CONTRACT_ADDRESS;
+  const rpcUrl          = polygonConfig.rpc_url          || process.env.POLYGON_RPC_URL;
 
   if (!ownerKey || !contractAddress || !rpcUrl) {
     throw new functions.https.HttpsError(
@@ -106,7 +123,7 @@ exports.whitelistWallet = functions.https.onCall(async (data, context) => {
     const abi = ["function whitelistAddress(address wallet) external"];
     const contract = new ethers.Contract(contractAddress, abi, signer);
 
-    const tx = await contract.whitelistAddress(walletAddress);
+    const tx = await contract.whitelistAddress(storedWallet);
     await tx.wait();
 
     await userRef.update({

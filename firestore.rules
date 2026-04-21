@@ -37,12 +37,19 @@ service cloud.firestore {
                     && request.auth.uid == uid;
 
         // Mission records are append-only and only valid when marked completed.
-        // Requires missionId field to be a string for predictable schema.
-        // Validates completedAt is a timestamp and not in the future.
+        // missionId must match the document ID and be one of the 5 known landmarks.
         allow create: if request.auth != null
                       && request.auth.uid == uid
                       && request.resource.data.completed == true
                       && request.resource.data.missionId is string
+                      && request.resource.data.missionId == missionId
+                      && request.resource.data.missionId in [
+                           'fort_santiago',
+                           'baluarte_san_diego',
+                           'casa_manila',
+                           'museo_intramuros',
+                           'centro_turismo'
+                         ]
                       && request.resource.data.completedAt is timestamp;
 
         // Missions cannot be edited or removed once written.

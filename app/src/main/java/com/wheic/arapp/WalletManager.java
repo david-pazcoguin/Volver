@@ -122,6 +122,7 @@ public class WalletManager {
 
             return new EmbeddedWallet(address, privateKey);
         } catch (Exception e) {
+            com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
             return null;
         }
     }

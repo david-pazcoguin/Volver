@@ -2,8 +2,6 @@ package com.wheic.arapp;
 
 import android.content.Context;
 import android.content.Intent;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
@@ -78,11 +76,7 @@ public class NFTClaimActivity extends AppCompatActivity {
         if (now - lastMintClickTime < DEBOUNCE_MILLIS) return;
         lastMintClickTime = now;
 
-        ConnectivityManager cm = (ConnectivityManager)
-                getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo activeNetwork = cm != null ? cm.getActiveNetworkInfo() : null;
-        boolean isConnected = activeNetwork != null && activeNetwork.isConnectedOrConnecting();
-        if (!isConnected) {
+        if (!NetworkUtils.isConnected(this)) {
             Toast.makeText(this, "NFT minting requires an internet connection.",
                     Toast.LENGTH_LONG).show();
             return;
@@ -91,13 +85,32 @@ public class NFTClaimActivity extends AppCompatActivity {
         btnMintNFT.setEnabled(false);
         progressMint.setVisibility(View.VISIBLE);
         tvMintStatus.setVisibility(View.VISIBLE);
-        tvMintStatus.setText("Preparing transaction...");
+        tvMintStatus.setText("Checking eligibility on-chain...");
 
-        if (walletManager.isEmbeddedWallet()) {
-            mintWithEmbeddedWallet();
-        } else {
-            mintWithExternalWallet();
-        }
+        String address = walletManager.getWalletAddress();
+        PolygonService.checkEligibility(address, new PolygonService.EligibilityCallback() {
+            @Override public void onResult(PolygonService.Eligibility r) {
+                runOnUiThread(() -> {
+                    if (r.alreadyMinted) {
+                        showError("This wallet has already claimed its Intramuros Passport.");
+                        return;
+                    }
+                    if (!r.whitelisted) {
+                        showError("Wallet not whitelisted yet. Please try again in a moment.");
+                        return;
+                    }
+                    tvMintStatus.setText("Preparing transaction...");
+                    if (walletManager.isEmbeddedWallet()) {
+                        mintWithEmbeddedWallet();
+                    } else {
+                        mintWithExternalWallet();
+                    }
+                });
+            }
+            @Override public void onError(String msg) {
+                runOnUiThread(() -> showError("Eligibility check failed: " + msg));
+            }
+        });
     }
 
     /** Embedded wallet path: sign and broadcast via Web3j. */
