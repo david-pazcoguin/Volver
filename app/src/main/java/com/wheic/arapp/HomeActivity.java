@@ -84,12 +84,10 @@ public class HomeActivity extends AppCompatActivity {
 
         treasureChestContainer.setOnClickListener(v -> onTreasureChestTapped());
 
-        // Debug-only: long-press the greeting to auto-complete 4 of 5 missions
-        // (everything except Casa Manila) so the treasure chest flow can be tested
-        // without physically walking to each landmark.
+        // Debug-only: long-press the greeting to auto-complete all 5 missions.
         if (BuildConfig.DEBUG && tvFullName != null) {
             tvFullName.setOnLongClickListener(v -> {
-                debugCompleteFourMissions();
+                debugCompleteAllMissions();
                 return true;
             });
         }
@@ -152,14 +150,14 @@ public class HomeActivity extends AppCompatActivity {
     // ──────────────────────────────────────────────────────────────
 
     /**
-     * Marks 4 of 5 missions complete (all except Casa Manila) for the signed-in
-     * user. Triggered by long-pressing the greeting text in debug builds.
+     * Marks all 5 missions complete for the signed-in user.
+     * Triggered by long-pressing the greeting text in debug builds.
      */
-    private void debugCompleteFourMissions() {
+    private void debugCompleteAllMissions() {
         if (!BuildConfig.DEBUG) return;
-        Toast.makeText(this, "Debug: completing 4 missions…", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Debug: completing all 5 missions…", Toast.LENGTH_SHORT).show();
 
-        String[] ids = {"fort_santiago", "baluarte_san_diego", "museo_intramuros", "centro_turismo"};
+        String[] ids = {"fort_santiago", "baluarte_san_diego", "casa_manila", "museo_intramuros", "centro_turismo"};
         int[] remaining = { ids.length };
 
         for (String id : ids) {
@@ -168,7 +166,7 @@ public class HomeActivity extends AppCompatActivity {
                         @Override public void onSuccess() {
                             if (--remaining[0] == 0) runOnUiThread(() -> {
                                 Toast.makeText(HomeActivity.this,
-                                        "4 missions complete. Finish Casa Manila to unlock the chest!",
+                                        "All 5 missions complete! Chest should be unlocked.",
                                         Toast.LENGTH_LONG).show();
                                 loadMissionProgress();
                             });

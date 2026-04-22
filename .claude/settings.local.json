@@ -20,7 +20,9 @@
       "Skill(update-config:*)",
       "Bash(where uvx *)",
       "Bash(where uv *)",
-      "mcp__blender__get_scene_info"
+      "mcp__blender__get_scene_info",
+      "Bash(adb devices *)",
+      "Bash(./gradlew installDebug)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Mane\\.claude"
