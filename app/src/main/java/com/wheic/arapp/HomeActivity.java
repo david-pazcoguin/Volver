@@ -23,6 +23,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 
@@ -32,20 +33,15 @@ import java.util.Set;
 
 public class HomeActivity extends AppCompatActivity {
 
+    // ── Missions tab ────────────────────────────────────
     ImageView imgDashboard;
     List<ARHelper> arHelpers;
     ARAdapter arAdapter;
     RecyclerView recyclerView;
-
-    // Greeting
     private TextView tvFullName;
-
-    // Mission progress UI
     TextView tvProgressLabel;
     CardView cardNFTClaim;
     TextView tvNFTClaimStatus;
-
-    // Treasure chest UI
     private LinearLayout treasureChestContainer;
     private ImageView imgTreasureChest;
     private TextView tvTreasureCaption;
@@ -53,6 +49,18 @@ public class HomeActivity extends AppCompatActivity {
     private boolean chestAnimatedIn = false;
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private Runnable pendingChestReveal;
+
+    // ── Collectibles tab ────────────────────────────────
+    private LinearLayout layoutMissions;
+    private LinearLayout layoutCollectibles;
+    private RecyclerView recyclerCollectibles;
+    private CollectiblesAdapter collectiblesAdapter;
+    private List<CollectibleItem> collectibleItems;
+    private TextView tvCollectiblesTotal;
+    private TextView tvTotalBadge;
+
+    // ── Nav ─────────────────────────────────────────────
+    private BottomNavigationView bottomNav;
 
     private static final String PREF_NFT_CLAIMED   = "nft_claimed";
     private static final String PREF_CHEST_DISMISS = "chest_dismissed";
@@ -80,11 +88,16 @@ public class HomeActivity extends AppCompatActivity {
         tvTreasureCaption      = findViewById(R.id.tvTreasureCaption);
         tvTreasureHint         = findViewById(R.id.tvTreasureHint);
 
-        imgDashboard.setOnClickListener(v -> showDashboard());
+        layoutMissions     = findViewById(R.id.layoutMissions);
+        layoutCollectibles = findViewById(R.id.layoutCollectibles);
+        recyclerCollectibles = findViewById(R.id.recyclerCollectibles);
+        tvCollectiblesTotal  = findViewById(R.id.tvCollectiblesTotal);
+        tvTotalBadge         = findViewById(R.id.tvTotalBadge);
+        bottomNav            = findViewById(R.id.bottomNav);
 
+        imgDashboard.setOnClickListener(v -> showDashboard());
         treasureChestContainer.setOnClickListener(v -> onTreasureChestTapped());
 
-        // Debug-only: long-press the greeting to auto-complete all 5 missions.
         if (BuildConfig.DEBUG && tvFullName != null) {
             tvFullName.setOnLongClickListener(v -> {
                 debugCompleteAllMissions();
@@ -94,6 +107,8 @@ public class HomeActivity extends AppCompatActivity {
 
         buildMissionList();
         setupRecyclerView();
+        buildCollectiblesList();
+        setupBottomNav();
     }
 
     @Override
@@ -101,6 +116,97 @@ public class HomeActivity extends AppCompatActivity {
         super.onResume();
         loadGreeting();
         loadMissionProgress();
+        refreshCollectibleCounts();
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Bottom navigation
+    // ──────────────────────────────────────────────────────────────
+
+    private void setupBottomNav() {
+        bottomNav.setOnItemSelectedListener(item -> {
+            int id = item.getItemId();
+            if (id == R.id.nav_missions) {
+                layoutMissions.setVisibility(View.VISIBLE);
+                layoutCollectibles.setVisibility(View.GONE);
+                return true;
+            } else if (id == R.id.nav_collectibles) {
+                layoutMissions.setVisibility(View.GONE);
+                layoutCollectibles.setVisibility(View.VISIBLE);
+                refreshCollectibleCounts();
+                return true;
+            }
+            return false;
+        });
+        bottomNav.setSelectedItemId(R.id.nav_missions);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Collectibles
+    // ──────────────────────────────────────────────────────────────
+
+    private void buildCollectiblesList() {
+        collectibleItems = new ArrayList<>();
+        collectibleItems.add(new CollectibleItem(
+                "intramuros_coin",
+                "Intramuros Coin",
+                "An 8-reales (peso) silver coin minted during the Spanish Colonial period. " +
+                "The currency carried by merchants and Ilustrados through the gates of Intramuros.",
+                R.drawable.ic_coin, 0, 2));
+
+        collectibleItems.add(new CollectibleItem(
+                "peineta",
+                "Peineta",
+                "An ornate Spanish hair comb worn by Filipina women during the colonial era. " +
+                "A symbol of elegance, identity, and the blending of cultures.",
+                R.drawable.ic_peineta, 0, 2));
+
+        collectibleItems.add(new CollectibleItem(
+                "salakot_elite",
+                "Salakot Elite",
+                "A ceremonial salakot adorned with fine gold engravings, worn by the principalia " +
+                "during official colonial gatherings and religious processions.",
+                R.drawable.ic_salakot, 0, 2));
+
+        collectibleItems.add(new CollectibleItem(
+                "farol_de_aceite",
+                "Farol de Aceite",
+                "An oil lantern that lit the cobblestone streets of Intramuros for centuries. " +
+                "Its warm glow guided merchants, soldiers, and friars through the Walled City.",
+                R.drawable.ic_lantern, 0, 2));
+
+        collectibleItems.add(new CollectibleItem(
+                "pocket_watch",
+                "Antique Pocket Watch",
+                "A tarnished brass pocket watch with Roman numerals and a matching chain. " +
+                "The signature accessory of an educated Ilustrado gentleman.",
+                R.drawable.ic_pocket_watch, 0, 2));
+
+        collectiblesAdapter = new CollectiblesAdapter(collectibleItems);
+        recyclerCollectibles.setHasFixedSize(false);
+        recyclerCollectibles.setLayoutManager(
+                new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
+        recyclerCollectibles.setAdapter(collectiblesAdapter);
+
+        refreshCollectibleCounts();
+    }
+
+    private void refreshCollectibleCounts() {
+        if (collectibleItems == null || collectiblesAdapter == null) return;
+        SharedPreferences sh = SecurePrefs.get(this);
+        int total = 0;
+        for (CollectibleItem item : collectibleItems) {
+            int count = sh.getInt("collectible_" + item.getId() + "_count", 0);
+            item.setCount(count);
+            total += count;
+        }
+        collectiblesAdapter.notifyDataSetChanged();
+
+        int maxTotal = collectibleItems.size() * 2;
+        if (tvCollectiblesTotal != null)
+            tvCollectiblesTotal.setText(total + " / " + maxTotal + " collected");
+        if (tvTotalBadge != null)
+            tvTotalBadge.setText(total + "/" + maxTotal);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -109,18 +215,12 @@ public class HomeActivity extends AppCompatActivity {
 
     private void loadGreeting() {
         if (tvFullName == null) return;
-
-        // 1. Show cached name immediately so the UI never flashes "Hello User!"
         SharedPreferences sh = SecurePrefs.get(this);
         String cached = sh.getString("firstName", "");
-        if (!cached.isEmpty()) {
-            tvFullName.setText("Hello, " + capitalize(cached) + "!");
-        }
+        if (!cached.isEmpty()) tvFullName.setText("Hello, " + capitalize(cached) + "!");
 
-        // 2. Fetch the latest first name from Firestore and cache it.
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) return;
-
         FirebaseConfig.getFirestore()
                 .collection(FirebaseConfig.COLLECTION_USERS)
                 .document(user.getUid())
@@ -131,43 +231,33 @@ public class HomeActivity extends AppCompatActivity {
                     if (firstName == null || firstName.trim().isEmpty()) return;
                     String trimmed = firstName.trim();
                     SecurePrefs.get(this).edit().putString("firstName", trimmed).apply();
-                    if (tvFullName != null) {
+                    if (tvFullName != null)
                         tvFullName.setText("Hello, " + capitalize(trimmed) + "!");
-                    }
                 });
     }
 
-    /** Uppercases the first letter of {@code name}; leaves the rest untouched. */
     private static String capitalize(String name) {
         if (name == null || name.isEmpty()) return name;
         char first = name.charAt(0);
-        if (Character.isUpperCase(first)) return name;
-        return Character.toUpperCase(first) + name.substring(1);
+        return Character.isUpperCase(first) ? name : Character.toUpperCase(first) + name.substring(1);
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Debug helpers (stripped from release builds)
+    // Debug helpers
     // ──────────────────────────────────────────────────────────────
 
-    /**
-     * Marks all 5 missions complete for the signed-in user.
-     * Triggered by long-pressing the greeting text in debug builds.
-     */
     private void debugCompleteAllMissions() {
         if (!BuildConfig.DEBUG) return;
         Toast.makeText(this, "Debug: completing all 5 missions…", Toast.LENGTH_SHORT).show();
-
         String[] ids = {"fort_santiago", "baluarte_san_diego", "casa_manila", "museo_intramuros", "centro_turismo"};
-        int[] remaining = { ids.length };
-
+        int[] remaining = {ids.length};
         for (String id : ids) {
             MissionCompletionHelper.completeMission(this, id,
                     new MissionCompletionHelper.CompletionCallback() {
                         @Override public void onSuccess() {
                             if (--remaining[0] == 0) runOnUiThread(() -> {
                                 Toast.makeText(HomeActivity.this,
-                                        "All 5 missions complete! Chest should be unlocked.",
-                                        Toast.LENGTH_LONG).show();
+                                        "All 5 missions complete!", Toast.LENGTH_LONG).show();
                                 loadMissionProgress();
                             });
                         }
@@ -187,61 +277,31 @@ public class HomeActivity extends AppCompatActivity {
 
     private void buildMissionList() {
         arHelpers = new ArrayList<>();
-
-        arHelpers.add(new ARHelper(
-                "Fort Santiago",
-                "",
-                14.594265, 120.970425,
-                "fort_santiago",
-                "José Rizal",
+        arHelpers.add(new ARHelper("Fort Santiago", "", 14.594265, 120.970425,
+                "fort_santiago", "José Rizal",
                 "In this cell, my thoughts turned to freedom. I leave behind my last poem, " +
                 "hidden within these walls. Seek it, and understand what we fought for.",
-                "rizal_character"
-        ));
-
-        arHelpers.add(new ARHelper(
-                "Baluarte de San Diego",
-                "",
-                14.585491, 120.975702,
-                "baluarte_san_diego",
-                "Antonio Sedeño",
+                "rizal_character"));
+        arHelpers.add(new ARHelper("Baluarte de San Diego", "", 14.585491, 120.975702,
+                "baluarte_san_diego", "Antonio Sedeño",
                 "From this tower, we watched the galleons approach across Manila Bay. " +
                 "Help me raise these walls higher — the city's defence depends on us.",
-                "sedeno_character"
-        ));
-
-        arHelpers.add(new ARHelper(
-                "Casa Manila",
-                "",
-                14.589622, 120.975129,
-                "casa_manila",
-                "Imelda Marcos",
+                "sedeno_character"));
+        arHelpers.add(new ARHelper("Casa Manila", "", 14.589622, 120.975129,
+                "casa_manila", "Imelda Marcos",
                 "This home revives our bahay na bato legacy. Every room tells a story " +
                 "of the merchant families who shaped colonial Manila. Let me show you.",
-                "marcos_character"
-        ));
-
-        arHelpers.add(new ARHelper(
-                "Museo de Intramuros",
-                "",
-                14.589853, 120.973438,
-                "museo_intramuros",
-                "Martin Tinio Jr.",
+                "marcos_character"));
+        arHelpers.add(new ARHelper("Museo de Intramuros", "", 14.589853, 120.973438,
+                "museo_intramuros", "Martin Tinio Jr.",
                 "These stones whisper Manila's four-hundred-year saga. " +
                 "Match the artifacts to their era and unlock the city's buried secrets.",
-                "tinio_character"
-        ));
-
-        arHelpers.add(new ARHelper(
-                "Centro de Turismo",
-                "",
-                14.590135, 120.973367,
-                "centro_turismo",
-                "St. Ignatius of Loyola",
+                "tinio_character"));
+        arHelpers.add(new ARHelper("Centro de Turismo", "", 14.590135, 120.973367,
+                "centro_turismo", "St. Ignatius of Loyola",
                 "From ruins, renewal rises. You have walked the length of the Walled City " +
                 "and kept the flame of memory alive. The Intramuros Souvenir is yours.",
-                "ignatius_character"
-        ));
+                "ignatius_character"));
     }
 
     private void setupRecyclerView() {
@@ -259,26 +319,19 @@ public class HomeActivity extends AppCompatActivity {
 
     private void loadMissionProgress() {
         if (username.isEmpty()) return;
-
         MissionCompletionHelper.getMissionProgress(this,
                 new MissionCompletionHelper.ProgressCallback() {
-                    @Override
-                    public void onResult(Set<String> completedIds, boolean allComplete) {
-                        if (!isFinishing() && !isDestroyed()) {
+                    @Override public void onResult(Set<String> completedIds, boolean allComplete) {
+                        if (!isFinishing() && !isDestroyed())
                             runOnUiThread(() -> updateProgressUI(completedIds, allComplete));
-                        }
                     }
-
-                    @Override
-                    public void onError(String message) {
-                        if (!isFinishing() && !isDestroyed()) {
-                            runOnUiThread(() -> {
-                                if (tvProgressLabel != null) {
-                                    tvProgressLabel.setText("Unable to load progress — check your connection");
-                                    tvProgressLabel.setVisibility(View.VISIBLE);
-                                }
-                            });
-                        }
+                    @Override public void onError(String message) {
+                        if (!isFinishing() && !isDestroyed()) runOnUiThread(() -> {
+                            if (tvProgressLabel != null) {
+                                tvProgressLabel.setText("Unable to load progress — check your connection");
+                                tvProgressLabel.setVisibility(View.VISIBLE);
+                            }
+                        });
                     }
                 });
     }
@@ -286,61 +339,44 @@ public class HomeActivity extends AppCompatActivity {
     private void updateProgressUI(Set<String> completedIds, boolean allComplete) {
         int total = arHelpers.size();
         int completedCount = completedIds != null ? completedIds.size() : 0;
-
         if (tvProgressLabel != null) {
             tvProgressLabel.setText("Missions: " + completedCount + " / " + total + " complete");
             tvProgressLabel.setVisibility(View.VISIBLE);
         }
-
-        if (arAdapter != null) {
-            arAdapter.setCompletedMissions(completedIds);
-        }
-
-        // Legacy card always stays hidden now (replaced by the treasure chest)
+        if (arAdapter != null) arAdapter.setCompletedMissions(completedIds);
         if (cardNFTClaim != null) cardNFTClaim.setVisibility(View.GONE);
-
         updateTreasureChest(allComplete);
     }
 
     // ──────────────────────────────────────────────────────────────
-    // Treasure chest reward
+    // Treasure chest
     // ──────────────────────────────────────────────────────────────
 
     private void updateTreasureChest(boolean allComplete) {
         if (treasureChestContainer == null) return;
-
         if (!allComplete) {
             cancelPendingChestReveal();
             treasureChestContainer.setVisibility(View.GONE);
             chestAnimatedIn = false;
             return;
         }
-
         SharedPreferences sh = SecurePrefs.get(this);
-        boolean claimed   = sh.getBoolean(PREF_NFT_CLAIMED, false);
-
+        boolean claimed = sh.getBoolean(PREF_NFT_CLAIMED, false);
         if (claimed) {
-            // Show open chest permanently — tap to view the minted NFT.
             imgTreasureChest.setImageResource(R.drawable.treasure_chest_open);
             tvTreasureCaption.setText("Your Intramuros Souvenir");
             tvTreasureHint.setText("Tap to view");
-            revealChestIfNeeded();
         } else {
-            // Show closed chest — tap to open & claim
             imgTreasureChest.setImageResource(R.drawable.treasure_chest_closed);
             tvTreasureCaption.setText("A treasure has appeared…");
             tvTreasureHint.setText("Tap to open");
-            revealChestIfNeeded();
         }
+        revealChestIfNeeded();
     }
 
     private void revealChestIfNeeded() {
-        if (chestAnimatedIn) {
-            treasureChestContainer.setVisibility(View.VISIBLE);
-            return;
-        }
+        if (chestAnimatedIn) { treasureChestContainer.setVisibility(View.VISIBLE); return; }
         cancelPendingChestReveal();
-        // Keep hidden initially; reveal with a short delay for dramatic effect
         treasureChestContainer.setVisibility(View.INVISIBLE);
         pendingChestReveal = () -> {
             if (isFinishing() || isDestroyed() || treasureChestContainer == null) return;
@@ -349,11 +385,9 @@ public class HomeActivity extends AppCompatActivity {
             treasureChestContainer.setScaleX(0.6f);
             treasureChestContainer.setScaleY(0.6f);
             treasureChestContainer.animate()
-                    .alpha(1f).scaleX(1f).scaleY(1f)
-                    .setDuration(500)
+                    .alpha(1f).scaleX(1f).scaleY(1f).setDuration(500)
                     .setInterpolator(new AccelerateDecelerateInterpolator())
-                    .withEndAction(this::startChestPulse)
-                    .start();
+                    .withEndAction(this::startChestPulse).start();
             chestAnimatedIn = true;
         };
         uiHandler.postDelayed(pendingChestReveal, CHEST_REVEAL_DELAY_MS);
@@ -361,21 +395,13 @@ public class HomeActivity extends AppCompatActivity {
 
     private void startChestPulse() {
         if (imgTreasureChest == null || isFinishing() || isDestroyed()) return;
-        // Gentle pulse only for unopened chest
-        SharedPreferences sh = SecurePrefs.get(this);
-        if (sh.getBoolean(PREF_NFT_CLAIMED, false)) return;
-        imgTreasureChest.animate()
-                .scaleX(1.08f).scaleY(1.08f)
-                .setDuration(700)
+        if (SecurePrefs.get(this).getBoolean(PREF_NFT_CLAIMED, false)) return;
+        imgTreasureChest.animate().scaleX(1.08f).scaleY(1.08f).setDuration(700)
                 .withEndAction(() -> {
                     if (imgTreasureChest == null) return;
-                    imgTreasureChest.animate()
-                            .scaleX(1.0f).scaleY(1.0f)
-                            .setDuration(700)
-                            .withEndAction(this::startChestPulse)
-                            .start();
-                })
-                .start();
+                    imgTreasureChest.animate().scaleX(1.0f).scaleY(1.0f).setDuration(700)
+                            .withEndAction(this::startChestPulse).start();
+                }).start();
     }
 
     private void cancelPendingChestReveal() {
@@ -388,31 +414,18 @@ public class HomeActivity extends AppCompatActivity {
     private void onTreasureChestTapped() {
         SharedPreferences sh = SecurePrefs.get(this);
         boolean claimed = sh.getBoolean(PREF_NFT_CLAIMED, false);
-
-        if (claimed) {
-            // Already claimed — jump straight to the NFT view so the user can
-            // re-open the PolygonScan / OpenSea links any time.
-            launchNFTClaimFlow();
-            return;
-        }
-
-        // Play open animation, then route to NFT claim
+        if (claimed) { launchNFTClaimFlow(); return; }
         treasureChestContainer.setClickable(false);
-        imgTreasureChest.animate()
-                .scaleX(1.2f).scaleY(1.2f)
-                .setDuration(250)
+        imgTreasureChest.animate().scaleX(1.2f).scaleY(1.2f).setDuration(250)
                 .withEndAction(() -> {
                     if (imgTreasureChest == null) return;
                     imgTreasureChest.setImageResource(R.drawable.treasure_chest_open);
                     tvTreasureCaption.setText("Your Intramuros Souvenir!");
                     tvTreasureHint.setText("Opening…");
-                    imgTreasureChest.animate()
-                            .scaleX(1.0f).scaleY(1.0f)
-                            .setDuration(250)
+                    imgTreasureChest.animate().scaleX(1.0f).scaleY(1.0f).setDuration(250)
                             .withEndAction(() -> uiHandler.postDelayed(this::launchNFTClaimFlow, 450))
                             .start();
-                })
-                .start();
+                }).start();
     }
 
     private void launchNFTClaimFlow() {
@@ -422,7 +435,6 @@ public class HomeActivity extends AppCompatActivity {
                 ? new Intent(this, NFTClaimActivity.class)
                 : new Intent(this, WalletSetupActivity.class);
         startActivity(intent);
-        // Re-enable the container for subsequent taps after claim
         treasureChestContainer.setClickable(true);
     }
 
@@ -447,18 +459,13 @@ public class HomeActivity extends AppCompatActivity {
         dialog.getWindow().setLayout(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-
         WindowManager.LayoutParams wlp = dialog.getWindow().getAttributes();
         wlp.gravity = Gravity.BOTTOM;
         dialog.getWindow().setAttributes(wlp);
-
-        dialog.findViewById(R.id.linearLayoutSetting).setOnClickListener(v -> {
-            startActivity(new Intent(this, SettingActivity.class));
-        });
-        dialog.findViewById(R.id.linearLayoutAboutUs).setOnClickListener(v -> {
-            startActivity(new Intent(this, AboutUsActivity.class));
-        });
-
+        dialog.findViewById(R.id.linearLayoutSetting).setOnClickListener(v ->
+                startActivity(new Intent(this, SettingActivity.class)));
+        dialog.findViewById(R.id.linearLayoutAboutUs).setOnClickListener(v ->
+                startActivity(new Intent(this, AboutUsActivity.class)));
         dialog.show();
     }
 }

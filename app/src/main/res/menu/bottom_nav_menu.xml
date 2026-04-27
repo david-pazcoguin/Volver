@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/nav_missions"
+        android:icon="@drawable/ic_missions"
+        android:title="Missions" />
+
+    <item
+        android:id="@+id/nav_collectibles"
+        android:icon="@drawable/ic_collectibles"
+        android:title="Collectibles" />
+
+</menu>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="56"
+    android:viewportHeight="56">
+    <!-- Brim -->
+    <path android:fillColor="#C8A84B"
+        android:pathData="M4,38 Q28,42 52,38 L50,42 Q28,46 6,42 Z"/>
+    <!-- Hat cone -->
+    <path android:fillColor="#D4A017"
+        android:pathData="M6,42 Q28,44 50,42 Q40,20 28,10 Q16,20 6,42 Z"/>
+    <!-- Highlight stripe -->
+    <path android:fillColor="#E8C96A" android:fillAlpha="0.5"
+        android:pathData="M28,10 Q22,22 18,34 Q23,36 28,36 Q33,36 38,34 Q34,22 28,10 Z"/>
+    <!-- Top knob -->
+    <path android:fillColor="#A67C2E"
+        android:pathData="M25,10 Q28,6 31,10 Q29,12 28,12 Q27,12 25,10 Z"/>
+</vector>

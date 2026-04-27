@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="56"
+    android:viewportHeight="56">
+    <!-- Chain bail -->
+    <path android:fillColor="#C8A84B" android:strokeColor="#C8A84B" android:strokeWidth="2"
+        android:pathData="M24,6 Q28,3 32,6 Q32,10 28,10 Q24,10 24,6"
+        android:fillAlpha="0"/>
+    <!-- Crown stem -->
+    <path android:fillColor="#C8A84B"
+        android:pathData="M26,10 L30,10 L30,14 L26,14 Z"/>
+    <!-- Case outer -->
+    <path android:fillColor="#D4A017"
+        android:pathData="M28,14 C18.06,14 10,22.06 10,32 C10,41.94 18.06,50 28,50 C37.94,50 46,41.94 46,32 C46,22.06 37.94,14 28,14 Z"/>
+    <!-- Dial face -->
+    <path android:fillColor="#F5F0E8"
+        android:pathData="M28,18 C20.27,18 14,24.27 14,32 C14,39.73 20.27,46 28,46 C35.73,46 42,39.73 42,32 C42,24.27 35.73,18 28,18 Z"/>
+    <!-- Hour hand -->
+    <path android:fillColor="#333333"
+        android:pathData="M28,32 L22,26 L27,31 Z"/>
+    <!-- Minute hand -->
+    <path android:fillColor="#333333"
+        android:pathData="M28,32 L34,24 L29,31 Z"/>
+    <!-- Center dot -->
+    <path android:fillColor="#C8A84B"
+        android:pathData="M28,30 C26.9,30 26,30.9 26,32 C26,33.1 26.9,34 28,34 C29.1,34 30,33.1 30,32 C30,30.9 29.1,30 28,30 Z"/>
+</vector>

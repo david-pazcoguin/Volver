@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="56"
+    android:viewportHeight="56">
+    <!-- Coin circle -->
+    <path android:fillColor="#F5C842"
+        android:pathData="M28,6 C15.85,6 6,15.85 6,28 C6,40.15 15.85,50 28,50 C40.15,50 50,40.15 50,28 C50,15.85 40.15,6 28,6Z"/>
+    <!-- Inner ring -->
+    <path android:fillColor="#D4A017" android:strokeColor="#D4A017" android:strokeWidth="1.5"
+        android:pathData="M28,11 C18.61,11 11,18.61 11,28 C11,37.39 18.61,45 28,45 C37.39,45 45,37.39 45,28 C45,18.61 37.39,11 28,11Z"
+        android:fillAlpha="0"/>
+    <!-- P symbol -->
+    <path android:fillColor="#A67C2E"
+        android:pathData="M22,18 L22,38 L26,38 L26,32 L30,32 C33.31,32 36,29.31 36,26 C36,22.69 33.31,20 30,20 L26,20 L26,18 Z M26,22 L30,22 C32.21,22 34,23.79 34,26 C34,28.21 32.21,30 30,30 L26,30 Z"/>
+</vector>

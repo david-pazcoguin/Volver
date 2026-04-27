@@ -22,7 +22,8 @@
       "Bash(where uv *)",
       "mcp__blender__get_scene_info",
       "Bash(adb devices *)",
-      "Bash(./gradlew installDebug)"
+      "Bash(./gradlew installDebug)",
+      "mcp__blender__execute_blender_code"
     ],
     "additionalDirectories": [
       "C:\\Users\\Mane\\.claude"
