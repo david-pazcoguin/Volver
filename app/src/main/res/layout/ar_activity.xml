@@ -12,24 +12,42 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Locate label — shows mission target during navigation -->
-    <TextView
-        android:id="@+id/tvLocateLabel"
-        android:layout_width="match_parent"
+    <!-- Locate pill — floating card shown during navigation phase -->
+    <LinearLayout
+        android:id="@+id/locateLabelContainer"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top"
-        android:fitsSystemWindows="true"
-        android:background="#CC000000"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="12dp"
-        android:paddingBottom="12dp"
-        android:textColor="#FFFFFF"
-        android:textSize="18sp"
-        android:textStyle="bold"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="52dp"
+        android:background="@drawable/nav_pill_bg"
+        android:orientation="vertical"
         android:gravity="center"
-        android:fontFamily="@font/montserrat_bold"
-        android:visibility="gone" />
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:elevation="6dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tvLocateLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:fontFamily="@font/montserrat_bold"
+            android:gravity="center"
+            android:letterSpacing="0.03" />
+
+        <TextView
+            android:id="@+id/tvLocateDistance"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFC107"
+            android:textSize="16sp"
+            android:layout_marginTop="3dp"
+            android:gravity="center" />
+    </LinearLayout>
 
     <!-- Character name banner — appears when user enters the 50 m radius -->
     <TextView
@@ -55,31 +73,53 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:layout_marginBottom="24dp"
-        android:layout_marginStart="12dp"
-        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="20dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
         android:background="@drawable/direction_banner_bg"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="10dp"
-        android:paddingBottom="10dp"
-        android:elevation="4dp"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp"
+        android:elevation="6dp"
         android:visibility="gone">
 
-        <TextView
-            android:id="@+id/tvDirectionIcon"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="28sp"
-            android:textColor="#FFFFFF" />
+        <!-- Amber accent box around the maneuver arrow -->
+        <FrameLayout
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/direction_icon_bg">
+
+            <!-- Vector arrow: perfectly centered, rotated in Java per maneuver -->
+            <ImageView
+                android:id="@+id/ivDirectionArrow"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_nav_arrow"
+                android:scaleType="fitCenter"
+                android:contentDescription="direction" />
+
+            <!-- Fallback text for special icons (📍 arrive, ↻ roundabout) -->
+            <TextView
+                android:id="@+id/tvDirectionIcon"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:textSize="22sp"
+                android:textColor="#111111"
+                android:visibility="gone" />
+        </FrameLayout>
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="12dp"
+            android:layout_marginStart="14dp"
             android:orientation="vertical">
 
             <TextView
@@ -88,7 +128,6 @@
                 android:layout_height="wrap_content"
                 android:textSize="15sp"
                 android:textColor="#FFFFFF"
-                android:textStyle="bold"
                 android:fontFamily="@font/montserrat_bold"
                 android:maxLines="2"
                 android:ellipsize="end" />
@@ -97,11 +136,105 @@
                 android:id="@+id/tvDirectionDistance"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="12sp"
-                android:textColor="#AAAAAA"
-                android:layout_marginTop="2dp" />
+                android:textSize="13sp"
+                android:textColor="#FFC107"
+                android:layout_marginTop="3dp" />
         </LinearLayout>
+
+        <!-- Compass button — cube style matching the arrow box on the left -->
+        <FrameLayout
+            android:id="@+id/btnCompass"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="10dp"
+            android:background="@drawable/compass_button_bg"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Compass"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tvCompassIcon"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="🧭"
+                android:textSize="20sp"
+                android:includeFontPadding="false" />
+        </FrameLayout>
     </LinearLayout>
+
+    <!-- Compass overlay — pops up centered just above the direction banner -->
+    <FrameLayout
+        android:id="@+id/compassOverlay"
+        android:layout_width="160dp"
+        android:layout_height="160dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="110dp"
+        android:background="@drawable/compass_circle_bg"
+        android:elevation="10dp"
+        android:visibility="gone">
+
+        <!-- Cardinal markers — scaled for 160dp circle -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="8dp"
+            android:text="N"
+            android:textColor="#FFC107"
+            android:textSize="12sp"
+            android:fontFamily="@font/montserrat_bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="8dp"
+            android:text="S"
+            android:textColor="#888888"
+            android:textSize="11sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical|start"
+            android:layout_marginStart="10dp"
+            android:text="W"
+            android:textColor="#888888"
+            android:textSize="11sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical|end"
+            android:layout_marginEnd="10dp"
+            android:text="E"
+            android:textColor="#888888"
+            android:textSize="11sp" />
+
+        <!-- Rotating arrow — ImageView pivots from true center, no font-metric offset -->
+        <ImageView
+            android:id="@+id/compassArrow"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_compass_arrow"
+            android:scaleType="fitCenter"
+            android:contentDescription="compass arrow" />
+
+        <!-- Distance label -->
+        <TextView
+            android:id="@+id/compassDistance"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal|bottom"
+            android:layout_marginBottom="20dp"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:fontFamily="@font/montserrat_bold" />
+    </FrameLayout>
 
     <!-- Minimap — hidden, kept for potential future use -->
     <FrameLayout

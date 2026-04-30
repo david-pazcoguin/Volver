@@ -36,12 +36,14 @@ public class NavigationDirectionManager {
     // ── DirectionStep POJO ────────────────────────────────────────────
     public static class DirectionStep {
         public final String icon;
+        public final int arrowRotation; // degrees to rotate the up-arrow; -1 = use icon text instead
         public final String label;
         public final String distanceText;
         public final int maneuverType;
 
-        public DirectionStep(String icon, String label, String distanceText, int maneuverType) {
+        public DirectionStep(String icon, int arrowRotation, String label, String distanceText, int maneuverType) {
             this.icon = icon;
+            this.arrowRotation = arrowRotation;
             this.label = label;
             this.distanceText = distanceText;
             this.maneuverType = maneuverType;
@@ -62,6 +64,10 @@ public class NavigationDirectionManager {
 
     private DirectionStep lastStep;
     private final float[] distBuf = new float[2];
+
+    // Minimum distance to a turn node before showing the actual turn instruction.
+    // Beyond this, we show "Go straight" so the user isn't confused by far-off turns.
+    private static final float TURN_ANNOUNCEMENT_RADIUS_M = 60f;
 
     // ── Public API ────────────────────────────────────────────────────
 
@@ -160,41 +166,65 @@ public class NavigationDirectionManager {
 
     private DirectionStep findCurrentStep(double lat, double lon) {
         List<RoadNode> nodes = routeNodes; // snapshot for thread safety
-        if (nodes == null || nodes.size() <= 1) {
-            // No route yet or degenerate route — straight-line fallback
-            return buildFallbackStep(lat, lon);
+
+        // Compute total distance to the mission target.
+        float distToTarget = distanceBetween(lat, lon, targetLat, targetLon);
+
+        // If the user is still far from the destination, always show "Go straight".
+        // This prevents OSRM from announcing a turn at a nearby street corner when
+        // the destination itself is hundreds of metres away.
+        if (distToTarget > TURN_ANNOUNCEMENT_RADIUS_M) {
+            // Only switch to OSRM maneuvers when close to the destination.
+            if (nodes == null || nodes.size() <= 2) {
+                return buildFallbackStep(lat, lon);
+            }
+            // Walk route nodes looking for a turn that is ALSO close to the user.
+            for (int i = 1; i < nodes.size(); i++) {
+                RoadNode node = nodes.get(i);
+                if (node.mLocation == null) continue;
+                float distToNode = distanceBetween(lat, lon,
+                        node.mLocation.getLatitude(), node.mLocation.getLongitude());
+                if (distToNode > STEP_PASSED_RADIUS_M) {
+                    boolean isTurn = node.mManeuverType != 0 && node.mManeuverType != 1
+                            && node.mManeuverType != 2 && node.mManeuverType != 24;
+                    // Only announce a turn if the turn node itself is within 60 m.
+                    if (isTurn && distToNode <= TURN_ANNOUNCEMENT_RADIUS_M) {
+                        String distText = formatDistance(distToNode);
+                        return mapManeuver(node.mManeuverType, distText, node.mInstructions);
+                    }
+                    // Turn is far away (or it's a straight step) — keep showing go straight.
+                    return new DirectionStep(null, 0, "Go straight", formatDistance(distToTarget), 1);
+                }
+            }
+            return new DirectionStep(null, 0, "Go straight", formatDistance(distToTarget), 1);
         }
 
-        // Sparse route: only depart + arrive → fallback
+        // Close to destination — use full OSRM step logic.
+        if (nodes == null || nodes.size() <= 1) {
+            return buildFallbackStep(lat, lon);
+        }
         if (nodes.size() == 2) {
             return buildFallbackStep(lat, lon);
         }
 
-        // Walk through nodes (skip index 0 = depart).
-        // Find the first node that the user hasn't passed yet (distance > threshold).
         for (int i = 1; i < nodes.size(); i++) {
             RoadNode node = nodes.get(i);
             if (node.mLocation == null) continue;
-
             float distToNode = distanceBetween(lat, lon,
                     node.mLocation.getLatitude(), node.mLocation.getLongitude());
-
             if (distToNode > STEP_PASSED_RADIUS_M) {
-                // This is the next upcoming maneuver
                 String distText = formatDistance(distToNode);
                 return mapManeuver(node.mManeuverType, distText, node.mInstructions);
             }
         }
 
-        // All nodes passed — arriving at destination
-        float distToTarget = distanceBetween(lat, lon, targetLat, targetLon);
-        return new DirectionStep("📍", "Arrive at " + missionName,
+        return new DirectionStep("📍", -1, "Arrive at " + missionName,
                 formatDistance(distToTarget), 24);
     }
 
     private DirectionStep buildFallbackStep(double lat, double lon) {
         float distToTarget = distanceBetween(lat, lon, targetLat, targetLon);
-        return new DirectionStep("↑", "Head toward " + missionName,
+        return new DirectionStep(null, 0, "Head toward " + missionName,
                 formatDistance(distToTarget), 0);
     }
 
@@ -202,23 +232,24 @@ public class NavigationDirectionManager {
 
     private DirectionStep mapManeuver(int type, String distText, String rawInstruction) {
         String icon;
+        int arrowRotation;
         String label;
 
         switch (type) {
-            case 1:  icon = "↑";  label = "Go straight";     break;
-            case 2:  icon = "↑";  label = "Continue";         break;
-            case 3:  icon = "↰"; label = "Bear left";         break;
-            case 4:  icon = "←"; label = "Turn left";         break;
-            case 5:  icon = "↰"; label = "Sharp left";        break;
-            case 6:  icon = "↱"; label = "Bear right";        break;
-            case 7:  icon = "→"; label = "Turn right";        break;
-            case 8:  icon = "↱"; label = "Sharp right";       break;
-            case 12: icon = "↩"; label = "Make a U-turn";     break;
-            case 24: icon = "📍"; label = "Arrive at " + missionName; break;
+            case 1:  icon = null; arrowRotation =    0; label = "Go straight";      break;
+            case 2:  icon = null; arrowRotation =    0; label = "Continue";          break;
+            case 3:  icon = null; arrowRotation =  -45; label = "Bear left";         break;
+            case 4:  icon = null; arrowRotation =  -90; label = "Turn left";         break;
+            case 5:  icon = null; arrowRotation = -135; label = "Sharp left";        break;
+            case 6:  icon = null; arrowRotation =   45; label = "Bear right";        break;
+            case 7:  icon = null; arrowRotation =   90; label = "Turn right";        break;
+            case 8:  icon = null; arrowRotation =  135; label = "Sharp right";       break;
+            case 12: icon = null; arrowRotation =  180; label = "Make a U-turn";     break;
+            case 24: icon = "📍";  arrowRotation =   -1; label = "Arrive at " + missionName; break;
             case 27: case 28: case 29: case 30:
             case 31: case 32: case 33: case 34:
-                     icon = "↻"; label = "Take the roundabout"; break;
-            default: icon = "↑"; label = "Continue";           break;
+                     icon = "↻";  arrowRotation =   -1; label = "Take the roundabout"; break;
+            default: icon = null; arrowRotation =    0; label = "Continue";          break;
         }
 
         // Append street name from raw instruction if available
@@ -230,7 +261,7 @@ public class NavigationDirectionManager {
             }
         }
 
-        return new DirectionStep(icon, label, distText, type);
+        return new DirectionStep(icon, arrowRotation, label, distText, type);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────

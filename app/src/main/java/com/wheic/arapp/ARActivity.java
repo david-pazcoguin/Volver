@@ -12,6 +12,10 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.location.Location;
 import android.os.Build;
 import android.os.Bundle;
@@ -103,6 +107,39 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private double targetLongitude;
     private double targetAltitude;
     private boolean isTargetReached = false;
+
+    // GPS positions for each coin (one entry per coin slot)
+    private double[] coinLatitudes;
+    private double[] coinLongitudes;
+
+    // Last GPS fix — used to compute bearing toward the coin spot
+    private double lastUserLat = Double.NaN;
+    private double lastUserLng = Double.NaN;
+
+    // Compass heading (degrees, 0 = north, clockwise) from SensorManager
+    private float deviceAzimuthDeg = 0f;
+    private SensorManager sensorManager;
+    private Sensor rotationVectorSensor;
+    private final SensorEventListener compassListener = new SensorEventListener() {
+        private final float[] rotMatrix     = new float[9];
+        private final float[] remappedMatrix = new float[9];
+        private final float[] orientation   = new float[3];
+
+        @Override
+        public void onSensorChanged(SensorEvent event) {
+            SensorManager.getRotationMatrixFromVector(rotMatrix, event.values);
+            // Remap axes for portrait (phone held upright): screen-Z becomes the
+            // "up" reference so azimuth is correct when the phone is vertical.
+            SensorManager.remapCoordinateSystem(
+                    rotMatrix, SensorManager.AXIS_X, SensorManager.AXIS_Z, remappedMatrix);
+            SensorManager.getOrientation(remappedMatrix, orientation);
+            deviceAzimuthDeg = (float) Math.toDegrees(orientation[0]);
+            if (deviceAzimuthDeg < 0) deviceAzimuthDeg += 360f;
+            updateCompassArrow();
+        }
+
+        @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
+    };
     private boolean hasGreeted      = false; // play dialogue only once per visit
     private boolean geospatialConfigured = false;
 
@@ -112,6 +149,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private String characterName;
     private String characterDialogue;
     private String modelFileName;
+    private String collectibleId;  // SharedPreferences key for awarding collectible items
     private String username;
 
     // ── TTS ─────────────────────────────────────────────────────────
@@ -119,16 +157,24 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private boolean ttsReady = false;
 
     // ── UI ──────────────────────────────────────────────────────────
-    private TextView tvLocateLabel;
+    private View locateLabelContainer;
+    private TextView tvLocateLabel;       // mission name inside the pill
+    private TextView tvLocateDistance;    // distance line inside the pill
     private TextView tvCharacterName;
     private TextView tvCharacterHint;
 
     // ── Turn-by-turn directions ──────────────────────────────────────
     private NavigationDirectionManager navManager;
     private LinearLayout directionBanner;
+    private android.widget.ImageView ivDirectionArrow;
     private TextView tvDirectionIcon;
     private TextView tvDirectionText;
     private TextView tvDirectionDistance;
+    private View btnCompass;
+    private View compassOverlay;
+    private android.widget.ImageView compassArrow;
+    private TextView compassDistance;
+    private TextView tvCompassIcon;
 
     // ── Minimap ─────────────────────────────────────────────────────
     private MapView minimap;
@@ -146,8 +192,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private int coinsCollected = 0;
     private float coinCollectedValue = 0f;
     private float coinRotationAngle = 0f;
-    private static final int TOTAL_COINS = 1;
-    private static final float COIN_SCALE = 0.15f;
+    // Frames spent waiting for a floor plane before giving up and using fallback height
+    private int floorSearchFrames = 0;
+    private static final int FLOOR_SEARCH_TIMEOUT_FRAMES = 180; // ~6 s @ 30 fps
+    private static final float COIN_SCALE = 0.25f;
     private static final float COIN_VALUE = 0.10f;
 
     // ── Periodic location check ──────────────────────────────────────
@@ -202,11 +250,21 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         targetLatitude   = extras.getDouble("Latitude");
         targetLongitude  = extras.getDouble("Longitude");
         targetAltitude   = extras.getDouble("Altitude", Double.NaN);
+        double[] cl = extras.getDoubleArray("CoinLatitudes");
+        double[] cn = extras.getDoubleArray("CoinLongitudes");
+        coinLatitudes  = (cl != null && cl.length > 0) ? cl : new double[]{targetLatitude};
+        coinLongitudes = (cn != null && cn.length > 0) ? cn : new double[]{targetLongitude};
+
+        sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        if (sensorManager != null) {
+            rotationVectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+        }
         missionId        = extras.getString("MissionId",        "unknown");
         missionName      = extras.getString("MissionName",      "Mission");
         characterName    = extras.getString("CharacterName",    "Guide");
         characterDialogue= extras.getString("CharacterDialogue","Welcome.");
         modelFileName    = extras.getString("ModelFileName",    "san_bartolome_church");
+        collectibleId    = extras.getString("CollectibleId",    missionId);
 
         // Validate coordinates
         if (targetLatitude < -90 || targetLatitude > 90
@@ -219,21 +277,48 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         username = SecurePrefs.get(this).getString("username", "");
 
         // Bind character overlay views (defined in ar_activity.xml)
-        tvLocateLabel = findViewById(R.id.tvLocateLabel);
-        tvCharacterName = findViewById(R.id.tvCharacterName);
-        tvCharacterHint = findViewById(R.id.tvCharacterHint);
+        locateLabelContainer = findViewById(R.id.locateLabelContainer);
+        tvLocateLabel    = findViewById(R.id.tvLocateLabel);
+        tvLocateDistance = findViewById(R.id.tvLocateDistance);
+        tvCharacterName  = findViewById(R.id.tvCharacterName);
+        tvCharacterHint  = findViewById(R.id.tvCharacterHint);
 
-        // Show locate label during navigation phase
-        if (tvLocateLabel != null) {
-            tvLocateLabel.setText("Locate \"" + missionName + "\"");
-            tvLocateLabel.setVisibility(View.VISIBLE);
-        }
+        // Show locate pill during navigation phase
+        if (tvLocateLabel    != null) tvLocateLabel.setText(missionName);
+        if (tvLocateDistance != null) tvLocateDistance.setText("Locating\u2026");
+        if (locateLabelContainer != null) locateLabelContainer.setVisibility(View.VISIBLE);
 
         // Turn-by-turn direction views
-        directionBanner    = findViewById(R.id.directionBanner);
-        tvDirectionIcon    = findViewById(R.id.tvDirectionIcon);
-        tvDirectionText    = findViewById(R.id.tvDirectionText);
+        directionBanner     = findViewById(R.id.directionBanner);
+        ivDirectionArrow    = findViewById(R.id.ivDirectionArrow);
+        tvDirectionIcon     = findViewById(R.id.tvDirectionIcon);
+        tvDirectionText     = findViewById(R.id.tvDirectionText);
         tvDirectionDistance = findViewById(R.id.tvDirectionDistance);
+        btnCompass          = findViewById(R.id.btnCompass);
+        compassOverlay      = findViewById(R.id.compassOverlay);
+        compassArrow        = findViewById(R.id.compassArrow);
+        compassDistance     = findViewById(R.id.compassDistance);
+        tvCompassIcon       = findViewById(R.id.tvCompassIcon);
+
+        if (btnCompass != null) {
+            btnCompass.setOnClickListener(v -> toggleCompassOverlay());
+        }
+        if (compassOverlay != null) {
+            // Tapping the overlay itself also closes it
+            compassOverlay.setOnClickListener(v -> {
+                compassOverlay.setVisibility(View.GONE);
+                if (btnCompass != null) btnCompass.setSelected(false);
+            });
+        }
+
+        // Show the direction banner immediately with a placeholder so the user
+        // always sees something while waiting for the first GPS fix.
+        if (directionBanner != null) directionBanner.setVisibility(View.VISIBLE);
+        if (btnCompass != null) btnCompass.setVisibility(View.VISIBLE);
+        if (ivDirectionArrow != null) { ivDirectionArrow.setRotation(0f); ivDirectionArrow.setVisibility(View.VISIBLE); }
+        if (tvDirectionIcon != null) tvDirectionIcon.setVisibility(View.GONE);
+        if (tvDirectionText != null) tvDirectionText.setText("Head toward " + missionName);
+        if (tvDirectionDistance != null) tvDirectionDistance.setText("Locating…");
 
         // Set up NavigationDirectionManager
         navManager = new NavigationDirectionManager(this);
@@ -273,7 +358,14 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             @Override
             public void onLocationResult(@NonNull LocationResult result) {
                 Location location = result.getLastLocation();
-                if (location == null) return;
+                if (location == null) {
+                    Log.e(TAG, "onLocationResult: null location");
+                    return;
+                }
+                Log.e(TAG, "onLocationResult: " + location.getLatitude() + "," + location.getLongitude());
+
+                lastUserLat = location.getLatitude();
+                lastUserLng = location.getLongitude();
 
                 Location.distanceBetween(
                         location.getLatitude(), location.getLongitude(),
@@ -281,6 +373,9 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 float distance = distanceResults[0];
 
                 if (!isTargetReached) {
+                    // Directly update distance UI — never depends on NavManager or network
+                    updateDistanceUI(distance);
+
                     if (navManager != null) {
                         navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
                     }
@@ -313,9 +408,13 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         // Start periodic location check when screen is visible
         locationHandler.post(locationRunnable);
         startLocationUpdates();
+        if (sensorManager != null && rotationVectorSensor != null) {
+            sensorManager.registerListener(compassListener, rotationVectorSensor,
+                    SensorManager.SENSOR_DELAY_UI);
+        }
         if (minimap != null) minimap.onResume();
         // Keep direction UI above the AR SurfaceView
-        if (tvLocateLabel != null) tvLocateLabel.bringToFront();
+        if (locateLabelContainer != null) locateLabelContainer.bringToFront();
         if (directionBanner != null) directionBanner.bringToFront();
         if (tvCharacterName != null) tvCharacterName.bringToFront();
         if (tvCharacterHint != null) tvCharacterHint.bringToFront();
@@ -326,6 +425,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         super.onPause();
         locationHandler.removeCallbacks(locationRunnable);
         stopLocationUpdates();
+        if (sensorManager != null) sensorManager.unregisterListener(compassListener);
         if (minimap != null) minimap.onPause();
         if (arCam != null && arCam.getArSceneView() != null) {
             arCam.getArSceneView().getScene().removeOnUpdateListener(sceneUpdateListener);
@@ -466,11 +566,17 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         // Force an immediate fresh fix so the compass is correct the moment the mission opens
         fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
                 .addOnSuccessListener(this, location -> {
+                    Log.e(TAG, "getCurrentLocation result: " + (location != null
+                            ? location.getLatitude() + "," + location.getLongitude()
+                            : "null"));
                     if (location != null && !isTargetReached) {
+                        lastUserLat = location.getLatitude();
+                        lastUserLng = location.getLongitude();
                         Location.distanceBetween(
                                 location.getLatitude(), location.getLongitude(),
                                 targetLatitude, targetLongitude, distanceResults);
                         float distance = distanceResults[0];
+                        updateDistanceUI(distance);
                         // Feed navigation direction manager
                         if (navManager != null) {
                             navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
@@ -479,7 +585,8 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                             onTargetReached();
                         }
                     }
-                });
+                })
+                .addOnFailureListener(this, e -> Log.e(TAG, "getCurrentLocation failed: " + e.getMessage()));
 
         // Then keep updating continuously every 3 seconds
         LocationRequest request = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000)
@@ -530,12 +637,23 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 != PackageManager.PERMISSION_GRANTED) return;
 
         fusedLocationClient.getLastLocation().addOnSuccessListener(this, location -> {
-            if (location == null) return;
+            if (location == null) {
+                Log.e(TAG, "getLastLocation returned null \u2014 waiting for fresh fix");
+                if (tvDirectionDistance != null && !isTargetReached) {
+                    tvDirectionDistance.setText("Searching for GPS\u2026");
+                }
+                return;
+            }
+
+            lastUserLat = location.getLatitude();
+            lastUserLng = location.getLongitude();
 
             Location.distanceBetween(
                     location.getLatitude(), location.getLongitude(),
                     targetLatitude, targetLongitude, distanceResults);
             float distance = distanceResults[0];
+
+            if (!isTargetReached) updateDistanceUI(distance);
 
             if (navManager != null) {
                 navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
@@ -556,8 +674,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         isTargetReached = true;
 
         // Hide direction UI
-        if (tvLocateLabel != null) tvLocateLabel.setVisibility(View.GONE);
+        if (locateLabelContainer != null) locateLabelContainer.setVisibility(View.GONE);
         if (directionBanner != null) directionBanner.setVisibility(View.GONE);
+        if (btnCompass != null) btnCompass.setVisibility(View.GONE);
+        if (compassOverlay != null) compassOverlay.setVisibility(View.GONE);
 
         // Show minimap so player can see coin location
         if (minimapContainer != null) minimapContainer.setVisibility(View.VISIBLE);
@@ -589,13 +709,97 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     // Turn-by-turn direction display
     // ──────────────────────────────────────────────────────────────────
 
+    /**
+     * Updates the bottom banner and top label with the straight-line distance
+     * to the mission target. Called directly from location callbacks so it
+     * never depends on the routing network being available.
+     */
+    private void updateDistanceUI(float distanceMeters) {
+        String distText = distanceMeters >= 1000f
+                ? String.format(java.util.Locale.US, "%.1f km", distanceMeters / 1000f)
+                : String.format(java.util.Locale.US, "%d m", (int) distanceMeters);
+        if (tvDirectionDistance != null) tvDirectionDistance.setText(distText + " away");
+        if (tvLocateLabel    != null) tvLocateLabel.setText(missionName);
+        if (tvLocateDistance != null) tvLocateDistance.setText("\uD83D\uDCCD " + distText + " away");
+    }
+
     private void handleDirectionUpdate(NavigationDirectionManager.DirectionStep step) {
         if (isTargetReached || step == null) return;
-
-        if (tvDirectionIcon != null) tvDirectionIcon.setText(step.icon);
+        // Update the arrow and instruction text from the router.
+        // Distance is handled by updateDistanceUI() so we skip step.distanceText here.
+        if (step.icon == null) {
+            // Use the rotating vector arrow
+            if (ivDirectionArrow != null) {
+                ivDirectionArrow.setRotation(step.arrowRotation);
+                ivDirectionArrow.setVisibility(View.VISIBLE);
+            }
+            if (tvDirectionIcon != null) tvDirectionIcon.setVisibility(View.GONE);
+        } else {
+            // Special icon (📍 arrive, ↻ roundabout) — use the text fallback
+            if (tvDirectionIcon != null) {
+                tvDirectionIcon.setText(step.icon);
+                tvDirectionIcon.setVisibility(View.VISIBLE);
+            }
+            if (ivDirectionArrow != null) ivDirectionArrow.setVisibility(View.GONE);
+        }
         if (tvDirectionText != null) tvDirectionText.setText(step.label);
-        if (tvDirectionDistance != null) tvDirectionDistance.setText(step.distanceText);
         if (directionBanner != null) directionBanner.setVisibility(View.VISIBLE);
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Compass overlay — directional pointer toward the mission
+    // ──────────────────────────────────────────────────────────────────
+
+    private void toggleCompassOverlay() {
+        if (compassOverlay == null) return;
+        if (compassOverlay.getVisibility() == View.VISIBLE) {
+            compassOverlay.setVisibility(View.GONE);
+            if (btnCompass != null) btnCompass.setSelected(false);
+        } else {
+            compassOverlay.setVisibility(View.VISIBLE);
+            compassOverlay.bringToFront();
+            if (btnCompass != null) btnCompass.setSelected(true);
+            updateCompassArrow();
+        }
+    }
+
+    /**
+     * Rotates the compass arrow to point toward the mission target.
+     * Called on every sensor update so the arrow tracks the device heading
+     * smoothly. Uses straight-line bearing from current GPS to target.
+     */
+    private void updateCompassArrow() {
+        if (compassOverlay == null || compassOverlay.getVisibility() != View.VISIBLE) return;
+        if (compassArrow == null) return;
+        if (Double.isNaN(lastUserLat) || Double.isNaN(lastUserLng)) {
+            compassArrow.setRotation(0f);
+            if (compassDistance != null) compassDistance.setText("Searching GPS…");
+            return;
+        }
+
+        // Bearing (degrees, 0=N) from user to target
+        double dLon = Math.toRadians(targetLongitude - lastUserLng);
+        double lat1 = Math.toRadians(lastUserLat);
+        double lat2 = Math.toRadians(targetLatitude);
+        double y = Math.sin(dLon) * Math.cos(lat2);
+        double x = Math.cos(lat1) * Math.sin(lat2)
+                - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+        float bearingDeg = (float) Math.toDegrees(Math.atan2(y, x));
+        if (bearingDeg < 0) bearingDeg += 360f;
+
+        // Arrow rotation = bearing relative to device heading.
+        // ic_compass_arrow already points up (north), so no offset needed.
+        float relative = bearingDeg - deviceAzimuthDeg;
+        compassArrow.setRotation(relative);
+
+        // Distance label
+        Location.distanceBetween(lastUserLat, lastUserLng,
+                targetLatitude, targetLongitude, distanceResults);
+        float distance = distanceResults[0];
+        String distText = distance >= 1000f
+                ? String.format(java.util.Locale.US, "%.1f km", distance / 1000f)
+                : String.format(java.util.Locale.US, "%d m", (int) distance);
+        if (compassDistance != null) compassDistance.setText(distText);
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -874,10 +1078,13 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 || coinModelFuture.isCompletedExceptionally()) return;
         if (arCam == null || arCam.getArSceneView() == null) return;
 
-        if (coinAnchorNodes.size() >= TOTAL_COINS) {
+        if (coinAnchorNodes.size() >= coinLatitudes.length) {
             coinsSpawned = true;
             return;
         }
+
+        // Index of the coin we are about to place
+        int coinIdx = coinAnchorNodes.size();
 
         Frame frame = arCam.getArSceneView().getArFrame();
         if (frame == null || frame.getCamera().getTrackingState() != TrackingState.TRACKING) return;
@@ -894,13 +1101,83 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         Pose cam = frame.getCamera().getPose();
         float cx = cam.tx(), cy = cam.ty(), cz = cam.tz();
 
-        // Random angle and random distance within mission radius (6–12 m)
-        Random rng = new Random();
-        float angleDeg = rng.nextFloat() * 360f;
-        float radius   = 6f + rng.nextFloat() * 6f; // 6–12 m
-        float dx = (float) (radius * Math.sin(Math.toRadians(angleDeg)));
-        float dz = (float) (-radius * Math.cos(Math.toRadians(angleDeg)));
-        float dy = -0.3f; // chest height
+        // ── Bearing-based coin placement ──────────────────────────────
+        // Direction: from user's last GPS fix toward the coin's target GPS spot,
+        // expressed in ARCore world space using the device compass heading.
+        float dx, dz;
+        if (!Double.isNaN(lastUserLat) && !Double.isNaN(lastUserLng)) {
+            float[] bearingResult = new float[2];
+            Location.distanceBetween(lastUserLat, lastUserLng,
+                    coinLatitudes[coinIdx], coinLongitudes[coinIdx], bearingResult);
+            float gpsBearing = bearingResult[1]; // degrees, clockwise from north
+            // Angle of coin relative to camera forward (compass-aligned)
+            float relativeRad = (float) Math.toRadians(gpsBearing - deviceAzimuthDeg);
+
+            // Camera forward (-Z) and right (+X) in ARCore world space (horizontal plane)
+            float[] zAxis = cam.getZAxis();
+            float[] xAxis = cam.getXAxis();
+            float fwdX = -zAxis[0], fwdZ = -zAxis[2];
+            float rightX = xAxis[0],  rightZ = xAxis[2];
+            float fwdLen   = (float) Math.sqrt(fwdX * fwdX + fwdZ * fwdZ);
+            float rightLen = (float) Math.sqrt(rightX * rightX + rightZ * rightZ);
+            if (fwdLen   > 0.001f) { fwdX   /= fwdLen;   fwdZ   /= fwdLen; }
+            if (rightLen > 0.001f) { rightX /= rightLen;  rightZ /= rightLen; }
+
+            // Place coin at GPS distance (clamped 3–8 m) in the coin's direction
+            float coinDist = Math.max(3f, Math.min(bearingResult[0], 8f));
+            float cosA = (float) Math.cos(relativeRad);
+            float sinA = (float) Math.sin(relativeRad);
+            dx = fwdX * cosA * coinDist + rightX * sinA * coinDist;
+            dz = fwdZ * cosA * coinDist + rightZ * sinA * coinDist;
+        } else {
+            // Fallback: place 5 m directly in front if GPS not yet available
+            float[] zAxis = cam.getZAxis();
+            dx = -zAxis[0] * 5f;
+            dz = -zAxis[2] * 5f;
+        }
+
+        // ── Floor snapping ────────────────────────────────────────────
+        // Cast a ray straight down from above the target XZ to find the
+        // nearest tracked horizontal surface. This makes the coin sit on
+        // whichever floor the user is standing on (ground floor, 5th
+        // floor, etc.) because ARCore's plane detector only sees surfaces
+        // around the user — it does not know about other storeys.
+        float dy;
+        try {
+            float[] rayOrigin    = new float[]{ cx + dx, cy + 1.0f, cz + dz };
+            float[] rayDirection = new float[]{ 0f, -1f, 0f };
+            List<HitResult> hits = frame.hitTest(rayOrigin, 0, rayDirection, 0);
+            Float floorY = null;
+            for (HitResult hit : hits) {
+                com.google.ar.core.Trackable trackable = hit.getTrackable();
+                if (trackable instanceof Plane) {
+                    Plane plane = (Plane) trackable;
+                    if (plane.getTrackingState() == TrackingState.TRACKING
+                            && plane.getType() == Plane.Type.HORIZONTAL_UPWARD_FACING
+                            && plane.getSubsumedBy() == null) {
+                        floorY = hit.getHitPose().ty();
+                        break; // hits are returned in distance order — first match wins
+                    }
+                }
+            }
+            if (floorY != null) {
+                // 5 cm above the detected floor so the coin doesn't z-fight with it
+                dy = (floorY - cy) + 0.05f;
+                floorSearchFrames = 0;
+            } else if (floorSearchFrames++ < FLOOR_SEARCH_TIMEOUT_FRAMES) {
+                // No floor detected yet — wait for plane detection rather than
+                // spawning the coin floating awkwardly in mid-air.
+                return;
+            } else {
+                // Timed out waiting for plane detection (user may not have panned
+                // the camera at the floor). Fall back to a reasonable floor estimate.
+                dy = -1.0f;
+                Log.w(TAG, "Floor plane not detected within timeout; using fallback height");
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Floor hitTest failed, using fallback height: " + e.getMessage());
+            dy = -1.0f; // ~1 m below camera (approx. floor for a standing user)
+        }
 
         try {
             Pose coinPose = Pose.makeTranslation(cx + dx, cy + dy, cz + dz);
@@ -913,7 +1190,8 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             coinNode.setParent(anchorNode);
             coinNode.setRenderable(coinRenderable);
             coinNode.setLocalScale(new Vector3(COIN_SCALE, COIN_SCALE, COIN_SCALE));
-            coinNode.setOnTapListener((hr, nd) -> collectCoin(0, anchorNode));
+            final int capturedIdx = coinIdx;
+            coinNode.setOnTapListener((hr, nd) -> collectCoin(capturedIdx, anchorNode));
 
             coinAnchorNodes.add(anchorNode);
             coinNodes.add(coinNode);
@@ -924,14 +1202,20 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             GeoPoint gp = new GeoPoint(targetLatitude + latOff, targetLongitude + lngOff);
             runOnUiThread(() -> addCoinMarkerToMinimap(gp));
 
-            coinsSpawned = true;
-            runOnUiThread(() -> {
-                Toast.makeText(this,
-                        "A coin is floating nearby! Find and tap it!",
-                        Toast.LENGTH_LONG).show();
-                updateHint("Find the floating coin and tap it to complete the mission!");
-                if (tvCharacterName != null) tvCharacterName.setVisibility(View.GONE);
-            });
+            // Show toast only on first coin spawned
+            if (coinAnchorNodes.size() == 1) {
+                runOnUiThread(() -> {
+                    Toast.makeText(this,
+                            coinLatitudes.length > 1
+                                    ? "Coins are floating nearby! Find and tap them!"
+                                    : "A coin is floating nearby! Find and tap it!",
+                            Toast.LENGTH_LONG).show();
+                    updateHint(coinLatitudes.length > 1
+                            ? "Find the floating coins and tap them to complete the mission!"
+                            : "Find the floating coin and tap it to complete the mission!");
+                    if (tvCharacterName != null) tvCharacterName.setVisibility(View.GONE);
+                });
+            }
 
         } catch (Exception e) {
             Log.w(TAG, "Coin placement failed: " + e.getMessage());
@@ -948,8 +1232,8 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             // Each coin rotates at same speed but with a slight phase offset
             float angle = (coinRotationAngle + i * 36f) % 360f;
             node.setLocalRotation(Quaternion.axisAngle(new Vector3(0f, 1f, 0f), angle));
-            // Bob up and down with individual phase offset
-            float bob = (float) (Math.sin(System.currentTimeMillis() / 700.0 + i * 0.6) * 0.06f);
+            // Bob upward only (coin sits on a floor — never dip below it)
+            float bob = (float) ((Math.sin(System.currentTimeMillis() / 700.0 + i * 0.6) + 1.0) * 0.06f);
             node.setLocalPosition(new Vector3(0f, bob, 0f));
         }
     }
@@ -965,12 +1249,37 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         coinsCollected++;
         coinCollectedValue += COIN_VALUE;
 
+// Award the collectible item for this mission (capped at maxCount=10).
+            // This is the write that drives the Collectibles tab counter.
+            if (collectibleId != null && !collectibleId.isEmpty()) {
+                android.content.SharedPreferences prefs = SecurePrefs.get(this);
+                String key = "collectible_" + collectibleId + "_count";
+                int current = prefs.getInt(key, 0);
+                if (current < 10) {
+                prefs.edit().putInt(key, current + 1).apply();
+            }
+        }
+
         // Remove red dot from minimap
         if (minimap != null && index < coinMapMarkers.size()
                 && coinMapMarkers.get(index) != null) {
             minimap.getOverlays().remove(coinMapMarkers.get(index));
             coinMapMarkers.set(index, null);
             runOnUiThread(() -> minimap.invalidate());
+        }
+
+        // If this mission has multiple coins, only complete after the LAST one is tapped.
+        int totalCoins = (coinLatitudes != null) ? coinLatitudes.length : 1;
+        if (coinsCollected < totalCoins) {
+            int remaining = totalCoins - coinsCollected;
+            runOnUiThread(() -> {
+                Toast.makeText(this,
+                        "Coin collected! " + remaining + " more to go.",
+                        Toast.LENGTH_SHORT).show();
+                updateHint("Coin " + coinsCollected + " of " + totalCoins
+                        + " collected — find the next one!");
+            });
+            return;
         }
 
         // Optimistic UI — instant feedback, but the final dialog is deferred
