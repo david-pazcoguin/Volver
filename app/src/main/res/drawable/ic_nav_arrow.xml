@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solid bold upward arrow: arrowhead + stem. Rotated in Java per maneuver. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#111111"
+        android:pathData="M12,2 L20,13 L15,13 L15,22 L9,22 L9,13 L4,13 Z" />
+</vector>
