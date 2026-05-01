@@ -8,6 +8,13 @@ public class ARHelper {
     double[] coinLatitudes;
     double[] coinLongitudes;
 
+    // Optional: parallel array of collectible IDs (one per coin slot).
+    // When non-null and same length as coinLatitudes, each coin spawns with
+    // that relic's 3D model and credits that relic on tap. Used for the
+    // Casa Manila staged "find the relics" mission. When null, every coin
+    // uses the default coin model and credits the mission's `collectibleId`.
+    String[] coinRelicIds;
+
     // Collectible item ID awarded when a coin from this mission is tapped.
     // Must match a CollectibleItem id in HomeActivity.buildCollectiblesList().
     String collectibleId;
@@ -31,6 +38,7 @@ public class ARHelper {
     public double getLongitude()          { return Longitude; }
     public double[] getCoinLatitudes()    { return coinLatitudes; }
     public double[] getCoinLongitudes()   { return coinLongitudes; }
+    public String[] getCoinRelicIds()     { return coinRelicIds; }
     public String getCollectibleId()      { return collectibleId; }
     public String getMissionId()          { return missionId; }
     public String getCharacterName()      { return characterName; }
@@ -80,5 +88,20 @@ public class ARHelper {
         this(missionName, content, latitude, longitude,
              missionId, characterName, characterDialogue, modelFileName,
              new double[]{latitude}, new double[]{longitude}, missionId);
+    }
+
+    /**
+     * Staged-relic constructor (Casa Manila). The {@code coinRelicIds} array
+     * MUST be the same length as {@code coinLatitudes}. Each coin will spawn
+     * with that relic's 3D model and credit that relic on tap.
+     */
+    public ARHelper(String missionName, String content, double latitude, double longitude,
+                    String missionId, String characterName, String characterDialogue,
+                    String modelFileName, double[] coinLatitudes, double[] coinLongitudes,
+                    String[] coinRelicIds) {
+        this(missionName, content, latitude, longitude,
+             missionId, characterName, characterDialogue, modelFileName,
+             coinLatitudes, coinLongitudes, missionId);
+        this.coinRelicIds = coinRelicIds;
     }
 }
