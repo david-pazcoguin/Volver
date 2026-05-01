@@ -58,6 +58,18 @@ public class HomeActivity extends AppCompatActivity {
     private TextView btnContinueQuest;
     private TextView tvHomeNFTStatus;
     private TextView tvHomeFact;
+    private TextView tvHomeGreeting;
+    private TextView tvHomeTagline;
+    private TextView tvHomeProgressDetail;
+    private TextView tvStatMissions;
+    private TextView tvStatRelics;
+    private TextView tvStatNFT;
+    private View cardFeaturedMission;
+    private android.widget.ImageView imgFeaturedMission;
+    private TextView tvFeaturedLabel;
+    private TextView tvFeaturedTitle;
+    private TextView tvFeaturedSubtitle;
+    private TextView btnNextFact;
     private LinearLayout layoutCollectibles;
     private RecyclerView recyclerCollectibles;
     private CollectiblesAdapter collectiblesAdapter;
@@ -100,6 +112,18 @@ public class HomeActivity extends AppCompatActivity {
         btnContinueQuest   = findViewById(R.id.btnContinueQuest);
         tvHomeNFTStatus    = findViewById(R.id.tvHomeNFTStatus);
         tvHomeFact         = findViewById(R.id.tvHomeFact);
+        tvHomeGreeting       = findViewById(R.id.tvHomeGreeting);
+        tvHomeTagline        = findViewById(R.id.tvHomeTagline);
+        tvHomeProgressDetail = findViewById(R.id.tvHomeProgressDetail);
+        tvStatMissions       = findViewById(R.id.tvStatMissions);
+        tvStatRelics         = findViewById(R.id.tvStatRelics);
+        tvStatNFT            = findViewById(R.id.tvStatNFT);
+        cardFeaturedMission  = findViewById(R.id.cardFeaturedMission);
+        imgFeaturedMission   = findViewById(R.id.imgFeaturedMission);
+        tvFeaturedLabel      = findViewById(R.id.tvFeaturedLabel);
+        tvFeaturedTitle      = findViewById(R.id.tvFeaturedTitle);
+        tvFeaturedSubtitle   = findViewById(R.id.tvFeaturedSubtitle);
+        btnNextFact          = findViewById(R.id.btnNextFact);
         layoutCollectibles = findViewById(R.id.layoutCollectibles);
         recyclerCollectibles = findViewById(R.id.recyclerCollectibles);
         tvCollectiblesTotal  = findViewById(R.id.tvCollectiblesTotal);
@@ -109,6 +133,12 @@ public class HomeActivity extends AppCompatActivity {
         treasureChestContainer.setOnClickListener(v -> onTreasureChestTapped());
         if (btnContinueQuest != null) {
             btnContinueQuest.setOnClickListener(v -> bottomNav.setSelectedItemId(R.id.nav_missions));
+        }
+        if (cardFeaturedMission != null) {
+            cardFeaturedMission.setOnClickListener(v -> bottomNav.setSelectedItemId(R.id.nav_missions));
+        }
+        if (btnNextFact != null) {
+            btnNextFact.setOnClickListener(v -> showRandomFact());
         }
         showRandomFact();
 
@@ -187,9 +217,9 @@ public class HomeActivity extends AppCompatActivity {
         tvHomeFact.setText(INTRAMUROS_FACTS[idx]);
     }
 
-    private void updateHomeProgressUI(int completedCount, int total, boolean allComplete) {
+    private void updateHomeProgressUI(Set<String> completedIds, int completedCount, int total, boolean allComplete) {
         if (tvHomeProgress != null) {
-            tvHomeProgress.setText(completedCount + " of " + total + " missions complete");
+            tvHomeProgress.setText(completedCount + " of " + total);
         }
         if (progressHome != null) {
             int pct = total > 0 ? (int) Math.round(100.0 * completedCount / total) : 0;
@@ -198,9 +228,28 @@ public class HomeActivity extends AppCompatActivity {
         if (btnContinueQuest != null) {
             btnContinueQuest.setText(allComplete ? "View Missions" : (completedCount == 0 ? "Start Quest" : "Continue Quest"));
         }
+        if (tvStatMissions != null) {
+            tvStatMissions.setText(completedCount + "/" + total);
+        }
+        if (tvStatRelics != null) {
+            tvStatRelics.setText(getTotalRelicCount() + "/50");
+        }
+        boolean nftClaimed = SecurePrefs.get(this).getBoolean(PREF_NFT_CLAIMED, false);
+        if (tvStatNFT != null) {
+            tvStatNFT.setText(nftClaimed ? "✓" : (allComplete ? "!" : "—"));
+        }
+        if (tvHomeProgressDetail != null) {
+            if (allComplete) {
+                tvHomeProgressDetail.setText("All missions complete — claim your souvenir!");
+            } else if (completedCount == 0) {
+                tvHomeProgressDetail.setText("Begin your journey through the Walled City.");
+            } else {
+                int remaining = total - completedCount;
+                tvHomeProgressDetail.setText(remaining + " mission" + (remaining == 1 ? "" : "s") + " remaining on your quest.");
+            }
+        }
         if (tvHomeNFTStatus != null) {
-            boolean claimed = SecurePrefs.get(this).getBoolean(PREF_NFT_CLAIMED, false);
-            if (claimed) {
+            if (nftClaimed) {
                 tvHomeNFTStatus.setText("✨ Claimed — your souvenir is on Polygon");
             } else if (allComplete) {
                 tvHomeNFTStatus.setText("Ready to claim! Tap the treasure chest in Missions.");
@@ -208,6 +257,62 @@ public class HomeActivity extends AppCompatActivity {
                 int remaining = total - completedCount;
                 tvHomeNFTStatus.setText("Complete " + remaining + " more mission" + (remaining == 1 ? "" : "s") + " to earn");
             }
+        }
+        updateFeaturedMission(completedIds, allComplete, nftClaimed);
+    }
+
+    private int getTotalRelicCount() {
+        if (collectibleItems == null) return 0;
+        SharedPreferences sh = SecurePrefs.get(this);
+        int total = 0;
+        for (CollectibleItem item : collectibleItems) {
+            total += sh.getInt("collectible_" + item.getId() + "_count", 0);
+        }
+        return total;
+    }
+
+    private void updateFeaturedMission(Set<String> completedIds, boolean allComplete, boolean nftClaimed) {
+        if (cardFeaturedMission == null || arHelpers == null || arHelpers.isEmpty()) return;
+
+        if (allComplete) {
+            if (tvFeaturedLabel != null) tvFeaturedLabel.setText(nftClaimed ? "QUEST COMPLETE" : "READY TO CLAIM");
+            if (tvFeaturedTitle != null) tvFeaturedTitle.setText(nftClaimed ? "¡Felicidades!" : "Claim Your Souvenir");
+            if (tvFeaturedSubtitle != null)
+                tvFeaturedSubtitle.setText(nftClaimed
+                        ? "Your NFT is minted on Polygon"
+                        : "Tap the treasure chest in Missions");
+            if (imgFeaturedMission != null) imgFeaturedMission.setImageResource(R.drawable.centro_turismo);
+            return;
+        }
+
+        ARHelper next = null;
+        for (ARHelper h : arHelpers) {
+            if (completedIds == null || !completedIds.contains(h.getMissionId())) {
+                next = h;
+                break;
+            }
+        }
+        if (next == null) return;
+
+        if (tvFeaturedLabel != null) {
+            tvFeaturedLabel.setText(completedIds == null || completedIds.isEmpty() ? "BEGIN YOUR QUEST" : "NEXT MISSION");
+        }
+        if (tvFeaturedTitle != null) tvFeaturedTitle.setText(next.getMissionName());
+        if (tvFeaturedSubtitle != null) tvFeaturedSubtitle.setText("Tap to view mission details");
+        if (imgFeaturedMission != null) {
+            imgFeaturedMission.setImageResource(featuredImageFor(next.getMissionId()));
+        }
+    }
+
+    private int featuredImageFor(String missionId) {
+        if (missionId == null) return R.drawable.fort_santiago;
+        switch (missionId) {
+            case "fort_santiago":      return R.drawable.fort_santiago;
+            case "baluarte_san_diego": return R.drawable.baluarte_san_diego;
+            case "casa_manila":        return R.drawable.casa_manila;
+            case "museo_intramuros":   return R.drawable.museo_intramuros;
+            case "centro_turismo":     return R.drawable.centro_turismo;
+            default:                   return R.drawable.fort_santiago;
         }
     }
 
@@ -287,7 +392,11 @@ public class HomeActivity extends AppCompatActivity {
         if (tvFullName == null) return;
         SharedPreferences sh = SecurePrefs.get(this);
         String cached = sh.getString("firstName", "");
-        if (!cached.isEmpty()) tvFullName.setText("Hello, " + capitalize(cached) + "!");
+        if (!cached.isEmpty()) {
+            tvFullName.setText("Hello, " + capitalize(cached) + "!");
+            if (tvHomeGreeting != null)
+                tvHomeGreeting.setText("Hola, " + capitalize(cached) + "!");
+        }
 
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) return;
@@ -303,6 +412,8 @@ public class HomeActivity extends AppCompatActivity {
                     SecurePrefs.get(this).edit().putString("firstName", trimmed).apply();
                     if (tvFullName != null)
                         tvFullName.setText("Hello, " + capitalize(trimmed) + "!");
+                    if (tvHomeGreeting != null)
+                        tvHomeGreeting.setText("Hola, " + capitalize(trimmed) + "!");
                 });
     }
 
@@ -361,14 +472,39 @@ public class HomeActivity extends AppCompatActivity {
                 "sedeno_character",
                 new double[]{14.585520, 14.585565}, new double[]{120.975730, 120.975683},
                 "farol_de_aceite"));
-        arHelpers.add(new ARHelper("Casa Manila", "", 14.589622, 120.975129,
+        arHelpers.add(new ARHelper("Casa Manila", "", 14.589630881841018, 120.97515722599451,
                 "casa_manila", "Imelda Marcos",
                 "This home revives our bahay na bato legacy. Every room tells a story " +
                 "of the merchant families who shaped colonial Manila. Let me show you.",
                 "marcos_character",
-                new double[]{14.589663203491886, 14.589618427314848},
-                new double[]{120.97526796641772, 120.97521968665782},
-                "peineta"));
+                // 5 relic stages × 2 coins each, in order. The user must collect
+                // each relic pair before the next pair appears.
+                new double[]{
+                    // Stage 1: Intramuros Coin
+                    14.589663203491886, 14.589618427314848,
+                    // Stage 2: Peineta
+                    14.589609963023207, 14.58966382422264,
+                    // Stage 3: Salakot Elite
+                    14.589598931209652, 14.58964370739066,
+                    // Stage 4: Farol de Aceite
+                    14.589579685619842, 14.589676987413734,
+                    // Stage 5: Antique Pocket Watch
+                    14.589638138561947, 14.589585575216757
+                },
+                new double[]{
+                    120.97526796641772, 120.97521968665782,
+                    120.97526797947917, 120.97523914573368,
+                    120.97518617210824, 120.97530754206021,
+                    120.9752383013906,  120.97527811405568,
+                    120.9752492421618,  120.975198280193
+                },
+                new String[]{
+                    "intramuros_coin", "intramuros_coin",
+                    "peineta",         "peineta",
+                    "salakot_elite",   "salakot_elite",
+                    "farol_de_aceite", "farol_de_aceite",
+                    "pocket_watch",    "pocket_watch"
+                }));
         arHelpers.add(new ARHelper("Museo de Intramuros", "", 14.589853, 120.973438,
                 "museo_intramuros", "Martin Tinio Jr.",
                 "These stones whisper Manila's four-hundred-year saga. " +
@@ -427,7 +563,7 @@ public class HomeActivity extends AppCompatActivity {
         if (arAdapter != null) arAdapter.setCompletedMissions(completedIds);
         if (cardNFTClaim != null) cardNFTClaim.setVisibility(View.GONE);
         updateTreasureChest(allComplete);
-        updateHomeProgressUI(completedCount, total, allComplete);
+        updateHomeProgressUI(completedIds, completedCount, total, allComplete);
     }
 
     // ──────────────────────────────────────────────────────────────

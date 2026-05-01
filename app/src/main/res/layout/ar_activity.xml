@@ -164,13 +164,14 @@
         </FrameLayout>
     </LinearLayout>
 
-    <!-- Compass overlay — pops up centered just above the direction banner -->
+    <!-- Compass overlay — toggled in/out of the same slot as the minimap -->
     <FrameLayout
         android:id="@+id/compassOverlay"
-        android:layout_width="160dp"
-        android:layout_height="160dp"
-        android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="110dp"
+        android:layout_width="170dp"
+        android:layout_height="170dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="64dp"
         android:background="@drawable/compass_circle_bg"
         android:elevation="10dp"
         android:visibility="gone">
@@ -236,7 +237,7 @@
             android:fontFamily="@font/montserrat_bold" />
     </FrameLayout>
 
-    <!-- Minimap — hidden, kept for potential future use -->
+    <!-- Minimap — shown after the user reaches the mission target -->
     <FrameLayout
         android:id="@+id/minimapContainer"
         android:layout_width="170dp"
@@ -253,22 +254,70 @@
             android:id="@+id/minimap"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
+
+        <!-- Legend so the user can identify the dots -->
+        <TextView
+            android:id="@+id/tvMapLegend"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="2dp"
+            android:background="#CC000000"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
+            android:text="🟢 You  ·  🔴 Relic"
+            android:textColor="#FFFFFF"
+            android:textSize="9sp" />
     </FrameLayout>
 
-    <!-- Hint text at the bottom -->
+    <!-- Map ↔ Compass toggle button (sits to the right of the minimap) -->
+    <FrameLayout
+        android:id="@+id/btnMapCompassToggle"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="14dp"
+        android:background="@drawable/compass_button_bg"
+        android:clickable="true"
+        android:focusable="true"
+        android:elevation="10dp"
+        android:contentDescription="Toggle map and compass"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tvMapCompassIcon"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="🧭"
+            android:textSize="20sp"
+            android:includeFontPadding="false" />
+    </FrameLayout>
+
+    <!-- Hint pill at the top -->
     <TextView
         android:id="@+id/tvCharacterHint"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:background="#CC000000"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="72dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:background="@drawable/bg_hint_pill"
+        android:elevation="6dp"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
         android:paddingTop="10dp"
         android:paddingBottom="10dp"
-        android:textColor="#DDDDDD"
-        android:textSize="14sp"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp"
+        android:fontFamily="@font/montserrat_bold"
         android:gravity="center"
+        android:maxLines="2"
+        android:ellipsize="end"
         android:visibility="gone" />
 
 </FrameLayout>

@@ -71,6 +71,7 @@ public class ARAdapter extends RecyclerView.Adapter<ARAdapter.ViewHolder>
                 bundle.putDouble("Longitude",        ARHelper.getLongitude());
                 bundle.putDoubleArray("CoinLatitudes",  ARHelper.getCoinLatitudes());
                 bundle.putDoubleArray("CoinLongitudes", ARHelper.getCoinLongitudes());
+                bundle.putStringArray("CoinRelicIds",   ARHelper.getCoinRelicIds());
                 bundle.putString("CollectibleId",    ARHelper.getCollectibleId());
                 bundle.putString("MissionId",        ARHelper.getMissionId());
                 bundle.putString("CharacterName",    ARHelper.getCharacterName());
