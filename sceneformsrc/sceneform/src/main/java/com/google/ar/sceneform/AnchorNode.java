@@ -172,11 +172,15 @@ public class AnchorNode extends Node {
   private void updateTrackedPose(float deltaSeconds, boolean forceImmediate) {
     boolean isTracking = isTracking();
 
-    // Hide the children if the anchor isn't currently tracking.
+    // Keep children always visible — hiding them when tracking is temporarily lost (e.g. as the
+    // user walks) causes models to flicker or vanish even though the anchor pose is still valid.
+    // We only enable/disable on the initial attach (handled in setAnchor).
     if (isTracking != wasTracking) {
-      // The children should be enabled if there is no anchor, even though we aren't tracking in
-      // that case.
-      setChildrenEnabled(isTracking || anchor == null);
+      if (isTracking) {
+        // Tracking restored — re-enable in case setAnchor disabled them initially.
+        setChildrenEnabled(true);
+      }
+      // Do NOT disable children when tracking is lost; freeze at last known pose instead.
     }
 
     // isTracking already checks if the anchor is null, but we need the anchor null check for

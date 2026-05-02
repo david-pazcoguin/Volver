@@ -50,6 +50,14 @@ public class HomeActivity extends AppCompatActivity {
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private Runnable pendingChestReveal;
 
+    // ── Auto-carousel & auto-fact ────────────────────────
+    private static final long CAROUSEL_INTERVAL_MS = 4000L;
+    private static final long FACT_INTERVAL_MS     = 8000L;
+    private int carouselIndex = 0;
+    private Set<String> lastCompletedIds = null;
+    private final Runnable carouselRunnable = this::advanceCarousel;
+    private final Runnable factRunnable     = this::rotateFactAuto;
+
     // ── Collectibles tab ────────────────────────────────
     private LinearLayout layoutMissions;
     private View layoutHome;
@@ -94,6 +102,19 @@ public class HomeActivity extends AppCompatActivity {
         SharedPreferences sh = SecurePrefs.get(this);
         username = sh.getString("username", "");
 
+        // One-time migration: wipe collectible counts that were written before the
+        // pendingCollectibleAwards buffer was introduced. Counts are now only written
+        // after a mission is fully completed, so any partial values are incorrect.
+        if (!sh.getBoolean("migration_collectibles_cleared_v1", false)) {
+            SharedPreferences.Editor wipe = sh.edit();
+            for (String key : sh.getAll().keySet()) {
+                if (key.startsWith("collectible_") && key.endsWith("_count")) {
+                    wipe.remove(key);
+                }
+            }
+            wipe.putBoolean("migration_collectibles_cleared_v1", true).apply();
+        }
+
         recyclerView     = findViewById(R.id.recyclerView);
         tvFullName       = findViewById(R.id.tvFullName);
         tvProgressLabel  = findViewById(R.id.tvProgressLabel);
@@ -137,6 +158,10 @@ public class HomeActivity extends AppCompatActivity {
         if (cardFeaturedMission != null) {
             cardFeaturedMission.setOnClickListener(v -> bottomNav.setSelectedItemId(R.id.nav_missions));
         }
+        View btnHeroExplore = findViewById(R.id.btnHeroExplore);
+        if (btnHeroExplore != null) {
+            btnHeroExplore.setOnClickListener(v -> bottomNav.setSelectedItemId(R.id.nav_missions));
+        }
         if (btnNextFact != null) {
             btnNextFact.setOnClickListener(v -> showRandomFact());
         }
@@ -161,6 +186,17 @@ public class HomeActivity extends AppCompatActivity {
         loadGreeting();
         loadMissionProgress();
         refreshCollectibleCounts();
+        uiHandler.removeCallbacks(carouselRunnable);
+        uiHandler.removeCallbacks(factRunnable);
+        uiHandler.postDelayed(carouselRunnable, CAROUSEL_INTERVAL_MS);
+        uiHandler.postDelayed(factRunnable, FACT_INTERVAL_MS);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        uiHandler.removeCallbacks(carouselRunnable);
+        uiHandler.removeCallbacks(factRunnable);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -217,7 +253,43 @@ public class HomeActivity extends AppCompatActivity {
         tvHomeFact.setText(INTRAMUROS_FACTS[idx]);
     }
 
+    /** Automatically fades to the next fact every FACT_INTERVAL_MS. */
+    private void rotateFactAuto() {
+        if (tvHomeFact == null) return;
+        tvHomeFact.animate().alpha(0f).setDuration(400).withEndAction(() -> {
+            showRandomFact();
+            tvHomeFact.animate().alpha(1f).setDuration(400).start();
+        }).start();
+        uiHandler.postDelayed(factRunnable, FACT_INTERVAL_MS);
+    }
+
+    /** Advances the featured-mission banner through all 6 locations with a crossfade. */
+    private void advanceCarousel() {
+        if (arHelpers == null || arHelpers.isEmpty() || cardFeaturedMission == null) return;
+        carouselIndex = (carouselIndex + 1) % arHelpers.size();
+        ARHelper mission = arHelpers.get(carouselIndex);
+        boolean completed = lastCompletedIds != null
+                && lastCompletedIds.contains(mission.getMissionId());
+
+        cardFeaturedMission.animate().alpha(0.45f).setDuration(300).withEndAction(() -> {
+            if (imgFeaturedMission != null)
+                imgFeaturedMission.setImageResource(featuredImageFor(mission.getMissionId()));
+            if (tvFeaturedLabel != null)
+                tvFeaturedLabel.setText(completed ? "✓ COMPLETED" : "EXPLORE");
+            if (tvFeaturedTitle != null)
+                tvFeaturedTitle.setText(mission.getMissionName());
+            if (tvFeaturedSubtitle != null)
+                tvFeaturedSubtitle.setText(completed
+                        ? "Mission accomplished!"
+                        : "Tap to view mission details");
+            cardFeaturedMission.animate().alpha(1f).setDuration(300).start();
+        }).start();
+
+        uiHandler.postDelayed(carouselRunnable, CAROUSEL_INTERVAL_MS);
+    }
+
     private void updateHomeProgressUI(Set<String> completedIds, int completedCount, int total, boolean allComplete) {
+        lastCompletedIds = completedIds;
         if (tvHomeProgress != null) {
             tvHomeProgress.setText(completedCount + " of " + total);
         }
@@ -276,7 +348,7 @@ public class HomeActivity extends AppCompatActivity {
 
         if (allComplete) {
             if (tvFeaturedLabel != null) tvFeaturedLabel.setText(nftClaimed ? "QUEST COMPLETE" : "READY TO CLAIM");
-            if (tvFeaturedTitle != null) tvFeaturedTitle.setText(nftClaimed ? "¡Felicidades!" : "Claim Your Souvenir");
+            if (tvFeaturedTitle != null) tvFeaturedTitle.setText(nftClaimed ? "Quest Complete!" : "Claim Your Souvenir");
             if (tvFeaturedSubtitle != null)
                 tvFeaturedSubtitle.setText(nftClaimed
                         ? "Your NFT is minted on Polygon"
@@ -293,6 +365,12 @@ public class HomeActivity extends AppCompatActivity {
             }
         }
         if (next == null) return;
+
+        // Anchor the carousel to the first incomplete mission so the auto-slide
+        // starts from the right position each time progress is loaded.
+        for (int i = 0; i < arHelpers.size(); i++) {
+            if (arHelpers.get(i) == next) { carouselIndex = i; break; }
+        }
 
         if (tvFeaturedLabel != null) {
             tvFeaturedLabel.setText(completedIds == null || completedIds.isEmpty() ? "BEGIN YOUR QUEST" : "NEXT MISSION");
@@ -394,9 +472,9 @@ public class HomeActivity extends AppCompatActivity {
         SharedPreferences sh = SecurePrefs.get(this);
         String cached = sh.getString("firstName", "");
         if (!cached.isEmpty()) {
-            tvFullName.setText("Hello, " + capitalize(cached) + "!");
+            tvFullName.setText(capitalize(cached));
             if (tvHomeGreeting != null)
-                tvHomeGreeting.setText("Hola, " + capitalize(cached) + "!");
+                tvHomeGreeting.setText("Mabuhay, " + capitalize(cached) + "!");
         }
 
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
@@ -412,9 +490,9 @@ public class HomeActivity extends AppCompatActivity {
                     String trimmed = firstName.trim();
                     SecurePrefs.get(this).edit().putString("firstName", trimmed).apply();
                     if (tvFullName != null)
-                        tvFullName.setText("Hello, " + capitalize(trimmed) + "!");
+                        tvFullName.setText(capitalize(trimmed));
                     if (tvHomeGreeting != null)
-                        tvHomeGreeting.setText("Hola, " + capitalize(trimmed) + "!");
+                        tvHomeGreeting.setText("Mabuhay, " + capitalize(trimmed) + "!");
                 });
     }
 
@@ -520,14 +598,14 @@ public class HomeActivity extends AppCompatActivity {
                 "ignatius_character",
                 new double[]{14.590160, 14.590115}, new double[]{120.973395, 120.973442},
                 "pocket_watch"));
-        arHelpers.add(new ARHelper("Lyceum of the Philippines University", "", 14.592083851333893, 120.97791163766738,
+        arHelpers.add(new ARHelper("Lyceum of the Philippines University", "", 14.591600276085643, 120.97778918301911,
                 "lpu", "José P. Laurel",
                 "This university was born from the dream that education could rebuild a nation. " +
                 "Every relic you find here carries the spirit of those who shaped modern Manila.",
                 "san_bartolome_church",
                 new double[]{
                     // Stage 1: Intramuros Coin
-                    14.591767666753327, 14.591682008790869,
+                    14.59158019920811, 14.591682008790869,
                     // Stage 2: Peineta
                     14.591680062018614, 14.591570393820067,
                     // Stage 3: Salakot Elite
@@ -538,7 +616,7 @@ public class HomeActivity extends AppCompatActivity {
                     14.591527564804622, 14.59166254106748
                 },
                 new double[]{
-                    120.97776843710301, 120.9778522561306,
+                    120.97776136748872, 120.9778522561306,
                     120.97762695058442, 120.97777380152078,
                     120.97783348066842, 120.97797228497814,
                     120.97775971992415, 120.97784353895175,
@@ -691,6 +769,8 @@ public class HomeActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         cancelPendingChestReveal();
+        uiHandler.removeCallbacks(carouselRunnable);
+        uiHandler.removeCallbacks(factRunnable);
         super.onDestroy();
     }
 
