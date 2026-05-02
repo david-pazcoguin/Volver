@@ -1730,15 +1730,8 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 }
             }
             if (anchor == null) {
-                // For staged relic missions we have EXACT coordinates that must
-                // never move — refuse to fall back to bearing-based placement
-                // (which drifts as the user walks because it depends on the
-                // user's current GPS). Wait a few frames for geospatial to lock
-                // and try again next call.
-                if (coinRelicIds != null) {
-                    return;
-                }
-                // Legacy/non-staged missions: use bearing-based placement.
+                // Geospatial is disabled on this device — use bearing-based placement
+                // for all missions (staged and legacy alike).
                 Pose coinPose = Pose.makeTranslation(cx + dx, cy + dy, cz + dz);
                 anchor = session.createAnchor(coinPose);
             }
@@ -1841,7 +1834,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             android.content.SharedPreferences prefs = SecurePrefs.get(this);
             String key = "collectible_" + idToAward + "_count";
             int current = prefs.getInt(key, 0);
-            if (current < 10) {
+            if (current < 12) {
                 prefs.edit().putInt(key, current + 1).apply();
             }
         }
