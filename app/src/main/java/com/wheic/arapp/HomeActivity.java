@@ -232,7 +232,7 @@ public class HomeActivity extends AppCompatActivity {
             tvStatMissions.setText(completedCount + "/" + total);
         }
         if (tvStatRelics != null) {
-            tvStatRelics.setText(getTotalRelicCount() + "/50");
+            tvStatRelics.setText(getTotalRelicCount() + "/60");
         }
         boolean nftClaimed = SecurePrefs.get(this).getBoolean(PREF_NFT_CLAIMED, false);
         if (tvStatNFT != null) {
@@ -312,6 +312,7 @@ public class HomeActivity extends AppCompatActivity {
             case "casa_manila":        return R.drawable.casa_manila;
             case "museo_intramuros":   return R.drawable.museo_intramuros;
             case "centro_turismo":     return R.drawable.centro_turismo;
+            case "lpu":                return R.drawable.lpu;
             default:                   return R.drawable.fort_santiago;
         }
     }
@@ -327,35 +328,35 @@ public class HomeActivity extends AppCompatActivity {
                 "Intramuros Coin",
                 "An 8-reales (peso) silver coin minted during the Spanish Colonial period. " +
                 "The currency carried by merchants and Ilustrados through the gates of Intramuros.",
-                R.drawable.ic_coin, 0, 10));
+                R.drawable.ic_coin, 0, 12));
 
         collectibleItems.add(new CollectibleItem(
                 "peineta",
                 "Peineta",
                 "An ornate Spanish hair comb worn by Filipina women during the colonial era. " +
                 "A symbol of elegance, identity, and the blending of cultures.",
-                R.drawable.ic_peineta, 0, 10));
+                R.drawable.ic_peineta, 0, 12));
 
         collectibleItems.add(new CollectibleItem(
                 "salakot_elite",
                 "Salakot Elite",
                 "A ceremonial salakot adorned with fine gold engravings, worn by the principalia " +
                 "during official colonial gatherings and religious processions.",
-                R.drawable.ic_salakot, 0, 10));
+                R.drawable.ic_salakot, 0, 12));
 
         collectibleItems.add(new CollectibleItem(
                 "farol_de_aceite",
                 "Farol de Aceite",
                 "An oil lantern that lit the cobblestone streets of Intramuros for centuries. " +
                 "Its warm glow guided merchants, soldiers, and friars through the Walled City.",
-                R.drawable.ic_lantern, 0, 10));
+                R.drawable.ic_lantern, 0, 12));
 
         collectibleItems.add(new CollectibleItem(
                 "pocket_watch",
                 "Antique Pocket Watch",
                 "A tarnished brass pocket watch with Roman numerals and a matching chain. " +
                 "The signature accessory of an educated Ilustrado gentleman.",
-                R.drawable.ic_pocket_watch, 0, 10));
+                R.drawable.ic_pocket_watch, 0, 12));
 
         collectiblesAdapter = new CollectiblesAdapter(collectibleItems);
         recyclerCollectibles.setHasFixedSize(false);
@@ -377,7 +378,7 @@ public class HomeActivity extends AppCompatActivity {
         }
         collectiblesAdapter.notifyDataSetChanged();
 
-        int maxTotal = collectibleItems.size() * 10;
+        int maxTotal = collectibleItems.size() * 12;
         if (tvCollectiblesTotal != null)
             tvCollectiblesTotal.setText(total + " / " + maxTotal + " collected");
         if (tvTotalBadge != null)
@@ -429,8 +430,8 @@ public class HomeActivity extends AppCompatActivity {
 
     private void debugCompleteAllMissions() {
         if (!BuildConfig.DEBUG) return;
-        Toast.makeText(this, "Debug: completing all 5 missions…", Toast.LENGTH_SHORT).show();
-        String[] ids = {"fort_santiago", "baluarte_san_diego", "casa_manila", "museo_intramuros", "centro_turismo"};
+        Toast.makeText(this, "Debug: completing all 6 missions…", Toast.LENGTH_SHORT).show();
+        String[] ids = {"fort_santiago", "baluarte_san_diego", "casa_manila", "museo_intramuros", "centro_turismo", "lpu"};
         int[] remaining = {ids.length};
         for (String id : ids) {
             MissionCompletionHelper.completeMission(this, id,
@@ -438,7 +439,7 @@ public class HomeActivity extends AppCompatActivity {
                         @Override public void onSuccess() {
                             if (--remaining[0] == 0) runOnUiThread(() -> {
                                 Toast.makeText(HomeActivity.this,
-                                        "All 5 missions complete!", Toast.LENGTH_LONG).show();
+                                        "All 6 missions complete!", Toast.LENGTH_LONG).show();
                                 loadMissionProgress();
                             });
                         }
@@ -519,6 +520,37 @@ public class HomeActivity extends AppCompatActivity {
                 "ignatius_character",
                 new double[]{14.590160, 14.590115}, new double[]{120.973395, 120.973442},
                 "pocket_watch"));
+        arHelpers.add(new ARHelper("Lyceum of the Philippines University", "", 14.592083851333893, 120.97791163766738,
+                "lpu", "José P. Laurel",
+                "This university was born from the dream that education could rebuild a nation. " +
+                "Every relic you find here carries the spirit of those who shaped modern Manila.",
+                "san_bartolome_church",
+                new double[]{
+                    // Stage 1: Intramuros Coin
+                    14.591767666753327, 14.591682008790869,
+                    // Stage 2: Peineta
+                    14.591680062018614, 14.591570393820067,
+                    // Stage 3: Salakot Elite
+                    14.591444502447876, 14.591534054049932,
+                    // Stage 4: Farol de Aceite
+                    14.591722242080426, 14.59153600082347,
+                    // Stage 5: Antique Pocket Watch
+                    14.591527564804622, 14.59166254106748
+                },
+                new double[]{
+                    120.97776843710301, 120.9778522561306,
+                    120.97762695058442, 120.97777380152078,
+                    120.97783348066842, 120.97797228497814,
+                    120.97775971992415, 120.97784353895175,
+                    120.97799240154475, 120.97761957450999
+                },
+                new String[]{
+                    "intramuros_coin", "intramuros_coin",
+                    "peineta",         "peineta",
+                    "salakot_elite",   "salakot_elite",
+                    "farol_de_aceite", "farol_de_aceite",
+                    "pocket_watch",    "pocket_watch"
+                }));
     }
 
     private void setupRecyclerView() {
