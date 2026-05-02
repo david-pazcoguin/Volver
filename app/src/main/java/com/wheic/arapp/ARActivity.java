@@ -1,5 +1,10 @@
 package com.wheic.arapp;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
+
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -126,8 +131,11 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private double lastUserLat = Double.NaN;
     private double lastUserLng = Double.NaN;
 
-    // Compass heading (degrees, 0 = north, clockwise) from SensorManager
+    // Compass heading (degrees, 0 = north, clockwise) from SensorManager.
+    // Smoothed via a low-pass filter to prevent jitter.
     private float deviceAzimuthDeg = 0f;
+    private float smoothedAzimuthDeg = 0f;
+    private static final float COMPASS_ALPHA = 0.15f; // lower = smoother, higher = faster
     // ARCore geospatial heading (degrees CW from true north). Preferred over
     // the magnetometer when available because it shares its reference frame
     // with the AR relic anchors, so the compass always agrees with the scene.
@@ -147,9 +155,14 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             SensorManager.remapCoordinateSystem(
                     rotMatrix, SensorManager.AXIS_X, SensorManager.AXIS_Z, remappedMatrix);
             SensorManager.getOrientation(remappedMatrix, orientation);
-            deviceAzimuthDeg = (float) Math.toDegrees(orientation[0]);
-            if (deviceAzimuthDeg < 0)
-                deviceAzimuthDeg += 360f;
+            float rawAzimuth = (float) Math.toDegrees(orientation[0]);
+            if (rawAzimuth < 0) rawAzimuth += 360f;
+            deviceAzimuthDeg = rawAzimuth;
+            // Low-pass filter — interpolate across the shortest circular arc
+            float delta = rawAzimuth - smoothedAzimuthDeg;
+            if (delta > 180f) delta -= 360f;
+            if (delta < -180f) delta += 360f;
+            smoothedAzimuthDeg = (smoothedAzimuthDeg + COMPASS_ALPHA * delta + 360f) % 360f;
             updateCompassArrow();
             // Keep the on-screen distance hint in sync with the compass —
             // otherwise the HUD only refreshes on the (slow) GPS callback
@@ -197,6 +210,16 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private TextView compassDistance;
     private TextView tvCompassIcon;
 
+    // ── Collect button ───────────────────────────────────────────────
+    private View collectButtonContainer;
+    private TextView tvCollectLabel;
+    private TextView tvCollectedFeedback;
+    private long lastCollectedTimeMs = 0;
+    // True while a collect animation is in progress — prevents double-tap on button
+    private boolean isCollecting = false;
+    // True when the user has toggled the bottom-right slot to the compass view
+    private boolean isCompassToggled = false;
+
     // ── Minimap ─────────────────────────────────────────────────────
     private MapView minimap;
     private View minimapContainer;
@@ -208,19 +231,31 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
     // ── Scattered coins ─────────────────────────────────────────────
     private CompletableFuture<ModelRenderable> coinModelFuture;
+    // Resolved renderable cached once the future completes — read from render thread without blocking.
+    private ModelRenderable resolvedCoinRenderable;
     // Per-relic GLB renderables for staged missions (e.g. Casa Manila).
     private final Map<String, CompletableFuture<ModelRenderable>> relicModelFutures = new HashMap<>();
+    private final Map<String, ModelRenderable> resolvedRelicRenderables = new HashMap<>();
     private final List<Marker> coinMapMarkers = new ArrayList<>();
     private final List<AnchorNode> coinAnchorNodes = new ArrayList<>();
     private final List<Node> coinNodes = new ArrayList<>();
+    /**
+     * Authoritative collection state per slot. Independent of
+     * {@link #coinAnchorNodes} so we can reason about progress even if a
+     * spawn/detach race ever mutates the anchor list unexpectedly.
+     */
+    private boolean[] coinSlotCollected;
     private boolean coinsSpawned = false;
     private int coinsCollected = 0;
     private float coinCollectedValue = 0f;
+    // Collectible awards buffered during a mission; only written to
+    // SharedPreferences when the mission is fully completed (not on early exit).
+    private final List<String> pendingCollectibleAwards = new ArrayList<>();
     private float coinRotationAngle = 0f;
     // Frames spent waiting for a floor plane before giving up and using fallback
     // height
     private int floorSearchFrames = 0;
-    private static final int FLOOR_SEARCH_TIMEOUT_FRAMES = 180; // ~6 s @ 30 fps
+    private static final int FLOOR_SEARCH_TIMEOUT_FRAMES = 60; // ~2 s @ 30 fps
     private static final float COIN_SCALE = 0.25f;
     private static final float COIN_VALUE = 0.10f;
     // Max distance (metres) from a relic at which the user can tap to collect it.
@@ -230,6 +265,9 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private static final float RELIC_COLLECT_RADIUS_M = 25.0f;
     // Distance at which a staged relic spawns into the scene.
     private static final float RELIC_SPAWN_RADIUS_M = 15.0f;
+    // Distance (metres) within which the COLLECT button is shown.
+    // Keeps the button hidden until the user is genuinely close.
+    private static final float RELIC_COLLECT_BUTTON_M = 7.0f;
     // Distance at which a staged relic is despawned again (hysteresis to avoid
     // flicker).
     private static final float RELIC_DESPAWN_RADIUS_M = 20.0f;
@@ -291,6 +329,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         double[] cn = extras.getDoubleArray("CoinLongitudes");
         coinLatitudes = (cl != null && cl.length > 0) ? cl : new double[] { targetLatitude };
         coinLongitudes = (cn != null && cn.length > 0) ? cn : new double[] { targetLongitude };
+        coinSlotCollected = new boolean[coinLatitudes.length];
         String[] cri = extras.getStringArray("CoinRelicIds");
         if (cri != null && cri.length == coinLatitudes.length) {
             coinRelicIds = cri;
@@ -345,6 +384,13 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         compassArrow = findViewById(R.id.compassArrow);
         compassDistance = findViewById(R.id.compassDistance);
         tvCompassIcon = findViewById(R.id.tvCompassIcon);
+
+        collectButtonContainer = findViewById(R.id.collectButtonContainer);
+        tvCollectLabel = findViewById(R.id.tvCollectLabel);
+        tvCollectedFeedback = findViewById(R.id.tvCollectedFeedback);
+        if (collectButtonContainer != null) {
+            collectButtonContainer.setOnClickListener(v -> collectCurrentRelic());
+        }
 
         if (btnCompass != null) {
             btnCompass.setOnClickListener(v -> toggleCompassOverlay());
@@ -468,6 +514,15 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         // Re-attach scene listener (removed in onPause to prevent leak)
         if (arCam != null && arCam.getArSceneView() != null) {
             arCam.getArSceneView().getScene().addOnUpdateListener(sceneUpdateListener);
+            // Ensure 3D models are always visible regardless of real-world lighting.
+            // Without this, at night or in dark environments the light estimation
+            // returns near-zero intensity and models become invisible.
+            com.google.ar.sceneform.Node sunlight =
+                    arCam.getArSceneView().getScene().getSunlight();
+            if (sunlight != null && sunlight.getLight() != null) {
+                sunlight.getLight().setIntensity(
+                        Math.max(sunlight.getLight().getIntensity(), 100_000f));
+            }
         }
         // Start periodic location check when screen is visible
         locationHandler.post(locationRunnable);
@@ -532,6 +587,16 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private void onSceneUpdate(FrameTime frameTime) {
         if (!geospatialConfigured) {
             configureGeospatialMode();
+        }
+        // Enforce a minimum sunlight intensity every frame so models remain
+        // visible at night or in dark environments regardless of light estimation.
+        if (arCam != null && arCam.getArSceneView() != null) {
+            com.google.ar.sceneform.Node sun =
+                    arCam.getArSceneView().getScene().getSunlight();
+            if (sun != null && sun.getLight() != null
+                    && sun.getLight().getIntensity() < 100_000f) {
+                sun.getLight().setIntensity(100_000f);
+            }
         }
         if (isTargetReached && !coinsSpawned) {
             tryAutoSpawnCoins();
@@ -792,9 +857,12 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         if (compassOverlay != null)
             compassOverlay.setVisibility(View.GONE);
 
-        // Show minimap so player can see coin location
+        // Show minimap so player can see coin location (reset any previous compass toggle)
+        isCompassToggled = false;
         if (minimapContainer != null)
             minimapContainer.setVisibility(View.VISIBLE);
+        if (compassOverlay != null)
+            compassOverlay.setVisibility(View.GONE);
         if (btnMapCompassToggle != null) {
             btnMapCompassToggle.setVisibility(View.VISIBLE);
             if (tvMapCompassIcon != null)
@@ -957,9 +1025,13 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         // compass to disagree with where the AR relic actually is.
         float headingDeg = !Float.isNaN(geospatialHeadingDeg)
                 ? geospatialHeadingDeg
-                : deviceAzimuthDeg;
+                : smoothedAzimuthDeg;
         float relative = bearingDeg - headingDeg;
-        compassArrow.setRotation(relative);
+        // Normalise to (-180, 180] so the animation always takes the short arc
+        while (relative > 180f)  relative -= 360f;
+        while (relative < -180f) relative += 360f;
+        compassArrow.animate().rotation(relative).setDuration(200)
+                .setInterpolator(new android.view.animation.LinearInterpolator()).start();
 
         // Distance label
         Location.distanceBetween(lastUserLat, lastUserLng,
@@ -979,29 +1051,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private void setupTapListener() {
         if (arCam == null)
             return;
-
-        // Scene-level fallback: a peek-touch listener fires on EVERY touch,
-        // even ones that hit a node. Sceneform's per-node tap can miss small
-        // or angled renderables — this guarantees a tap anywhere on the AR
-        // view collects the currently-spawned relic.
-        if (arCam.getArSceneView() != null && arCam.getArSceneView().getScene() != null) {
-            arCam.getArSceneView().getScene().addOnPeekTouchListener((hitTestResult, motionEvent) -> {
-                if (motionEvent.getAction() != MotionEvent.ACTION_UP)
-                    return;
-                int slot = currentRelicSlot();
-                if (slot < 0 || slot >= coinAnchorNodes.size())
-                    return;
-                AnchorNode anchorNode = coinAnchorNodes.get(slot);
-                if (anchorNode == null)
-                    return;
-                // Debounce: collectCoin nulls the anchor slot, so a duplicate
-                // peek + node tap on the same frame is naturally guarded.
-                String relicId = (coinRelicIds != null && slot < coinRelicIds.length)
-                        ? coinRelicIds[slot]
-                        : null;
-                collectCoin(slot, anchorNode, relicId);
-            });
-        }
+        // Collection is BUTTON-ONLY. No tap listener on scene or nodes.
 
         arCam.setOnTapArPlaneListener((HitResult hitResult, Plane plane, MotionEvent event) -> {
             if (!isTargetReached) {
@@ -1055,21 +1105,9 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     }
 
     private boolean isGeospatialAvailable() {
-        if (arCam == null || arCam.getArSceneView() == null) {
-            return false;
-        }
-
-        Session session = arCam.getArSceneView().getSession();
-        if (session == null) {
-            return false;
-        }
-
-        try {
-            return geospatialConfigured
-                    && session.isGeospatialModeSupported(Config.GeospatialMode.ENABLED);
-        } catch (Exception e) {
-            return false;
-        }
+        // Geospatial is intentionally disabled (SIGABRT workaround). Always return
+        // false so callers fall through to fused-location / bearing-based paths.
+        return false;
     }
 
     private Anchor createMissionAnchor() {
@@ -1222,6 +1260,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 .setSource(this, R.raw.intramuros_coin)
                 .setIsFilamentGltf(true)
                 .build();
+        coinModelFuture.thenAccept(r -> resolvedCoinRenderable = r);
         coinModelFuture.exceptionally(t -> {
             Log.e(TAG, "Failed to load coin model: " + t.getMessage());
             return null;
@@ -1242,12 +1281,37 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                         .setSource(this, rawRes)
                         .setIsFilamentGltf(true)
                         .build();
+                fut.thenAccept(r -> { if (r != null) resolvedRelicRenderables.put(relicId, r); });
                 fut.exceptionally(t -> {
                     Log.e(TAG, "Failed to load relic model " + relicId + ": " + t.getMessage());
                     return null;
                 });
                 relicModelFutures.put(relicId, fut);
             }
+        }
+    }
+
+    /**
+     * Display scale for each relic model. The coin was tuned at 0.25; the other
+     * artefact GLBs are modelled at a smaller native size and need a larger scale
+     * to be clearly visible to the user.
+     */
+    private float scaleForRelic(String relicId) {
+        if (relicId == null)
+            return COIN_SCALE;
+        switch (relicId) {
+            case "intramuros_coin":
+                return 0.25f;
+            case "peineta":
+                return 0.90f;
+            case "salakot_elite":
+                return 0.55f;
+            case "farol_de_aceite":
+                return 1.00f;
+            case "pocket_watch":
+                return 2.75f;
+            default:
+                return 0.50f;
         }
     }
 
@@ -1277,7 +1341,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             return "Coin";
         switch (relicId) {
             case "intramuros_coin":
-                return "Collectable";
+                return "Intramuros Coin";
             case "peineta":
                 return "Peineta";
             case "salakot_elite":
@@ -1347,8 +1411,11 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private void toggleMapCompass() {
         if (minimapContainer == null || compassOverlay == null)
             return;
-        boolean showingMap = minimapContainer.getVisibility() == View.VISIBLE;
-        if (showingMap) {
+        // Toggle the user's preference rather than reading current visibility —
+        // updateRelicHud() runs every frame and may have temporarily forced
+        // either view, so reading visibility here can give the wrong answer.
+        isCompassToggled = !isCompassToggled;
+        if (isCompassToggled) {
             minimapContainer.setVisibility(View.GONE);
             // Relic phase: compass sits in the minimap slot — restore original bottom
             // margin
@@ -1401,15 +1468,14 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private int currentRelicSlot() {
         if (coinLatitudes == null || coinLatitudes.length == 0)
             return -1;
-        if (!coinAnchorNodes.isEmpty()) {
-            int lastIdx = coinAnchorNodes.size() - 1;
-            if (coinAnchorNodes.get(lastIdx) != null)
-                return lastIdx;
-            if (coinAnchorNodes.size() < coinLatitudes.length)
-                return coinAnchorNodes.size();
-            return -1; // all collected
+        if (coinSlotCollected == null || coinSlotCollected.length != coinLatitudes.length)
+            return -1;
+        // First slot that hasn't been collected yet is the active one.
+        for (int i = 0; i < coinSlotCollected.length; i++) {
+            if (!coinSlotCollected[i])
+                return i;
         }
-        return 0;
+        return -1; // all done
     }
 
     private void updateRelicHud() {
@@ -1421,8 +1487,20 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             return;
 
         int slot = currentRelicSlot();
-        if (slot < 0 || slot >= coinLatitudes.length)
+        if (slot < 0 || slot >= coinLatitudes.length) {
+            runOnUiThread(() -> {
+                if (collectButtonContainer != null)
+                    collectButtonContainer.setVisibility(View.GONE);
+                // Respect the user's map/compass toggle when all relics done.
+                if (minimapContainer != null)
+                    minimapContainer.setVisibility(isCompassToggled ? View.GONE : View.VISIBLE);
+                if (compassOverlay != null)
+                    compassOverlay.setVisibility(isCompassToggled ? View.VISIBLE : View.GONE);
+                if (btnMapCompassToggle != null)
+                    btnMapCompassToggle.setVisibility(View.VISIBLE);
+            });
             return;
+        }
 
         String relicName = displayNameForRelic(coinRelicIds[slot]);
         float[] d = new float[1];
@@ -1430,16 +1508,137 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 coinLatitudes[slot], coinLongitudes[slot], d);
         int meters = Math.round(d[0]);
         int oneBased = slot + 1;
+        boolean relicSpawned = slot < coinAnchorNodes.size() && coinAnchorNodes.get(slot) != null;
+        // COLLECT button only appears when the user is genuinely close (7 m or less).
+        boolean withinCollectRange = relicSpawned && meters <= RELIC_COLLECT_BUTTON_M;
         String suffix;
-        if (slot < coinAnchorNodes.size() && coinAnchorNodes.get(slot) != null) {
-            suffix = "tap to collect";
-        } else if (meters <= RELIC_SPAWN_RADIUS_M) {
-            suffix = "spawning…";
+        if (withinCollectRange) {
+            suffix = "press Collect";
+        } else if (relicSpawned) {
+            suffix = "walk closer to collect";
         } else {
-            suffix = "walk closer";
+            suffix = meters <= RELIC_SPAWN_RADIUS_M ? "spawning…" : "walk closer";
         }
         final String hint = ordinal(oneBased) + " " + relicName + " — " + meters + " m away · " + suffix;
-        runOnUiThread(() -> updateHint(hint));
+        final String buttonText = "Collect " + relicName;
+        runOnUiThread(() -> {
+            updateHint(hint);
+            // COLLECT button shown only when within collect range AND not already animating.
+            if (collectButtonContainer != null && !isCollecting) {
+                collectButtonContainer.setVisibility(withinCollectRange ? View.VISIBLE : View.GONE);
+                if (withinCollectRange && tvCollectLabel != null)
+                    tvCollectLabel.setText(buttonText);
+            }
+            if (withinCollectRange) {
+                // Button is showing — hide both map/compass to keep the layout clean.
+                if (minimapContainer != null)
+                    minimapContainer.setVisibility(View.GONE);
+                if (compassOverlay != null)
+                    compassOverlay.setVisibility(View.GONE);
+            } else {
+                if (minimapContainer != null)
+                    minimapContainer.setVisibility(isCompassToggled ? View.GONE : View.VISIBLE);
+                if (compassOverlay != null)
+                    compassOverlay.setVisibility(isCompassToggled ? View.VISIBLE : View.GONE);
+            }
+            if (btnMapCompassToggle != null)
+                btnMapCompassToggle.setVisibility(withinCollectRange ? View.GONE : View.VISIBLE);
+        });
+    }
+
+    /** Collects the currently active relic — called by the COLLECT button. */
+    private void collectCurrentRelic() {
+        // Debounce: ignore taps while a previous collect animation is in flight
+        // so the user can't double-credit a relic or fire stale taps after the
+        // anchor has been detached.
+        if (isCollecting)
+            return;
+        int slot = currentRelicSlot();
+        if (slot < 0 || slot >= coinAnchorNodes.size())
+            return;
+        AnchorNode anchorNode = coinAnchorNodes.get(slot);
+        if (anchorNode == null)
+            return;
+        isCollecting = true;
+        // Hide the button immediately so it can't be tapped again during the
+        // bounce animation. playCollectAnimation() still runs its scale anim
+        // on the (now-invisible) container and resets state at the end.
+        if (collectButtonContainer != null) {
+            collectButtonContainer.setClickable(false);
+            collectButtonContainer.setVisibility(View.GONE);
+        }
+        String relicId = (coinRelicIds != null && slot < coinRelicIds.length)
+                ? coinRelicIds[slot] : null;
+        String relicName = displayNameForRelic(relicId);
+        playCollectAnimation(relicName);
+        collectCoin(slot, anchorNode, relicId);
+    }
+
+    /**
+     * Button bounce + floating "✓ Collected!" text that slides up and fades out.
+     * Called on the UI thread before collectCoin() removes the model.
+     */
+    private void playCollectAnimation(String relicName) {
+        // Bounce the button: scale up slightly then shrink to nothing
+        if (collectButtonContainer != null) {
+            collectButtonContainer.animate().cancel();
+            collectButtonContainer.setScaleX(1f);
+            collectButtonContainer.setScaleY(1f);
+            ObjectAnimator sx = ObjectAnimator.ofFloat(collectButtonContainer, "scaleX", 1f, 1.2f, 0f);
+            ObjectAnimator sy = ObjectAnimator.ofFloat(collectButtonContainer, "scaleY", 1f, 1.2f, 0f);
+            sx.setDuration(350);
+            sy.setDuration(350);
+            AnimatorSet btnAnim = new AnimatorSet();
+            btnAnim.playTogether(sx, sy);
+            btnAnim.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    if (collectButtonContainer != null) {
+                        collectButtonContainer.setVisibility(View.GONE);
+                        collectButtonContainer.setScaleX(1f);
+                        collectButtonContainer.setScaleY(1f);
+                    }
+                }
+            });
+            btnAnim.start();
+        }
+
+        // Floating "✓ Relic Collected!" label — slides up and fades out
+        if (tvCollectedFeedback != null) {
+            tvCollectedFeedback.setText("✓ Relic Collected!");
+            tvCollectedFeedback.setVisibility(View.VISIBLE);
+            tvCollectedFeedback.setAlpha(1f);
+            tvCollectedFeedback.setTranslationY(0f);
+
+            ObjectAnimator moveUp = ObjectAnimator.ofFloat(tvCollectedFeedback, "translationY", 0f, -180f);
+            ObjectAnimator fadeOut = ObjectAnimator.ofFloat(tvCollectedFeedback, "alpha", 1f, 0f);
+            moveUp.setDuration(1400);
+            fadeOut.setDuration(900);
+            fadeOut.setStartDelay(500);
+
+            AnimatorSet set = new AnimatorSet();
+            set.playTogether(moveUp, fadeOut);
+            set.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    if (tvCollectedFeedback != null) {
+                        tvCollectedFeedback.setVisibility(View.GONE);
+                        tvCollectedFeedback.setAlpha(1f);
+                        tvCollectedFeedback.setTranslationY(0f);
+                    }
+                    // Re-arm the COLLECT button for the next relic.
+                    isCollecting = false;
+                    if (collectButtonContainer != null)
+                        collectButtonContainer.setClickable(true);
+                }
+            });
+            set.start();
+        } else {
+            // No feedback view — re-arm immediately so we don't lock the user out.
+            isCollecting = false;
+            if (collectButtonContainer != null)
+                collectButtonContainer.setClickable(true);
+        }
     }
 
     /**
@@ -1447,6 +1646,18 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
      * the despawn radius, so it re-spawns when they return.
      */
     private void enforceRelicSpawnRadius() {
+        // DISABLED: a relic must NEVER move once it has been placed at its
+        // configured GPS coordinate. The previous despawn/respawn behaviour
+        // (when the user wandered beyond RELIC_DESPAWN_RADIUS_M) caused the
+        // relic to be re-anchored at a slightly different camera-relative
+        // position on return, which the player perceived as the relic
+        // "moving". Leaving this method as a no-op keeps the original anchor
+        // for the entire mission so the relic stays exactly where it spawned.
+        if (true)
+            return;
+        // ── unreachable legacy logic, retained for reference ──
+        if (!isGeospatialAvailable())
+            return;
         if (coinRelicIds == null)
             return;
         if (coinAnchorNodes.isEmpty())
@@ -1524,31 +1735,43 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     // ──────────────────────────────────────────────────────────────────
 
     private void tryAutoSpawnCoins() {
-        if (coinModelFuture == null || !coinModelFuture.isDone()
-                || coinModelFuture.isCompletedExceptionally())
+        if (resolvedCoinRenderable == null)
             return;
         if (arCam == null || arCam.getArSceneView() == null)
             return;
 
-        if (coinAnchorNodes.size() >= coinLatitudes.length) {
+        // Use the authoritative collected-flag array to decide which slot is
+        // next, NOT coinAnchorNodes.size(). The list grows by one on every
+        // spawn and never shrinks; combined with idempotent collectCoin() this
+        // keeps list-index == slot-index, but if the two ever diverge we'd
+        // rather trust the explicit flag and skip already-collected slots.
+        int coinIdx = currentRelicSlot();
+        if (coinIdx < 0) {
             coinsSpawned = true;
             return;
         }
 
-        // Index of the coin we are about to place
-        int coinIdx = coinAnchorNodes.size();
+        // Pad the anchor / node lists so list-index == slot-index. Using set()
+        // (instead of add()) for the actual spawn below makes it impossible
+        // for a stray spawn to land in the wrong slot.
+        while (coinAnchorNodes.size() <= coinIdx)
+            coinAnchorNodes.add(null);
+        while (coinNodes.size() <= coinIdx)
+            coinNodes.add(null);
 
-        // Staged-relic missions: only spawn the next coin AFTER the previous
-        // one has been collected (its slot was nulled out in collectCoin()).
-        // For legacy missions (no relic array) we keep the original behaviour
-        // of spawning all coins as fast as plane detection allows.
-        if (coinRelicIds != null && coinIdx > 0) {
-            AnchorNode prev = coinAnchorNodes.get(coinIdx - 1);
-            if (prev != null) {
-                // Previous relic still on the scene — wait for it to be collected.
-                return;
-            }
-        }
+        // If the slot already has a live anchor (e.g. spawn ran twice in the
+        // same frame for some reason), don't replace it.
+        if (coinAnchorNodes.get(coinIdx) != null)
+            return;
+
+        // (currentRelicSlot already skips collected slots, so no need for the
+        // legacy prev-relic gate any more — the slot we are about to spawn is
+        // by definition the next uncollected one.)
+
+        // Brief delay after collection so the old relic's disappear animation
+        // finishes before the next one spawns in the same direction.
+        if (coinRelicIds != null && System.currentTimeMillis() - lastCollectedTimeMs < 1500L)
+            return;
 
         // Staged relics only spawn when the user is within the spawn radius
         // of the target GPS spot, so the user has to walk to each relic.
@@ -1568,26 +1791,27 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         String relicIdForThisCoin = (coinRelicIds != null) ? coinRelicIds[coinIdx] : null;
         if (relicIdForThisCoin != null) {
             CompletableFuture<ModelRenderable> fut = relicModelFutures.get(relicIdForThisCoin);
-            if (fut == null || !fut.isDone() || fut.isCompletedExceptionally()) {
-                // Relic-specific model not loaded yet — fall back to coin while waiting.
-                try {
-                    coinRenderable = coinModelFuture.get();
-                } catch (Exception e) {
-                    return;
-                }
-            } else {
-                try {
-                    coinRenderable = fut.get();
-                } catch (Exception e) {
+            if (fut == null || !fut.isDone()) {
+                // Model still loading — wait for the correct model rather than
+                // falling back to coin. A fallback placed here would occupy the
+                // slot permanently, preventing the real relic from ever appearing.
+                return;
+            }
+            // Use the pre-resolved cached renderable — avoids blocking on get()
+            // from the render thread which causes a visible camera freeze.
+            coinRenderable = resolvedRelicRenderables.get(relicIdForThisCoin);
+            if (coinRenderable == null) {
+                if (fut.isCompletedExceptionally()) {
+                    // Model failed — fall back to coin renderable
+                    Log.w(TAG, "Relic model failed to load for " + relicIdForThisCoin + ", using coin fallback");
+                    coinRenderable = resolvedCoinRenderable;
+                } else {
+                    // Future done but cache miss — shouldn't happen, guard anyway
                     return;
                 }
             }
         } else {
-            try {
-                coinRenderable = coinModelFuture.get();
-            } catch (Exception e) {
-                return;
-            }
+            coinRenderable = resolvedCoinRenderable;
         }
         if (coinRenderable == null)
             return;
@@ -1603,60 +1827,54 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         Pose cam = frame.getCamera().getPose();
         float cx = cam.tx(), cy = cam.ty(), cz = cam.tz();
 
-        // ── Bearing-based coin placement ──────────────────────────────
-        // Direction: from user's last GPS fix toward the coin's target GPS spot,
-        // expressed in ARCore world space using the device compass heading.
+        // ── Direction toward the relic's GPS coordinate ───────────────
+        // Compute bearing from user's GPS fix to the relic's GPS coordinate,
+        // then project that into ARCore camera space so we know which direction
+        // to place the anchor relative to the camera origin.
         float dx, dz;
         if (!Double.isNaN(lastUserLat) && !Double.isNaN(lastUserLng)) {
             float[] bearingResult = new float[2];
             Location.distanceBetween(lastUserLat, lastUserLng,
                     coinLatitudes[coinIdx], coinLongitudes[coinIdx], bearingResult);
             float gpsBearing = bearingResult[1]; // degrees, clockwise from north
-            // Use the same heading source the compass overlay uses so the
-            // bearing-based fallback placement agrees with the on-screen arrow.
             float placementHeading = !Float.isNaN(geospatialHeadingDeg)
                     ? geospatialHeadingDeg
-                    : deviceAzimuthDeg;
+                    : smoothedAzimuthDeg;
             float relativeRad = (float) Math.toRadians(gpsBearing - placementHeading);
 
-            // Camera forward (-Z) and right (+X) in ARCore world space (horizontal plane)
             float[] zAxis = cam.getZAxis();
             float[] xAxis = cam.getXAxis();
             float fwdX = -zAxis[0], fwdZ = -zAxis[2];
             float rightX = xAxis[0], rightZ = xAxis[2];
             float fwdLen = (float) Math.sqrt(fwdX * fwdX + fwdZ * fwdZ);
             float rightLen = (float) Math.sqrt(rightX * rightX + rightZ * rightZ);
-            if (fwdLen > 0.001f) {
-                fwdX /= fwdLen;
-                fwdZ /= fwdLen;
-            }
-            if (rightLen > 0.001f) {
-                rightX /= rightLen;
-                rightZ /= rightLen;
-            }
+            if (fwdLen > 0.001f) { fwdX /= fwdLen; fwdZ /= fwdLen; }
+            if (rightLen > 0.001f) { rightX /= rightLen; rightZ /= rightLen; }
 
-            // Place coin at GPS distance (clamped 3–8 m) in the coin's direction
-            float coinDist = Math.max(3f, Math.min(bearingResult[0], 8f));
+            // Place at the EXACT GPS distance in the relic's bearing direction.
+            // No clamp — the coin must appear where the real coordinate is, not
+            // pulled in close. Once placed the anchor stays fixed in AR space.
+            float coinDist = bearingResult[0];
+            if (coinDist < 1f) coinDist = 1f; // avoid placing inside the camera
             float cosA = (float) Math.cos(relativeRad);
             float sinA = (float) Math.sin(relativeRad);
             dx = fwdX * cosA * coinDist + rightX * sinA * coinDist;
             dz = fwdZ * cosA * coinDist + rightZ * sinA * coinDist;
         } else {
-            // Fallback: place 5 m directly in front if GPS not yet available
+            // GPS not yet available — place 5 m directly ahead as a temporary stand-in
             float[] zAxis = cam.getZAxis();
             dx = -zAxis[0] * 5f;
             dz = -zAxis[2] * 5f;
         }
 
-        // ── Floor snapping ────────────────────────────────────────────
-        // Cast a ray straight down from above the target XZ to find the
-        // nearest tracked horizontal surface. This makes the coin sit on
-        // whichever floor the user is standing on (ground floor, 5th
-        // floor, etc.) because ARCore's plane detector only sees surfaces
-        // around the user — it does not know about other storeys.
+        // ── Floor height ──────────────────────────────────────────────
+        // Find a tracked floor plane near the user to estimate ground height.
+        // Far-distance ray hits won't work because ARCore planes only extend a
+        // few metres around the user — so we sample a plane near the camera
+        // and reuse that y-coordinate for the (possibly distant) relic.
         float dy;
         try {
-            float[] rayOrigin = new float[] { cx + dx, cy + 1.0f, cz + dz };
+            float[] rayOrigin = new float[] { cx, cy + 1.0f, cz };
             float[] rayDirection = new float[] { 0f, -1f, 0f };
             List<HitResult> hits = frame.hitTest(rayOrigin, 0, rayDirection, 0);
             Float floorY = null;
@@ -1664,77 +1882,38 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 com.google.ar.core.Trackable trackable = hit.getTrackable();
                 if (trackable instanceof Plane) {
                     Plane plane = (Plane) trackable;
+                    float hitY = hit.getHitPose().ty();
+                    // Reject planes that are less than 0.5 m below the camera — those are
+                    // tables, chairs, or other elevated surfaces, NOT the ground. Only the
+                    // actual floor will be this far below the user's held phone.
                     if (plane.getTrackingState() == TrackingState.TRACKING
                             && plane.getType() == Plane.Type.HORIZONTAL_UPWARD_FACING
-                            && plane.getSubsumedBy() == null) {
-                        floorY = hit.getHitPose().ty();
-                        break; // hits are returned in distance order — first match wins
+                            && plane.getSubsumedBy() == null
+                            && hitY < cy - 0.5f) {
+                        floorY = hitY;
+                        break;
                     }
                 }
             }
             if (floorY != null) {
-                // 5 cm above the detected floor so the coin doesn't z-fight with it
+                // Slightly above the floor so the model rests on the ground
                 dy = (floorY - cy) + 0.05f;
                 floorSearchFrames = 0;
             } else if (floorSearchFrames++ < FLOOR_SEARCH_TIMEOUT_FRAMES) {
-                // No floor detected yet — wait for plane detection rather than
-                // spawning the coin floating awkwardly in mid-air.
                 return;
             } else {
-                // Timed out waiting for plane detection (user may not have panned
-                // the camera at the floor). Fall back to a reasonable floor estimate.
-                dy = -1.0f;
-                Log.w(TAG, "Floor plane not detected within timeout; using fallback height");
+                // Fallback: ~1.4 m below the camera (typical eye height when holding phone)
+                dy = -1.4f;
+                Log.w(TAG, "Floor plane not detected; using estimated ground height");
             }
         } catch (Exception e) {
             Log.w(TAG, "Floor hitTest failed, using fallback height: " + e.getMessage());
-            dy = -1.0f; // ~1 m below camera (approx. floor for a standing user)
+            dy = -1.4f;
         }
 
         try {
-            // Prefer a precise GPS-locked Earth anchor at the EXACT coordinates
-            // configured for this relic. This guarantees the coin never drifts
-            // around as the user walks (which the bearing+distance fallback
-            // does because magnetometer/fused-GPS jitter changes the math
-            // every frame). The fallback below is only used when ARCore
-            // Geospatial isn't yet tracking with sufficient accuracy.
-            Anchor anchor = null;
-            if (isGeospatialAvailable()) {
-                Earth earth = session.getEarth();
-                if (earth != null && earth.getTrackingState() == TrackingState.TRACKING) {
-                    GeospatialPose camPose = earth.getCameraGeospatialPose();
-                    if (camPose.getHorizontalAccuracy() < 10f) {
-                        // Floor altitude: use the detected floor's altitude when
-                        // we have one, otherwise put the coin at camera-eye - 1m.
-                        double anchorAltitude;
-                        if (dy > -10f && Float.isFinite(dy)) {
-                            // dy is offset from camera y; convert to absolute alt.
-                            // camera altitude (from camPose) is approximately the
-                            // user's eye height; (cy + dy) is the floor in AR-world,
-                            // so altitude = camAlt + (dy - 0) since cy is camera y.
-                            anchorAltitude = camPose.getAltitude() + dy;
-                        } else {
-                            anchorAltitude = camPose.getAltitude() - 1.5;
-                        }
-                        try {
-                            anchor = earth.createAnchor(
-                                    coinLatitudes[coinIdx],
-                                    coinLongitudes[coinIdx],
-                                    anchorAltitude,
-                                    0f, 0f, 0f, 1f);
-                        } catch (Exception ge) {
-                            Log.w(TAG, "Earth.createAnchor for coin failed: " + ge.getMessage());
-                            anchor = null;
-                        }
-                    }
-                }
-            }
-            if (anchor == null) {
-                // Geospatial is disabled on this device — use bearing-based placement
-                // for all missions (staged and legacy alike).
-                Pose coinPose = Pose.makeTranslation(cx + dx, cy + dy, cz + dz);
-                anchor = session.createAnchor(coinPose);
-            }
+            Pose coinPose = Pose.makeTranslation(cx + dx, cy + dy, cz + dz);
+            Anchor anchor = session.createAnchor(coinPose);
 
             AnchorNode anchorNode = new AnchorNode(anchor);
             anchorNode.setParent(arCam.getArSceneView().getScene());
@@ -1742,18 +1921,15 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             Node coinNode = new Node();
             coinNode.setParent(anchorNode);
             coinNode.setRenderable(coinRenderable);
-            coinNode.setLocalScale(new Vector3(COIN_SCALE, COIN_SCALE, COIN_SCALE));
+            float relicScale = scaleForRelic(relicIdForThisCoin);
+            coinNode.setLocalScale(new Vector3(relicScale, relicScale, relicScale));
+            coinNode.setOnTapListener(null);
             final int capturedIdx = coinIdx;
             final String capturedRelicId = relicIdForThisCoin;
-            coinNode.setOnTapListener((hr, nd) -> {
-                // No GPS gate on tap — if the relic is visible in AR, the user
-                // is close enough. (Urban-canyon GPS drift can falsely report
-                // 5-10 m even when the user is standing on top of the relic.)
-                collectCoin(capturedIdx, anchorNode, capturedRelicId);
-            });
 
-            coinAnchorNodes.add(anchorNode);
-            coinNodes.add(coinNode);
+            coinAnchorNodes.set(coinIdx, anchorNode);
+            coinNodes.set(coinIdx, coinNode);
+            Log.e(TAG, "tryAutoSpawnCoins: spawned slot " + coinIdx + " relic=" + relicIdForThisCoin);
 
             // Minimap red dots are pre-populated in setupMinimap(), so no need
             // to add them here on spawn.
@@ -1768,7 +1944,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                     Toast.makeText(this,
                             "Find the " + relicName + " (" + slot + " of " + totalRelics + ")",
                             Toast.LENGTH_LONG).show();
-                    updateHint("Find the " + relicName + " — tap it to collect.");
+                    updateHint("Find the " + relicName + " — walk close and press Collect.");
                     if (tvCharacterName != null)
                         tvCharacterName.setVisibility(View.GONE);
                 });
@@ -1811,15 +1987,48 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     }
 
     private void collectCoin(int index, AnchorNode anchorNode, String relicIdOverride) {
-        if (anchorNode == null || anchorNode.getParent() == null)
+        // Bounds + idempotency guards. We *intentionally* tolerate a null /
+        // already-detached anchor here — what matters is that the per-slot
+        // collected flag advances so the HUD/spawn loop can move on. The old
+        // implementation returned early when getParent() was null, which left
+        // the slot eternally "active" if any path detached the node first.
+        if (index < 0 || coinSlotCollected == null
+                || index >= coinSlotCollected.length) {
+            Log.e(TAG, "collectCoin: ignoring out-of-range index=" + index);
             return;
+        }
+        if (coinSlotCollected[index]) {
+            Log.e(TAG, "collectCoin: slot " + index + " already collected — ignoring duplicate tap");
+            return;
+        }
+        Log.e(TAG, "collectCoin: collecting slot " + index + " relic=" + relicIdOverride);
+        coinSlotCollected[index] = true;
 
-        // Detach from scene
-        anchorNode.setParent(null);
+        // Record collection time — prevents the next relic from spawning instantly
+        // in the same spot before the user sees this one disappear.
+        lastCollectedTimeMs = System.currentTimeMillis();
+
+        // Detach from scene + release the underlying ARCore anchor. Done in a
+        // try/catch because either side may already be torn down.
+        if (anchorNode != null) {
+            try {
+                anchorNode.setParent(null);
+            } catch (Exception ignored) {
+            }
+            try {
+                Anchor a = anchorNode.getAnchor();
+                if (a != null)
+                    a.detach();
+            } catch (Exception ignored) {
+            }
+        }
         if (index < coinAnchorNodes.size())
             coinAnchorNodes.set(index, null);
         if (index < coinNodes.size())
             coinNodes.set(index, null);
+        // Allow the spawn loop to immediately consider the next slot.
+        coinsSpawned = false;
+        floorSearchFrames = 0;
 
         coinsCollected++;
         coinCollectedValue += COIN_VALUE;
@@ -1830,13 +2039,11 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         String idToAward = (relicIdOverride != null && !relicIdOverride.isEmpty())
                 ? relicIdOverride
                 : collectibleId;
+        // Buffer the award; it will only be committed to SharedPreferences once
+        // the final mission-completion handshake with Firestore succeeds so that
+        // partially-completed (exited) missions never pollute the collectibles count.
         if (idToAward != null && !idToAward.isEmpty()) {
-            android.content.SharedPreferences prefs = SecurePrefs.get(this);
-            String key = "collectible_" + idToAward + "_count";
-            int current = prefs.getInt(key, 0);
-            if (current < 12) {
-                prefs.edit().putInt(key, current + 1).apply();
-            }
+            pendingCollectibleAwards.add(idToAward);
         }
 
         // Remove red dot from minimap
@@ -1888,6 +2095,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         onMissionModelPlaced(allComplete -> runOnUiThread(() -> {
             if (isFinishing() || isDestroyed())
                 return;
+            flushPendingCollectibleAwards();
             updateHint("Mission complete! Coin collected.");
             if (allComplete) {
                 showNFTUnlockedDialog();
@@ -1932,6 +2140,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         onMissionModelPlaced(allComplete -> runOnUiThread(() -> {
             if (isFinishing() || isDestroyed())
                 return;
+            flushPendingCollectibleAwards();
             updateHint("Mission complete! Progress synced.");
             if (allComplete) {
                 showNFTUnlockedDialog();
@@ -1943,6 +2152,29 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 return;
             Toast.makeText(this, "Still can't sync: " + errorMessage, Toast.LENGTH_LONG).show();
         }));
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Collectible award helpers
+    // ──────────────────────────────────────────────────────────────────
+
+    /**
+     * Writes all buffered collectible awards to SharedPreferences and clears
+     * the buffer. Call only after mission completion is confirmed server-side.
+     */
+    private void flushPendingCollectibleAwards() {
+        if (pendingCollectibleAwards.isEmpty()) return;
+        android.content.SharedPreferences prefs = SecurePrefs.get(this);
+        android.content.SharedPreferences.Editor editor = prefs.edit();
+        for (String id : pendingCollectibleAwards) {
+            String key = "collectible_" + id + "_count";
+            int current = prefs.getInt(key, 0);
+            if (current < 12) {
+                editor.putInt(key, current + 1);
+            }
+        }
+        editor.apply();
+        pendingCollectibleAwards.clear();
     }
 
     // ──────────────────────────────────────────────────────────────────

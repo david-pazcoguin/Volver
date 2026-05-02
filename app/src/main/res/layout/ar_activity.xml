@@ -297,6 +297,51 @@
             android:includeFontPadding="false" />
     </FrameLayout>
 
+    <!-- Collected feedback — floats up and fades when a relic is collected -->
+    <TextView
+        android:id="@+id/tvCollectedFeedback"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:textColor="#FFC107"
+        android:textSize="28sp"
+        android:fontFamily="@font/montserrat_bold"
+        android:shadowColor="#CC000000"
+        android:shadowDx="1"
+        android:shadowDy="1"
+        android:shadowRadius="6"
+        android:elevation="16dp"
+        android:visibility="gone" />
+
+    <!-- Collect button — shown when a staged relic is spawned and ready -->
+    <FrameLayout
+        android:id="@+id/collectButtonContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="90dp"
+        android:background="@drawable/nav_pill_bg"
+        android:paddingStart="36dp"
+        android:paddingEnd="36dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="16dp"
+        android:elevation="14dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tvCollectLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFC107"
+            android:textSize="17sp"
+            android:fontFamily="@font/montserrat_bold"
+            android:gravity="center"
+            android:text="TAP TO COLLECT" />
+    </FrameLayout>
+
     <!-- Hint pill at the top -->
     <TextView
         android:id="@+id/tvCharacterHint"
