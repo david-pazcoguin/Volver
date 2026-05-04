@@ -2242,10 +2242,12 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             float relativeBearingDeg = gpsBearingDeg - headingDeg;
             double relRad = Math.toRadians(relativeBearingDeg);
 
-            // Clamp distance: never spawn at the user's feet (< 3 m) and never
-            // beyond a comfortable visual range (12 m) so the relic is always
-            // visible in the AR camera regardless of how close the user is.
-            float dist = Math.max(3.0f, Math.min(gpsDistance, 12.0f));
+            // Clamp distance: never spawn at the user's feet (< 2 m) and never
+            // beyond a comfortable visual range (6 m) so the relic is always
+            // visible AND reachable in tight courtyards / indoor spaces. The
+            // user may be inside a building with a wall a few metres ahead;
+            // capping at 6 m keeps the relic on the same side of typical walls.
+            float dist = Math.max(2.0f, Math.min(gpsDistance, 6.0f));
 
             // Build a "yaw-only" pose at the camera's world position so the
             // relic stays at chest height regardless of how the user is
