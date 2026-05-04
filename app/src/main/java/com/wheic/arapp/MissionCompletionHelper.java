@@ -47,7 +47,8 @@ public class MissionCompletionHelper {
                     "baluarte_san_diego",
                     "casa_manila",
                     "museo_intramuros",
-                    "centro_turismo")));
+                    "centro_turismo",
+                    "lpu")));
 
     public interface CompletionCallback {
         void onSuccess();
