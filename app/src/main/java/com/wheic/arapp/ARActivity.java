@@ -255,7 +255,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     // Frames spent waiting for a floor plane before giving up and using fallback
     // height
     private int floorSearchFrames = 0;
-    private static final int FLOOR_SEARCH_TIMEOUT_FRAMES = 60; // ~2 s @ 30 fps
+    // Outdoors ARCore rarely detects floor planes; using 0 means we skip
+    // waiting and immediately use the estimated ground height (-1.4 m below
+    // camera) so items appear the moment the user enters the spawn radius.
+    private static final int FLOOR_SEARCH_TIMEOUT_FRAMES = 0;
     private static final float COIN_SCALE = 0.25f;
     private static final float COIN_VALUE = 0.10f;
     // Max distance (metres) from a relic at which the user can tap to collect it.
@@ -598,10 +601,13 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 sun.getLight().setIntensity(100_000f);
             }
         }
-        if (isTargetReached && !coinsSpawned) {
-            tryAutoSpawnCoins();
-        }
         if (isTargetReached) {
+            // Recover any permanently-lost anchors BEFORE trying to spawn so the
+            // cleared slot is immediately eligible for re-spawn in the same frame.
+            checkAndRespawnLostAnchor();
+            if (!coinsSpawned) {
+                tryAutoSpawnCoins();
+            }
             enforceRelicSpawnRadius();
         }
         if (!coinNodes.isEmpty()) {
@@ -1693,6 +1699,30 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         floorSearchFrames = 0;
     }
 
+    /**
+     * Detects when the active relic's ARCore anchor has permanently lost tracking
+     * (TrackingState.STOPPED) and clears the slot so tryAutoSpawnCoins() will
+     * re-create it on the next frame. This handles the "item disappears when
+     * looking away" case: ARCore VIO resets the anchor, Sceneform stops rendering
+     * it, and this method makes it reappear by re-spawning at the same GPS direction.
+     */
+    private void checkAndRespawnLostAnchor() {
+        int slot = currentRelicSlot();
+        if (slot < 0 || slot >= coinAnchorNodes.size()) return;
+        AnchorNode anchorNode = coinAnchorNodes.get(slot);
+        if (anchorNode == null) return;
+        Anchor anchor = anchorNode.getAnchor();
+        if (anchor == null || anchor.getTrackingState() != TrackingState.STOPPED) return;
+        Log.w(TAG, "checkAndRespawnLostAnchor: slot " + slot + " anchor STOPPED — clearing for re-spawn");
+        try { anchorNode.setParent(null); } catch (Exception ignored) {}
+        try { anchor.detach(); } catch (Exception ignored) {}
+        coinAnchorNodes.set(slot, null);
+        if (slot < coinNodes.size()) coinNodes.set(slot, null);
+        floorSearchFrames = 0;
+        // coinsSpawned is already false (never set true mid-mission),
+        // so tryAutoSpawnCoins() will re-spawn this slot next frame.
+    }
+
     private static String ordinal(int n) {
         if (n % 100 >= 11 && n % 100 <= 13)
             return n + "th";
@@ -1851,9 +1881,9 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             if (fwdLen > 0.001f) { fwdX /= fwdLen; fwdZ /= fwdLen; }
             if (rightLen > 0.001f) { rightX /= rightLen; rightZ /= rightLen; }
 
-            // Place at the EXACT GPS distance in the relic's bearing direction.
-            // No clamp — the coin must appear where the real coordinate is, not
-            // pulled in close. Once placed the anchor stays fixed in AR space.
+            // Place the item at the EXACT GPS distance so the user sees it
+            // from 15 m away and walks toward it. The anchor is created once
+            // and never moved — it stays fixed in AR world space.
             float coinDist = bearingResult[0];
             if (coinDist < 1f) coinDist = 1f; // avoid placing inside the camera
             float cosA = (float) Math.cos(relativeRad);
@@ -1861,10 +1891,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             dx = fwdX * cosA * coinDist + rightX * sinA * coinDist;
             dz = fwdZ * cosA * coinDist + rightZ * sinA * coinDist;
         } else {
-            // GPS not yet available — place 5 m directly ahead as a temporary stand-in
-            float[] zAxis = cam.getZAxis();
-            dx = -zAxis[0] * 5f;
-            dz = -zAxis[2] * 5f;
+            // GPS not yet available — cannot compute correct bearing, skip this frame.
+            // Never place the item in a random direction; wait for a valid GPS fix.
+            Log.d(TAG, "tryAutoSpawnCoins: GPS unavailable — skipping spawn this frame");
+            return;
         }
 
         // ── Floor height ──────────────────────────────────────────────
@@ -1971,18 +2001,15 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
     private void animateCoins() {
         coinRotationAngle = (coinRotationAngle + 1.2f) % 360f;
-        float bobY = (float) (Math.sin(System.currentTimeMillis() / 700.0) * 0.06f);
 
         for (int i = 0; i < coinNodes.size(); i++) {
             Node node = coinNodes.get(i);
             if (node == null || node.getParent() == null)
                 continue;
-            // Each coin rotates at same speed but with a slight phase offset
+            // Slow rotation only — no vertical movement so the item stays
+            // at the exact world position where it was anchored.
             float angle = (coinRotationAngle + i * 36f) % 360f;
             node.setLocalRotation(Quaternion.axisAngle(new Vector3(0f, 1f, 0f), angle));
-            // Bob upward only (coin sits on a floor — never dip below it)
-            float bob = (float) ((Math.sin(System.currentTimeMillis() / 700.0 + i * 0.6) + 1.0) * 0.06f);
-            node.setLocalPosition(new Vector3(0f, bob, 0f));
         }
     }
 
