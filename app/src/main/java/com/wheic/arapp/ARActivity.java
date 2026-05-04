@@ -253,20 +253,24 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private final List<String> pendingCollectibleAwards = new ArrayList<>();
     private float coinRotationAngle = 0f;
     private int floorSearchFrames = 0;
-    // Timestamp (ms) when the user first entered the spawn radius for the current
-    // slot. Used to gate a short geospatial-acquisition wait so the first spawn
-    // always uses GPS-accurate placement rather than the compass bearing fallback.
-    private long spawnZoneEnteredMs = 0;
-    private int spawnZoneForSlot = -1;
     // Tracks which relic slots have an in-flight terrain-anchor request so we
     // don't fire duplicates while the async response is pending (or retry after
     // the slot is cleared by collection / anchor loss).
     private final java.util.Map<Integer, Boolean> terrainAnchorPending = new java.util.HashMap<>();
+    // Pre-resolved terrain anchors for UPCOMING slots (slot N+1 resolved while
+    // the user is still hunting slot N). Keyed by slot index. Consumed by
+    // tryAutoSpawnCoins() the instant the slot becomes active — zero latency.
+    private final java.util.Map<Integer, Anchor> preResolvedAnchors = new java.util.HashMap<>();
+    private final java.util.Map<Integer, ModelRenderable> preResolvedRenderables = new java.util.HashMap<>();
+    private final java.util.Map<Integer, String> preResolvedRelicIds = new java.util.HashMap<>();
+    // Tracks in-flight next-slot pre-resolve requests (distinct from terrainAnchorPending
+    // which is for spawn-targeted requests — keeping them separate prevents the spawn
+    // loop from blocking on a pre-warm it isn't expecting to consume immediately).
+    private final java.util.Map<Integer, Boolean> nextSlotPreWarmPending = new java.util.HashMap<>();
     // Timestamp (ms) when we first saw geospatial not-yet-tracking for the
-    // current slot. After GEOSPATIAL_FALLBACK_TIMEOUT_MS we allow bearing
-    // fallback so the user is never permanently stuck on "Searching...".
+    // current slot. After 15 s we show a "point camera toward buildings" hint.
+    // Bearing fallback has been removed — items always wait for geospatial.
     private long geospatialWaitStartMs = 0;
-    private static final long GEOSPATIAL_FALLBACK_TIMEOUT_MS = 30_000; // 30 s
     // Outdoors ARCore rarely detects floor planes; using 0 means we skip
     // waiting and immediately use the estimated ground height (-1.4 m below
     // camera) so items appear the moment the user enters the spawn radius.
@@ -600,15 +604,21 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             configureGeospatialMode();
         }
         // Lighting is managed by ENVIRONMENTAL_HDR — no manual override needed.
+
+        // Pre-warm fires as soon as geospatial locks — even during navigation
+        // before the user reaches the mission zone. The terrain anchor resolves
+        // 1-3 s later so the item is already in the scene when they arrive.
+        preWarmCurrentSlotTerrainAnchor();
+        // Pre-resolve ALL upcoming slot anchors every frame so each one is
+        // ready the instant it becomes active. Called every frame because
+        // preResolveNextSlotAnchor has its own idempotent guards, and retrying
+        // every frame handles network failures without extra retry logic.
+        preResolveUpcomingSlotAnchors();
+
         if (isTargetReached) {
             // Recover any permanently-lost anchors BEFORE trying to spawn so the
             // cleared slot is immediately eligible for re-spawn in the same frame.
             checkAndRespawnLostAnchor();
-            // Pre-warm terrain anchor for the current slot the moment geospatial
-            // tracks — fires long before the user physically reaches the relic so
-            // the anchor is already resolved (and the node already spawned) by
-            // the time they arrive.  This makes spawn appear instantaneous.
-            preWarmCurrentSlotTerrainAnchor();
             if (!coinsSpawned) {
                 tryAutoSpawnCoins();
             }
@@ -871,8 +881,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             compassOverlay.setVisibility(View.GONE);
 
         // Reset geospatial wait state so each mission entry starts fresh.
-        spawnZoneEnteredMs = 0;
-        spawnZoneForSlot = -1;
         geospatialWaitStartMs = 0;
 
         // Show minimap so player can see coin location (reset any previous compass toggle)
@@ -1316,6 +1324,9 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             }
         } catch (Exception e) {
             Log.w(TAG, "spawnRelicNode: failed for slot " + coinIdx + ": " + e.getMessage());
+            // Reset the pending flag so the spawn loop retries on the next frame
+            // rather than blocking permanently on a slot that failed to attach.
+            terrainAnchorPending.put(coinIdx, false);
         }
     }
 
@@ -1898,6 +1909,12 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         if (slot < coinNodes.size()) coinNodes.set(slot, null);
         floorSearchFrames = 0;
         terrainAnchorPending.remove(slot); // allow a fresh terrain-anchor request
+        // Also discard any pre-resolved anchor for this slot — it came from the same
+        // lost session state and cannot be trusted for re-spawn.
+        preResolvedAnchors.remove(slot);
+        nextSlotPreWarmPending.remove(slot);
+        preResolvedRenderables.remove(slot);
+        preResolvedRelicIds.remove(slot);
         // coinsSpawned is already false (never set true mid-mission),
         // so tryAutoSpawnCoins() will re-spawn this slot next frame.
     }
@@ -1915,6 +1932,12 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         int slot = currentRelicSlot();
         if (slot < 0) return;
         if (Boolean.TRUE.equals(terrainAnchorPending.get(slot))) return;
+        // If preResolveNextSlotAnchor() already has a resolved anchor for this slot,
+        // do NOT fire a duplicate requestTerrainAnchorForSlot() — that would set
+        // terrainAnchorPending[slot]=true and cause the routing block in
+        // tryAutoSpawnCoins() to return early, bypassing the pre-resolved path
+        // entirely so the anchor leaks and spawn takes 1-3s instead of 0s.
+        if (preResolvedAnchors.containsKey(slot)) return;
         // Ensure list is padded so the duplicate-spawn guard in spawnRelicNode works.
         while (coinAnchorNodes.size() <= slot) coinAnchorNodes.add(null);
         if (coinAnchorNodes.get(slot) != null) return; // already spawned
@@ -1932,6 +1955,80 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         terrainAnchorPending.put(slot, true);
         requestTerrainAnchorForSlot(slot, renderable, relicId);
         Log.d(TAG, "preWarmCurrentSlotTerrainAnchor: fired for slot=" + slot);
+    }
+
+    /**
+     * Calls preResolveNextSlotAnchor for every uncollected slot beyond the current one.
+     * Called every frame from onSceneUpdate so failures are retried automatically and
+     * ALL upcoming slots are pre-resolved concurrently (not just the next one).
+     */
+    private void preResolveUpcomingSlotAnchors() {
+        if (!isGeospatialAvailable()) return;
+        if (coinLatitudes == null) return;
+        int current = currentRelicSlot();
+        if (current < 0) return;
+        // Pre-resolve every slot after the current active one.
+        for (int s = current + 1; s < coinLatitudes.length; s++) {
+            if (coinSlotCollected != null && s < coinSlotCollected.length && coinSlotCollected[s]) continue;
+            preResolveNextSlotAnchor(s);
+        }
+    }
+
+    /**
+     * Resolves a terrain anchor for an UPCOMING slot (slot N+1) WITHOUT
+     * attaching any Sceneform node. The resolved anchor is stored in
+     * {@link #preResolvedAnchors} and consumed by tryAutoSpawnCoins() the
+     * instant that slot becomes the active one — giving zero latency after
+     * each collection instead of the usual 1–3 s terrain-anchor round-trip.
+     *
+     * Uses {@link #nextSlotPreWarmPending} (not terrainAnchorPending) so the
+     * spawn-loop guards for the current slot are unaffected.
+     */
+    private void preResolveNextSlotAnchor(int slot) {
+        if (!isGeospatialAvailable()) return;
+        if (coinLatitudes == null || slot >= coinLatitudes.length) return;
+        if (preResolvedAnchors.containsKey(slot)) return;             // already resolved
+        if (Boolean.TRUE.equals(nextSlotPreWarmPending.get(slot))) return; // in-flight
+        if (Boolean.TRUE.equals(terrainAnchorPending.get(slot))) return;   // spawn req in-flight
+
+        String relicId = (coinRelicIds != null && slot < coinRelicIds.length)
+                ? coinRelicIds[slot] : null;
+        ModelRenderable renderable;
+        if (relicId != null) {
+            renderable = resolvedRelicRenderables.get(relicId);
+            if (renderable == null) return;
+        } else {
+            renderable = resolvedCoinRenderable;
+            if (renderable == null) return;
+        }
+
+        Session session = arCam.getArSceneView().getSession();
+        Earth earth = session.getEarth();
+        nextSlotPreWarmPending.put(slot, true);
+        preResolvedRenderables.put(slot, renderable);
+        preResolvedRelicIds.put(slot, relicId);
+        Log.d(TAG, "preResolveNextSlotAnchor: firing for slot=" + slot);
+        try {
+            earth.resolveAnchorOnTerrainAsync(
+                    coinLatitudes[slot], coinLongitudes[slot],
+                    1.6, 0f, 0f, 0f, 1f,
+                    (anchor, state) -> {
+                        if (state == Anchor.TerrainAnchorState.SUCCESS) {
+                            preResolvedAnchors.put(slot, anchor);
+                            Log.d(TAG, "preResolveNextSlotAnchor: SUCCESS for slot=" + slot);
+                        } else {
+                            Log.w(TAG, "preResolveNextSlotAnchor: FAILED slot=" + slot + " state=" + state);
+                            nextSlotPreWarmPending.put(slot, false);
+                            preResolvedRenderables.remove(slot);
+                            preResolvedRelicIds.remove(slot);
+                        }
+                    });
+        } catch (Exception e) {
+            Log.w(TAG, "preResolveNextSlotAnchor: exception slot=" + slot + ": " + e.getMessage());
+            nextSlotPreWarmPending.put(slot, false);
+            preResolvedRenderables.remove(slot);
+            preResolvedRelicIds.remove(slot);
+        }
     }
 
     private static String ordinal(int n) {
@@ -2023,35 +2120,24 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         // Excluded devices (SM-A356E): bearing fallback with GPS gate only.
         if (isDeviceGeospatialCompatible()) {
             if (!isGeospatialAvailable()) {
-                // Start the wait timer on first miss.
+                // Geospatial not yet tracking.
+                // NEVER fall through to compass bearing — bearing uses the magnetometer
+                // which has ±20-40° error near Manila's stone walls and parked vehicles,
+                // causing items to appear 10-30 m from the correct GPS coordinates.
+                // preWarmCurrentSlotTerrainAnchor() fires every frame on the GL thread
+                // and will request the terrain anchor the instant Earth reaches TRACKING.
                 if (geospatialWaitStartMs == 0) geospatialWaitStartMs = System.currentTimeMillis();
-                long waitedMs = System.currentTimeMillis() - geospatialWaitStartMs;
-                if (waitedMs < GEOSPATIAL_FALLBACK_TIMEOUT_MS) {
-                    // Still within the patience window — show progressive hint.
-                    final String msg = waitedMs < 12_000
-                            ? "Searching for AR positioning…"
-                            : "Point camera at buildings to activate AR";
-                    runOnUiThread(() -> updateHint(msg));
-                    return; // keep waiting; never fall through before timeout
+                if (System.currentTimeMillis() - geospatialWaitStartMs > 15_000) {
+                    runOnUiThread(() -> updateHint(
+                            "Point camera toward buildings to activate AR positioning"));
                 }
-                // 30 s elapsed and geospatial still hasn't locked.
-                // Fall through to bearing with a GPS distance gate so the user
-                // is already close before we place the item.
-                if (!Double.isNaN(lastUserLat) && !Double.isNaN(lastUserLng)
-                        && coinIdx < coinLatitudes.length) {
-                    float[] dGate = new float[1];
-                    Location.distanceBetween(lastUserLat, lastUserLng,
-                            coinLatitudes[coinIdx], coinLongitudes[coinIdx], dGate);
-                    if (dGate[0] > RELIC_SPAWN_RADIUS_M) return;
-                }
-                // Fall through to bearing section below.
-            } else {
-                if (Boolean.TRUE.equals(terrainAnchorPending.get(coinIdx))) {
-                    return; // terrain anchor request in flight — wait for callback
-                }
-                geospatialWaitStartMs = 0; // geospatial locked — reset timer for next slot
-                // Geospatial tracking + not yet requested → fall through to anchor section
+                return; // always return — no bearing fallback
             }
+            if (Boolean.TRUE.equals(terrainAnchorPending.get(coinIdx))) {
+                return; // terrain anchor in flight — wait for its callback
+            }
+            geospatialWaitStartMs = 0; // tracking achieved; reset for next slot
+            // Geospatial tracking + no pending anchor → fall through to anchor section
         } else {
             // Excluded device — GPS gate required for bearing placement
             if (coinRelicIds != null
@@ -2105,13 +2191,36 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         Pose cam = frame.getCamera().getPose();
         float cx = cam.tx(), cy = cam.ty(), cz = cam.tz();
 
-        // ── Anchor: terrain anchor (async, GPS + Google elevation) ──────────────
-        // resolveAnchorOnTerrainAsync places the item at EXACTLY the configured
-        // lat/lng and 1.5 m above the terrain using Google Maps elevation data.
-        // This is the most accurate placement possible — no altitude guessing,
-        // no compass error, same world position every session.
-        // spawnRelicNode() is called from the callback on the main thread.
-        if (isGeospatialAvailable()) {
+        // ── Anchor: terrain anchor (geospatial-compatible devices) ──────────────
+        // The routing block above guarantees Earth is TRACKING before we reach
+        // this point for geospatial-compatible devices, so isGeospatialAvailable()
+        // is always true here for those devices. Using isDeviceGeospatialCompatible()
+        // as the guard makes it structurally impossible for the bearing code below
+        // to execute on a geospatial-capable device — no runtime race, no fallback.
+        // resolveAnchorOnTerrainAsync places the item at the exact lat/lng,
+        // 1.5 m above terrain via Google Maps elevation — no compass error ever.
+        // spawnRelicNode() is called from the terrain anchor callback on the main thread.
+        if (isDeviceGeospatialCompatible()) {
+            // Fast path: use the anchor pre-resolved during the previous slot hunt.
+            // nextSlotPreWarmPending resolved the terrain anchor and stored it so
+            // this slot's spawn has zero wait time even on the first active frame.
+            Anchor preResolved = preResolvedAnchors.remove(coinIdx);
+            if (preResolved != null) {
+                nextSlotPreWarmPending.remove(coinIdx);
+                preResolvedRenderables.remove(coinIdx);
+                preResolvedRelicIds.remove(coinIdx);
+                if (preResolved.getTrackingState() != TrackingState.STOPPED) {
+                    Log.d(TAG, "tryAutoSpawnCoins: using pre-resolved anchor for slot=" + coinIdx);
+                    spawnRelicNode(coinIdx, preResolved, coinRenderable, relicIdForThisCoin);
+                    return;
+                }
+                // Pre-resolved anchor has already lost tracking — discard and fall through
+                // to request a fresh one. This is rare but can happen if the device was
+                // offline or ARCore session was interrupted between pre-warm and arrival.
+                try { preResolved.detach(); } catch (Exception ignored) {}
+                terrainAnchorPending.put(coinIdx, false); // ensure fresh request fires below
+                Log.w(TAG, "tryAutoSpawnCoins: pre-resolved anchor STOPPED for slot=" + coinIdx + " — requesting fresh");
+            }
             if (!Boolean.TRUE.equals(terrainAnchorPending.get(coinIdx))) {
                 terrainAnchorPending.put(coinIdx, true);
                 requestTerrainAnchorForSlot(coinIdx, coinRenderable, relicIdForThisCoin);
@@ -2119,11 +2228,12 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             return; // spawnRelicNode() fires from the terrain anchor callback
         }
 
-        // ── Bearing-based fallback (geospatial not yet tracking) ─────────────
-        // Only runs when Earth hasn't reached TRACKING yet (first ~15-30 s) or
-        // on excluded devices. Compass accuracy is ±20-40°; geospatial is far
-        // more reliable — the 25-second wait above exists to give geospatial
-        // time to lock before falling through here.
+        // ── Bearing-based placement (excluded devices only: e.g. SM-A356E) ──────
+        // Geospatial-compatible devices NEVER reach this point — they returned
+        // above via the isDeviceGeospatialCompatible() guard. This path is only
+        // for devices that lack ARCore Earth support. Compass bearing has ±20-40°
+        // error near Intramuros stone walls; excluded devices accept that trade-off
+        // because terrain anchors are unavailable to them entirely.
         float dx, dz;
         if (!Double.isNaN(lastUserLat) && !Double.isNaN(lastUserLng)) {
             float[] bearingResult = new float[2];
@@ -2236,8 +2346,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         coinSlotCollected[index] = true;
 
         // Reset geospatial + terrain-anchor wait state for the next slot.
-        spawnZoneForSlot = -1;
-        spawnZoneEnteredMs = 0;
         geospatialWaitStartMs = 0;
         terrainAnchorPending.remove(index);
 
