@@ -252,7 +252,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     // SharedPreferences when the mission is fully completed (not on early exit).
     private final List<String> pendingCollectibleAwards = new ArrayList<>();
     private float coinRotationAngle = 0f;
-    private int floorSearchFrames = 0;
     // Tracks which relic slots have an in-flight terrain-anchor request so we
     // don't fire duplicates while the async response is pending (or retry after
     // the slot is cleared by collection / anchor loss).
@@ -271,10 +270,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     // current slot. After 15 s we show a "point camera toward buildings" hint.
     // Bearing fallback has been removed — items always wait for geospatial.
     private long geospatialWaitStartMs = 0;
-    // Outdoors ARCore rarely detects floor planes; using 0 means we skip
-    // waiting and immediately use the estimated ground height (-1.4 m below
-    // camera) so items appear the moment the user enters the spawn radius.
-    private static final int FLOOR_SEARCH_TIMEOUT_FRAMES = 0;
     private static final float COIN_SCALE = 0.25f;
     private static final float COIN_VALUE = 0.10f;
     // Max distance (metres) from a relic at which the user can tap to collect it.
@@ -282,17 +277,16 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     // with a clean fix. The real proximity check is the spawn radius below — if
     // the relic is visible in AR, the user is close enough to collect it.
     private static final float RELIC_COLLECT_RADIUS_M = 25.0f;
-    // Distance at which a staged relic spawns into the scene. 20 m gives enough
-    // margin for urban-canyon GPS drift (±5-10 m) so GPS inaccuracy never
-    // prevents a relic from appearing when the user is physically in the area.
-    private static final float RELIC_SPAWN_RADIUS_M = 20.0f;
+    // Distance at which a staged relic spawns into the scene. 15 m matches the
+    // user-visible "walk closer" threshold and is large enough that urban-canyon
+    // GPS drift (±5-10 m) never prevents a relic from appearing in range.
+    private static final float RELIC_SPAWN_RADIUS_M = 15.0f;
     // Distance (metres) within which the COLLECT button is shown.
     // Keeps the button hidden until the user is genuinely close.
     private static final float RELIC_COLLECT_BUTTON_M = 7.0f;
     // Distance at which a staged relic is despawned again (hysteresis to avoid
     // flicker).
     private static final float RELIC_DESPAWN_RADIUS_M = 20.0f;
-
     // ── Periodic location check ──────────────────────────────────────
     private final float[] distanceResults = new float[1];
     private final Handler locationHandler = new Handler(Looper.getMainLooper());
@@ -1019,14 +1013,46 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         }
 
         // During navigation phase aim at the mission centre; once the user has
-        // arrived and relics are being hunted, aim at the current relic's GPS.
-        // currentRelicSlot() returns 0 when coinAnchorNodes is empty (pre-spawn),
-        // so we must guard with isTargetReached to avoid pointing at relic[0]
-        // instead of the mission entrance during the approach.
+        // arrived and relics are being hunted, aim at the current relic.
+        // When the relic is actually spawned in the AR scene, prefer its real
+        // world position over the configured GPS — the relic may have been
+        // placed by the directional fallback and not exactly at the configured
+        // coord, so we point the compass at where it actually is.
+        int slot = isTargetReached ? currentRelicSlot() : -1;
+        if (slot >= 0 && slot < coinAnchorNodes.size() && coinAnchorNodes.get(slot) != null
+                && arCam != null && arCam.getArSceneView() != null
+                && arCam.getArSceneView().getScene() != null) {
+            AnchorNode an = coinAnchorNodes.get(slot);
+            com.google.ar.sceneform.Camera sceneCam =
+                    arCam.getArSceneView().getScene().getCamera();
+            Vector3 relicWorld = an.getWorldPosition();
+            Vector3 camWorld = sceneCam.getWorldPosition();
+            float dxw = relicWorld.x - camWorld.x;
+            float dzw = relicWorld.z - camWorld.z;
+            float distArMeters = (float) Math.sqrt(dxw * dxw + dzw * dzw);
+            // Direction from camera to relic, expressed in camera-local frame
+            // so the compass arrow can rotate relative to where the device is
+            // currently pointing. Camera local: +X right, +Y up, -Z forward.
+            Vector3 deltaLocal = sceneCam.worldToLocalDirection(
+                    new Vector3(dxw, 0f, dzw));
+            float relativeDeg = (float) Math.toDegrees(
+                    Math.atan2(deltaLocal.x, -deltaLocal.z));
+            while (relativeDeg > 180f)  relativeDeg -= 360f;
+            while (relativeDeg < -180f) relativeDeg += 360f;
+            compassArrow.animate().rotation(relativeDeg).setDuration(200)
+                    .setInterpolator(new android.view.animation.LinearInterpolator()).start();
+            String distText = distArMeters >= 1000f
+                    ? String.format(java.util.Locale.US, "%.1f km", distArMeters / 1000f)
+                    : String.format(java.util.Locale.US, "%d m", (int) distArMeters);
+            if (compassDistance != null)
+                compassDistance.setText(distText);
+            return;
+        }
+
+        // Pre-spawn (or pre-arrival) — fall back to GPS-bearing math.
         double aimLat = targetLatitude;
         double aimLng = targetLongitude;
         if (isTargetReached) {
-            int slot = currentRelicSlot();
             if (slot >= 0 && coinLatitudes != null && slot < coinLatitudes.length) {
                 aimLat = coinLatitudes[slot];
                 aimLng = coinLongitudes[slot];
@@ -1186,39 +1212,12 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     }
 
     /**
-     * Creates a GPS-accurate anchor for the given coin slot using ARCore Geospatial.
-     * The anchor is placed at ground level (camera altitude − 1.4 m).
-     * Returns null when geospatial is not yet tracking or unavailable.
-     */
-    private Anchor createCoinAnchor(int coinIdx) {
-        if (!isGeospatialAvailable()) return null;
-        Session session = arCam.getArSceneView().getSession();
-        Earth earth = session.getEarth();
-        GeospatialPose cameraPose = earth.getCameraGeospatialPose();
-        // Subtract 0.5 m from camera height rather than the full 1.4 m to ground.
-        // ARCore geospatial vertical accuracy is ±3-5 m, so subtracting too much
-        // risks placing the anchor underground (invisible). 0.5 m keeps the item
-        // at roughly chest-height, guaranteed to be in camera view.
-        double anchorAltitude = cameraPose.getAltitude() - 0.5;
-        try {
-            Anchor a = earth.createAnchor(
-                    coinLatitudes[coinIdx], coinLongitudes[coinIdx],
-                    anchorAltitude, 0f, 0f, 0f, 1f);
-            Log.d(TAG, "createCoinAnchor: geospatial anchor created for slot " + coinIdx);
-            return a;
-        } catch (Exception e) {
-            Log.w(TAG, "createCoinAnchor: failed for slot " + coinIdx + ": " + e.getMessage());
-            return null;
-        }
-    }
-
-    /**
      * Fires an async terrain-anchor request for the given slot.
      * Uses ARCore's resolveAnchorOnTerrainAsync which queries Google Maps elevation
      * to place the item at EXACTLY the lat/lng and 1.5 m above ground — far more
      * accurate than earth.createAnchor() where we must guess the WGS84 altitude.
      * On success, calls spawnRelicNode() directly from the callback.
-     * On failure, falls back to earth.createAnchor() with a conservative altitude.
+     * On failure, clears the pending flag so the next frame retries.
      */
     private void requestTerrainAnchorForSlot(int coinIdx, ModelRenderable renderable, String relicId) {
         if (!isGeospatialAvailable()) {
@@ -1241,15 +1240,12 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                             Log.d(TAG, "Terrain anchor SUCCESS for slot " + coinIdx);
                             spawnRelicNode(coinIdx, anchor, renderable, relicId);
                         } else {
+                            // No fallback. Clear the pending flag so the next
+                            // frame retries the terrain-anchor request — the only
+                            // way to place the relic at the exact lat/lng.
                             Log.w(TAG, "Terrain anchor failed slot " + coinIdx + ": " + state
-                                    + " — falling back to regular geospatial anchor");
+                                    + " — will retry next frame");
                             terrainAnchorPending.put(coinIdx, false);
-                            // Immediate fallback: regular earth.createAnchor() keeps the item
-                            // visible even if terrain data is unavailable for this location.
-                            Anchor fallback = createCoinAnchor(coinIdx);
-                            if (fallback != null) {
-                                spawnRelicNode(coinIdx, fallback, renderable, relicId);
-                            }
                         }
                     });
         } catch (Exception e) {
@@ -1698,12 +1694,29 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         }
 
         String relicName = displayNameForRelic(coinRelicIds[slot]);
-        float[] d = new float[1];
-        Location.distanceBetween(lastUserLat, lastUserLng,
-                coinLatitudes[slot], coinLongitudes[slot], d);
-        int meters = Math.round(d[0]);
-        int oneBased = slot + 1;
         boolean relicSpawned = slot < coinAnchorNodes.size() && coinAnchorNodes.get(slot) != null;
+
+        // Distance: when the relic is spawned in the scene we use the actual
+        // AR-world distance from camera to anchor (so the 7 m collect gate
+        // matches what the user sees), else fall back to GPS distance for the
+        // pre-spawn "walk closer" hint.
+        float distMeters;
+        if (relicSpawned && arCam != null && arCam.getArSceneView() != null
+                && arCam.getArSceneView().getScene() != null) {
+            AnchorNode an = coinAnchorNodes.get(slot);
+            Vector3 rp = an.getWorldPosition();
+            Vector3 cp = arCam.getArSceneView().getScene().getCamera().getWorldPosition();
+            float dxw = rp.x - cp.x;
+            float dzw = rp.z - cp.z;
+            distMeters = (float) Math.sqrt(dxw * dxw + dzw * dzw);
+        } else {
+            float[] d = new float[1];
+            Location.distanceBetween(lastUserLat, lastUserLng,
+                    coinLatitudes[slot], coinLongitudes[slot], d);
+            distMeters = d[0];
+        }
+        int meters = Math.round(distMeters);
+        int oneBased = slot + 1;
         // COLLECT button only appears when the user is genuinely close (7 m or less).
         boolean withinCollectRange = relicSpawned && meters <= RELIC_COLLECT_BUTTON_M;
         String suffix;
@@ -1885,7 +1898,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         // persist even when the AR relic despawns (so the user can still see
         // where to walk back to). The dot is only removed on collection.
         coinsSpawned = false;
-        floorSearchFrames = 0;
     }
 
     /**
@@ -1907,7 +1919,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         try { anchor.detach(); } catch (Exception ignored) {}
         coinAnchorNodes.set(slot, null);
         if (slot < coinNodes.size()) coinNodes.set(slot, null);
-        floorSearchFrames = 0;
         terrainAnchorPending.remove(slot); // allow a fresh terrain-anchor request
         // Also discard any pre-resolved anchor for this slot — it came from the same
         // lost session state and cannot be trusted for re-spawn.
@@ -2111,43 +2122,32 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         if (coinRelicIds != null && System.currentTimeMillis() - lastCollectedTimeMs < 1500L)
             return;
 
+        // ── Spawn-radius gate (applies to ALL devices) ────────────────────────────
+        // The relic only spawns once the user is within RELIC_SPAWN_RADIUS_M of
+        // the configured GPS coordinate. Beyond that the HUD shows "walk closer".
+        if (!Double.isNaN(lastUserLat) && !Double.isNaN(lastUserLng)
+                && coinIdx < coinLatitudes.length) {
+            float[] dGate = new float[1];
+            Location.distanceBetween(lastUserLat, lastUserLng,
+                    coinLatitudes[coinIdx], coinLongitudes[coinIdx], dGate);
+            if (dGate[0] > RELIC_SPAWN_RADIUS_M) return;
+        }
+
         // ── Routing ───────────────────────────────────────────────────────────────
-        // Geospatial devices: terrain anchors only (correct GPS position always).
-        //   preWarmCurrentSlotTerrainAnchor() already fires the async request as
-        //   soon as geospatial tracks; this block ensures it also fires if the
-        //   pre-warm somehow missed (renderable loaded after geospatial locked).
-        //   We NEVER fall through to bearing: a wrong position is worse than a wait.
-        // Excluded devices (SM-A356E): bearing fallback with GPS gate only.
-        if (isDeviceGeospatialCompatible()) {
-            if (!isGeospatialAvailable()) {
-                // Geospatial not yet tracking.
-                // NEVER fall through to compass bearing — bearing uses the magnetometer
-                // which has ±20-40° error near Manila's stone walls and parked vehicles,
-                // causing items to appear 10-30 m from the correct GPS coordinates.
-                // preWarmCurrentSlotTerrainAnchor() fires every frame on the GL thread
-                // and will request the terrain anchor the instant Earth reaches TRACKING.
-                if (geospatialWaitStartMs == 0) geospatialWaitStartMs = System.currentTimeMillis();
-                if (System.currentTimeMillis() - geospatialWaitStartMs > 15_000) {
-                    runOnUiThread(() -> updateHint(
-                            "Point camera toward buildings to activate AR positioning"));
-                }
-                return; // always return — no bearing fallback
-            }
-            if (Boolean.TRUE.equals(terrainAnchorPending.get(coinIdx))) {
-                return; // terrain anchor in flight — wait for its callback
-            }
-            geospatialWaitStartMs = 0; // tracking achieved; reset for next slot
-            // Geospatial tracking + no pending anchor → fall through to anchor section
-        } else {
-            // Excluded device — GPS gate required for bearing placement
-            if (coinRelicIds != null
-                    && !Double.isNaN(lastUserLat) && !Double.isNaN(lastUserLng)
-                    && coinIdx < coinLatitudes.length) {
-                float[] dGate = new float[1];
-                Location.distanceBetween(lastUserLat, lastUserLng,
-                        coinLatitudes[coinIdx], coinLongitudes[coinIdx], dGate);
-                if (dGate[0] > RELIC_SPAWN_RADIUS_M) return;
-            }
+        // Strategy: place the relic AS CLOSE TO the configured GPS coordinate as
+        // possible. Two paths, both unconditional — we never block the user on
+        // VPS lock:
+        //   1. PREFERRED — terrain anchor (exact lat/lng). Used only when Earth
+        //      is TRACKING with horizontal accuracy ≤ 5 m. We also use a
+        //      pre-resolved anchor from the previous slot if one is ready.
+        //   2. FALLBACK — directional camera spawn. Project the configured
+        //      coordinate from the user's current GPS using the device heading,
+        //      and anchor that pose in the AR session. The relic ends up in
+        //      roughly the right direction at roughly the right distance, then
+        //      the compass + distance HUD read the anchor's actual world
+        //      position so the user can walk straight to it.
+        if (Boolean.TRUE.equals(terrainAnchorPending.get(coinIdx))) {
+            return; // a terrain-anchor request is in flight — its callback will spawn
         }
 
         // Pick the right renderable: per-relic for staged missions, else default.
@@ -2184,133 +2184,99 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         if (frame == null || frame.getCamera().getTrackingState() != TrackingState.TRACKING)
             return;
 
-        Session session = arCam.getArSceneView().getSession();
-        if (session == null)
-            return;
+        // ── Anchor: prefer pre-resolved terrain anchor → live terrain anchor → directional spawn ──
+        // Pre-resolved (exact lat/lng) — fastest and most accurate.
+        Anchor preResolved = preResolvedAnchors.remove(coinIdx);
+        if (preResolved != null) {
+            nextSlotPreWarmPending.remove(coinIdx);
+            preResolvedRenderables.remove(coinIdx);
+            preResolvedRelicIds.remove(coinIdx);
+            if (preResolved.getTrackingState() != TrackingState.STOPPED) {
+                Log.d(TAG, "tryAutoSpawnCoins: using pre-resolved anchor for slot=" + coinIdx);
+                spawnRelicNode(coinIdx, preResolved, coinRenderable, relicIdForThisCoin);
+                return;
+            }
+            try { preResolved.detach(); } catch (Exception ignored) {}
+        }
 
-        Pose cam = frame.getCamera().getPose();
-        float cx = cam.tx(), cy = cam.ty(), cz = cam.tz();
-
-        // ── Anchor: terrain anchor (geospatial-compatible devices) ──────────────
-        // The routing block above guarantees Earth is TRACKING before we reach
-        // this point for geospatial-compatible devices, so isGeospatialAvailable()
-        // is always true here for those devices. Using isDeviceGeospatialCompatible()
-        // as the guard makes it structurally impossible for the bearing code below
-        // to execute on a geospatial-capable device — no runtime race, no fallback.
-        // resolveAnchorOnTerrainAsync places the item at the exact lat/lng,
-        // 1.5 m above terrain via Google Maps elevation — no compass error ever.
-        // spawnRelicNode() is called from the terrain anchor callback on the main thread.
-        if (isDeviceGeospatialCompatible()) {
-            // Fast path: use the anchor pre-resolved during the previous slot hunt.
-            // nextSlotPreWarmPending resolved the terrain anchor and stored it so
-            // this slot's spawn has zero wait time even on the first active frame.
-            Anchor preResolved = preResolvedAnchors.remove(coinIdx);
-            if (preResolved != null) {
-                nextSlotPreWarmPending.remove(coinIdx);
-                preResolvedRenderables.remove(coinIdx);
-                preResolvedRelicIds.remove(coinIdx);
-                if (preResolved.getTrackingState() != TrackingState.STOPPED) {
-                    Log.d(TAG, "tryAutoSpawnCoins: using pre-resolved anchor for slot=" + coinIdx);
-                    spawnRelicNode(coinIdx, preResolved, coinRenderable, relicIdForThisCoin);
-                    return;
+        // Live terrain anchor only when Earth is TRACKING with usable accuracy.
+        boolean geoReady = false;
+        if (isDeviceGeospatialCompatible() && isGeospatialAvailable()) {
+            try {
+                Session s2 = arCam.getArSceneView().getSession();
+                Earth e2 = s2 != null ? s2.getEarth() : null;
+                if (e2 != null && e2.getCameraGeospatialPose().getHorizontalAccuracy() <= 5.0) {
+                    geoReady = true;
                 }
-                // Pre-resolved anchor has already lost tracking — discard and fall through
-                // to request a fresh one. This is rare but can happen if the device was
-                // offline or ARCore session was interrupted between pre-warm and arrival.
-                try { preResolved.detach(); } catch (Exception ignored) {}
-                terrainAnchorPending.put(coinIdx, false); // ensure fresh request fires below
-                Log.w(TAG, "tryAutoSpawnCoins: pre-resolved anchor STOPPED for slot=" + coinIdx + " — requesting fresh");
-            }
-            if (!Boolean.TRUE.equals(terrainAnchorPending.get(coinIdx))) {
-                terrainAnchorPending.put(coinIdx, true);
-                requestTerrainAnchorForSlot(coinIdx, coinRenderable, relicIdForThisCoin);
-            }
+            } catch (Exception ignored) {}
+        }
+        if (geoReady) {
+            terrainAnchorPending.put(coinIdx, true);
+            requestTerrainAnchorForSlot(coinIdx, coinRenderable, relicIdForThisCoin);
             return; // spawnRelicNode() fires from the terrain anchor callback
         }
 
-        // ── Bearing-based placement (excluded devices only: e.g. SM-A356E) ──────
-        // Geospatial-compatible devices NEVER reach this point — they returned
-        // above via the isDeviceGeospatialCompatible() guard. This path is only
-        // for devices that lack ARCore Earth support. Compass bearing has ±20-40°
-        // error near Intramuros stone walls; excluded devices accept that trade-off
-        // because terrain anchors are unavailable to them entirely.
-        float dx, dz;
-        if (!Double.isNaN(lastUserLat) && !Double.isNaN(lastUserLng)) {
-            float[] bearingResult = new float[2];
+        // Fallback: project the configured GPS coord from the user's current GPS
+        // using device heading, anchor it in the AR session at the resulting
+        // direction + distance. The relic appears "near" the configured coord —
+        // not pixel-perfect without VPS, but reliably in the correct direction
+        // and within walking range. Compass + HUD then track the actual anchor
+        // pose (see updateCompassArrow / updateRelicHud), so the user can walk
+        // straight to whatever lands and collect it.
+        try {
+            Session sess = arCam.getArSceneView().getSession();
+            if (sess == null) return;
+
+            // GPS bearing + distance from user to the configured coord.
+            float[] geo = new float[2];
             Location.distanceBetween(lastUserLat, lastUserLng,
-                    coinLatitudes[coinIdx], coinLongitudes[coinIdx], bearingResult);
-            float gpsBearing = bearingResult[1]; // degrees, clockwise from north
-            float placementHeading = !Float.isNaN(geospatialHeadingDeg)
-                    ? geospatialHeadingDeg
-                    : smoothedAzimuthDeg;
-            float relativeRad = (float) Math.toRadians(gpsBearing - placementHeading);
+                    coinLatitudes[coinIdx], coinLongitudes[coinIdx], geo);
+            float gpsDistance = geo[0];                  // metres
+            float gpsBearingDeg = geo[1];                // 0=N, +clockwise, range -180..180
 
-            float[] zAxis = cam.getZAxis();
-            float[] xAxis = cam.getXAxis();
-            float fwdX = -zAxis[0], fwdZ = -zAxis[2];
-            float rightX = xAxis[0], rightZ = xAxis[2];
-            float fwdLen = (float) Math.sqrt(fwdX * fwdX + fwdZ * fwdZ);
-            float rightLen = (float) Math.sqrt(rightX * rightX + rightZ * rightZ);
-            if (fwdLen > 0.001f) { fwdX /= fwdLen; fwdZ /= fwdLen; }
-            if (rightLen > 0.001f) { rightX /= rightLen; rightZ /= rightLen; }
+            // Heading the device believes is north. Geospatial heading (when
+            // Earth is at least horizontal-tracking) is more stable than the
+            // raw magnetometer; otherwise fall back to the smoothed compass.
+            float headingDeg = !Float.isNaN(geospatialHeadingDeg)
+                    ? geospatialHeadingDeg : smoothedAzimuthDeg;
+            float relativeBearingDeg = gpsBearingDeg - headingDeg;
+            double relRad = Math.toRadians(relativeBearingDeg);
 
-            float coinDist = bearingResult[0];
-            if (coinDist < 1f) coinDist = 1f;
-            float cosA = (float) Math.cos(relativeRad);
-            float sinA = (float) Math.sin(relativeRad);
-            dx = fwdX * cosA * coinDist + rightX * sinA * coinDist;
-            dz = fwdZ * cosA * coinDist + rightZ * sinA * coinDist;
-        } else {
-            Log.d(TAG, "tryAutoSpawnCoins: GPS unavailable — skipping spawn this frame");
-            return;
-        }
+            // Clamp distance: never spawn at the user's feet (< 3 m) and never
+            // beyond a comfortable visual range (12 m) so the relic is always
+            // visible in the AR camera regardless of how close the user is.
+            float dist = Math.max(3.0f, Math.min(gpsDistance, 12.0f));
 
-        // ── Floor height ──────────────────────────────────────────────
-        float dy;
-        try {
-            float[] rayOrigin = new float[] { cx, cy + 1.0f, cz };
-            float[] rayDirection = new float[] { 0f, -1f, 0f };
-            List<HitResult> hits = frame.hitTest(rayOrigin, 0, rayDirection, 0);
-            Float floorY = null;
-            for (HitResult hit : hits) {
-                com.google.ar.core.Trackable trackable = hit.getTrackable();
-                if (trackable instanceof Plane) {
-                    Plane plane = (Plane) trackable;
-                    float hitY = hit.getHitPose().ty();
-                    if (plane.getTrackingState() == TrackingState.TRACKING
-                            && plane.getType() == Plane.Type.HORIZONTAL_UPWARD_FACING
-                            && plane.getSubsumedBy() == null
-                            && hitY < cy - 0.5f) {
-                        floorY = hitY;
-                        break;
-                    }
-                }
-            }
-            if (floorY != null) {
-                dy = (floorY - cy) + 0.05f;
-                floorSearchFrames = 0;
-            } else if (floorSearchFrames++ < FLOOR_SEARCH_TIMEOUT_FRAMES) {
-                return;
-            } else {
-                dy = -1.4f;
-                Log.w(TAG, "Floor plane not detected; using estimated ground height");
-            }
+            // Build a "yaw-only" pose at the camera's world position so the
+            // relic stays at chest height regardless of how the user is
+            // tilting the device.
+            Pose camPose = frame.getCamera().getPose();
+            float[] camT = camPose.getTranslation();
+            float[] q = camPose.getRotationQuaternion(); // x,y,z,w
+            double yaw = Math.atan2(2.0 * (q[3] * q[1] + q[0] * q[2]),
+                    1.0 - 2.0 * (q[1] * q[1] + q[2] * q[2]));
+            float[] yawQ = {0f, (float) Math.sin(yaw / 2.0), 0f, (float) Math.cos(yaw / 2.0)};
+            Pose flatPose = new Pose(camT, yawQ);
+
+            // Camera-local frame: +X right, +Y up, -Z forward. relativeBearing 0
+            // = straight ahead, +90 = right, -90 = left.
+            float dx = (float) (Math.sin(relRad) * dist);
+            float dz = (float) (-Math.cos(relRad) * dist);
+            // -1.3 m below the camera ≈ ground level (eye height ~1.6 m).
+            Pose spawnPose = flatPose.compose(Pose.makeTranslation(dx, -1.3f, dz));
+            Anchor anchor = sess.createAnchor(spawnPose);
+
+            Log.e(TAG, "tryAutoSpawnCoins: directional spawn slot=" + coinIdx
+                    + " gpsDist=" + gpsDistance + "m"
+                    + " gpsBearing=" + gpsBearingDeg
+                    + " heading=" + headingDeg
+                    + " rel=" + relativeBearingDeg
+                    + " usedDist=" + dist);
+            spawnRelicNode(coinIdx, anchor, coinRenderable, relicIdForThisCoin);
         } catch (Exception e) {
-            Log.w(TAG, "Floor hitTest failed, using fallback height: " + e.getMessage());
-            dy = -1.4f;
+            Log.w(TAG, "tryAutoSpawnCoins: directional spawn failed slot " + coinIdx
+                    + ": " + e.getMessage());
         }
-
-        Anchor anchor;
-        try {
-            Pose coinPose = Pose.makeTranslation(cx + dx, cy + dy, cz + dz);
-            anchor = session.createAnchor(coinPose);
-        } catch (Exception e) {
-            Log.w(TAG, "Coin bearing-placement failed: " + e.getMessage());
-            return;
-        }
-
-        if (anchor == null) return;
-        spawnRelicNode(coinIdx, anchor, coinRenderable, relicIdForThisCoin);
     }
 
     private void animateCoins() {
@@ -2373,7 +2339,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             coinNodes.set(index, null);
         // Allow the spawn loop to immediately consider the next slot.
         coinsSpawned = false;
-        floorSearchFrames = 0;
 
         coinsCollected++;
         coinCollectedValue += COIN_VALUE;

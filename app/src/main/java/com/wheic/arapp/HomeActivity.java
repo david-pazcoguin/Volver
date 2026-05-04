@@ -25,6 +25,10 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.android.material.bottomnavigation.BottomNavigationView;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 
@@ -98,6 +102,28 @@ public class HomeActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.home_activity);
+
+        // Override the global InsetsCallbacks to redirect the top inset to the
+        // app bar instead of the root, so the status bar area shows the cream
+        // header background instead of a white gap.
+        View root = findViewById(android.R.id.content);
+        android.view.ViewGroup topAppBar = findViewById(R.id.topAppBar);
+        ViewCompat.setOnApplyWindowInsetsListener(root, (v, windowInsets) -> {
+            Insets bars = windowInsets.getInsets(
+                    WindowInsetsCompat.Type.systemBars()
+                            | WindowInsetsCompat.Type.displayCutout()
+                            | WindowInsetsCompat.Type.ime());
+            v.setPadding(bars.left, 0, bars.right, bars.bottom);
+            if (topAppBar != null) {
+                topAppBar.setPadding(
+                        topAppBar.getPaddingLeft(),
+                        bars.top,
+                        topAppBar.getPaddingRight(),
+                        topAppBar.getPaddingBottom());
+            }
+            return WindowInsetsCompat.CONSUMED;
+        });
+        ViewCompat.requestApplyInsets(root);
 
         SharedPreferences sh = SecurePrefs.get(this);
         username = sh.getString("username", "");
