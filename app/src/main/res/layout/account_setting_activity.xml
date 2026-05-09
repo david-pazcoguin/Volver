@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -20,6 +20,7 @@
 
         <ImageView
             android:src="@drawable/back_icon"
+            app:tint="@color/text_primary"
             android:layout_width="24dp"
             android:layout_height="24dp">
 
@@ -30,7 +31,7 @@
             android:textSize="15sp"
             android:textAlignment="center"
             android:layout_gravity="center"
-            android:textColor="@color/black"
+            android:textColor="@color/text_primary"
             android:textStyle="bold"
             android:text="BACK"
             android:layout_width="wrap_content"
@@ -46,7 +47,7 @@
         android:fontFamily="@font/montserrat_bold"
         android:textSize="24sp"
         android:textAlignment="center"
-        android:textColor="@color/black"
+        android:textColor="@color/text_primary"
         android:textStyle="bold"
         android:text="Update Account"
         android:layout_width="wrap_content"
@@ -89,7 +90,7 @@
                             android:fontFamily="@font/montserrat_bold"
                             android:textSize="15sp"
                             android:textAlignment="center"
-                            android:textColor="@color/black"
+                            android:textColor="@color/text_primary"
                             android:textStyle="bold"
                             android:text="First Name"
                             android:layout_width="wrap_content"
@@ -104,7 +105,7 @@
                             android:fontFamily="@font/montserrat_bold"
                             android:hint="Enter your first name..."
                             android:textSize="15sp"
-                            android:textColor="@color/black"
+                            android:textColor="@color/text_primary"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content">
 
@@ -139,7 +140,7 @@
                             android:fontFamily="@font/montserrat_bold"
                             android:textSize="15sp"
                             android:textAlignment="center"
-                            android:textColor="@color/black"
+                            android:textColor="@color/text_primary"
                             android:textStyle="bold"
                             android:text="Last Name"
                             android:layout_width="wrap_content"
@@ -154,7 +155,7 @@
                             android:fontFamily="@font/montserrat_bold"
                             android:hint="Enter your last name..."
                             android:textSize="15sp"
-                            android:textColor="@color/black"
+                            android:textColor="@color/text_primary"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content">
 
@@ -189,7 +190,7 @@
                             android:fontFamily="@font/montserrat_bold"
                             android:textSize="15sp"
                             android:textAlignment="center"
-                            android:textColor="@color/black"
+                            android:textColor="@color/text_primary"
                             android:textStyle="bold"
                             android:text="Password"
                             android:layout_width="wrap_content"
@@ -210,7 +211,7 @@
                                 android:fontFamily="@font/montserrat_bold"
                                 android:hint="Enter your password..."
                                 android:inputType="textPassword"
-                                android:textColor="@color/black"
+                                android:textColor="@color/text_primary"
                                 android:textSize="15sp">
 
                             </EditText>
@@ -223,7 +224,7 @@
                                 android:fontFamily="@font/montserrat_bold"
                                 android:textSize="15sp"
                                 android:textAlignment="center"
-                                android:textColor="@color/black"
+                                android:textColor="@color/text_primary"
                                 android:textStyle="bold"
                                 android:text="SHOW"
                                 android:layout_width="wrap_content"
@@ -261,7 +262,7 @@
                             android:fontFamily="@font/montserrat_bold"
                             android:textSize="15sp"
                             android:textAlignment="center"
-                            android:textColor="@color/black"
+                            android:textColor="@color/text_primary"
                             android:textStyle="bold"
                             android:text="Confirm Password"
                             android:layout_width="wrap_content"
@@ -281,7 +282,7 @@
                                 android:fontFamily="@font/montserrat_bold"
                                 android:hint="Confirm your password..."
                                 android:textSize="15sp"
-                                android:textColor="@color/black"
+                                android:textColor="@color/text_primary"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content">
 
@@ -295,7 +296,7 @@
                                 android:fontFamily="@font/montserrat_bold"
                                 android:textSize="15sp"
                                 android:textAlignment="center"
-                                android:textColor="@color/black"
+                                android:textColor="@color/text_primary"
                                 android:textStyle="bold"
                                 android:text="SHOW"
                                 android:layout_width="wrap_content"

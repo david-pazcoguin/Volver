@@ -1,5 +1,6 @@
 package com.wheic.arapp;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.cardview.widget.CardView;
 
@@ -8,11 +9,10 @@ import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.View;
-import android.widget.EditText;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.android.material.textfield.TextInputEditText;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.FieldValue;
@@ -20,174 +20,166 @@ import com.google.firebase.firestore.FieldValue;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * This activity handles user registration.
- * It allows new users to create an account by providing their first name, last name, a unique username, and a password.
- * The activity performs validation to ensure that all fields are filled and that the entered passwords match.
- * It also communicates with a server to verify the uniqueness of the username and to submit the registration details.
- */
 public class RegisterActivity extends AppCompatActivity {
 
-    LinearLayout linearLayoutBack;
-    CardView cardViewRegister;
+    private CardView cardViewRegister;
+    private TextInputEditText txtFirstName, txtLastName, txtEmail, txtUsername,
+                               txtPassword, txtConfirmPassword;
+    private TextView tvLogin;
 
-    EditText txtFirstName, txtLastName, txtUsername, txtPassword, txtConfirmPassword;
-    TextView tvShowHide, tvConfirmShowHide;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.register_activity);
 
-        linearLayoutBack = findViewById(R.id.linearLayoutBack);
-        cardViewRegister = findViewById(R.id.cardViewRegister);
-        txtFirstName = findViewById(R.id.txtFirstName);
-        txtLastName = findViewById(R.id.txtLastName);
-        txtUsername = findViewById(R.id.txtUsername);
-        txtPassword = findViewById(R.id.txtPassword);
+        cardViewRegister  = findViewById(R.id.cardViewRegister);
+        txtFirstName      = findViewById(R.id.txtFirstName);
+        txtLastName       = findViewById(R.id.txtLastName);
+        txtEmail          = findViewById(R.id.txtEmail);
+        txtUsername       = findViewById(R.id.txtUsername);
+        txtPassword       = findViewById(R.id.txtPassword);
         txtConfirmPassword = findViewById(R.id.txtConfirmPassword);
-        tvShowHide = findViewById(R.id.tvShowHide);
-        tvConfirmShowHide = findViewById(R.id.tvConfirmShowHide);
+        tvLogin           = findViewById(R.id.tvLogin);
 
-        PasswordToggleHelper.attach(tvShowHide, txtPassword);
-        PasswordToggleHelper.attach(tvConfirmShowHide, txtConfirmPassword);
+        // Back button in header
+        View btnBack = findViewById(R.id.btnBack);
+        if (btnBack != null) btnBack.setOnClickListener(v -> finish());
 
-        linearLayoutBack.setOnClickListener(new View.OnClickListener() {
+        tvLogin.setOnClickListener(v -> finish());
+
+        setRegisterEnabled(false);
+
+        TextWatcher watcher = new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int i, int c, int a) {}
+            @Override public void onTextChanged(CharSequence s, int i, int b, int c) {}
             @Override
-            public void onClick(View view) {
-                finish();
-            }
-        });
-
-        TextWatcher registerWatcher = new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
-            @Override
-            public void afterTextChanged(Editable editable) {
-                RegisterButtonWatcher();
+            public void afterTextChanged(Editable e) {
+                setRegisterEnabled(allFieldsFilled());
             }
         };
+        txtFirstName.addTextChangedListener(watcher);
+        txtLastName.addTextChangedListener(watcher);
+        txtEmail.addTextChangedListener(watcher);
+        txtUsername.addTextChangedListener(watcher);
+        txtPassword.addTextChangedListener(watcher);
+        txtConfirmPassword.addTextChangedListener(watcher);
 
-        txtFirstName.addTextChangedListener(registerWatcher);
-        txtLastName.addTextChangedListener(registerWatcher);
-        txtUsername.addTextChangedListener(registerWatcher);
-        txtPassword.addTextChangedListener(registerWatcher);
-        txtConfirmPassword.addTextChangedListener(registerWatcher);
-
-        cardViewRegister.setOnClickListener(new View.OnClickListener()
-        {
-            @Override
-            public void onClick(View view)
-            {
-                if(txtPassword.getText().toString().equals(txtConfirmPassword.getText().toString()))
-                {
-                    Register();
-                }
-                else
-                {
-                    Toast.makeText(RegisterActivity.this, "Password and Confirm Password must be the same.", Toast.LENGTH_SHORT).show();
-                }
+        cardViewRegister.setOnClickListener(v -> {
+            String pw = txtPassword.getText() != null ? txtPassword.getText().toString() : "";
+            String cpw = txtConfirmPassword.getText() != null ? txtConfirmPassword.getText().toString() : "";
+            if (!pw.equals(cpw)) {
+                Toast.makeText(this, "Passwords do not match.", Toast.LENGTH_SHORT).show();
+                return;
             }
+            register();
         });
     }
 
-    /**
-     * This method monitors the input fields for the registration form.
-     * It enables or disables the register button based on whether all the required fields have been filled.
-     * If any field is empty, the register button is made inactive.
-     */
-    void RegisterButtonWatcher()
-    {
-        if(txtUsername.getText().toString().isEmpty() ||
-                txtFirstName.getText().toString().isEmpty() ||
-                txtLastName.getText().toString().isEmpty() ||
-                txtPassword.getText().toString().isEmpty() ||
-                txtConfirmPassword.getText().toString().isEmpty())
-        {
-            cardViewRegister.setAlpha(0.2f);
-            cardViewRegister.setFocusable(false);
-            cardViewRegister.setClickable(false);
-            cardViewRegister.setEnabled(false);
-        }
-        else
-        {
-            cardViewRegister.setAlpha(1);
-            cardViewRegister.setFocusable(true);
-            cardViewRegister.setClickable(true);
-            cardViewRegister.setEnabled(true);
-        }
+    private boolean allFieldsFilled() {
+        return nonEmpty(txtFirstName) && nonEmpty(txtLastName) && nonEmpty(txtEmail)
+                && nonEmpty(txtUsername) && nonEmpty(txtPassword) && nonEmpty(txtConfirmPassword);
     }
 
-    /**
-     * This method handles the actual registration process.
-     * It sends the user's registration details (username, password, first name, last name) to the server.
-     * Upon a successful response from the server, it closes the registration activity.
-     */
-    void Register()
-    {
-        String username = txtUsername.getText().toString().trim();
-        String password = txtPassword.getText().toString();
-        String firstName = txtFirstName.getText().toString().trim();
-        String lastName = txtLastName.getText().toString().trim();
+    private boolean nonEmpty(TextInputEditText et) {
+        return et.getText() != null && !et.getText().toString().isEmpty();
+    }
 
-        // Username validation: 3-30 alphanumeric/underscore characters
-        if (!username.matches("^[a-zA-Z0-9_]{3,30}$")) {
-            Toast.makeText(this, "Username must be 3–30 characters (letters, numbers, underscore).", Toast.LENGTH_SHORT).show();
+    private void setRegisterEnabled(boolean enabled) {
+        cardViewRegister.setAlpha(enabled ? 1f : 0.35f);
+        cardViewRegister.setClickable(enabled);
+        cardViewRegister.setFocusable(enabled);
+        cardViewRegister.setEnabled(enabled);
+    }
+
+    private void register() {
+        String firstName = txtFirstName.getText().toString().trim();
+        String lastName  = txtLastName.getText().toString().trim();
+        String email     = txtEmail.getText().toString().trim();
+        String username  = txtUsername.getText().toString().trim();
+        String password  = txtPassword.getText().toString();
+
+        // Validate email format
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            Toast.makeText(this, "Enter a valid email address.", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // Password strength: minimum 6 characters (Firebase Auth minimum)
+        // Validate username
+        if (!username.matches("^[a-zA-Z0-9_]{3,30}$")) {
+            Toast.makeText(this, "Username must be 3-30 characters (letters, numbers, underscore).", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Validate password strength
         if (password.length() < 6) {
             Toast.makeText(this, "Password must be at least 6 characters.", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // Name length limits
+        // Name length
         if (firstName.length() > 50 || lastName.length() > 50) {
             Toast.makeText(this, "Name fields must be 50 characters or fewer.", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        String email = username + "@volver.app";
-
+        // Register with the real email (not the fake @volver.app one)
         FirebaseAuth.getInstance()
                 .createUserWithEmailAndPassword(email, password)
                 .addOnCompleteListener(task -> {
-                    if (task.isSuccessful()) {
-                        FirebaseUser user = task.getResult() != null ? task.getResult().getUser() : null;
-                        if (user == null) {
-                            Toast.makeText(RegisterActivity.this, "Registration failed. Please try again.", Toast.LENGTH_SHORT).show();
-                            return;
-                        }
-
-                        Map<String, Object> userData = new HashMap<>();
-                        userData.put("username", username);
-                        userData.put("firstName", firstName);
-                        userData.put("lastName", lastName);
-                        userData.put("email", email);
-                        userData.put("createdAt", FieldValue.serverTimestamp());
-
-                        FirebaseConfig.getFirestore()
-                                .collection("users")
-                                .document(user.getUid())
-                                .set(userData)
-                                .addOnSuccessListener(unused -> {
-                                    // Cache the first name locally so HomeActivity can greet
-                                    // the user immediately, even before the Firestore read completes.
-                                    SecurePrefs.get(RegisterActivity.this).edit()
-                                            .putString("firstName", firstName)
-                                            .apply();
-                                    finish();
-                                })
-                                .addOnFailureListener(e -> Toast.makeText(RegisterActivity.this, "Failed to save profile.", Toast.LENGTH_SHORT).show());
-                    } else {
-                        Exception exception = task.getException();
+                    if (!task.isSuccessful()) {
+                        Exception ex = task.getException();
                         String msg = "Registration failed.";
-                        if (exception != null && exception.getMessage() != null
-                                && exception.getMessage().contains("already in use")) {
-                            msg = "Username is already taken.";
+                        if (ex != null && ex.getMessage() != null
+                                && ex.getMessage().contains("already in use")) {
+                            msg = "That email is already registered.";
                         }
-                        Toast.makeText(RegisterActivity.this, msg, Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+                        return;
                     }
+                    FirebaseUser user = task.getResult() != null ? task.getResult().getUser() : null;
+                    if (user == null) {
+                        Toast.makeText(this, "Registration failed. Please try again.", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    // Save profile to Firestore
+                    Map<String, Object> userData = new HashMap<>();
+                    userData.put("username", username);
+                    userData.put("firstName", firstName);
+                    userData.put("lastName", lastName);
+                    userData.put("email", email);
+                    userData.put("createdAt", FieldValue.serverTimestamp());
+
+                    FirebaseConfig.getFirestore()
+                            .collection("users")
+                            .document(user.getUid())
+                            .set(userData)
+                            .addOnSuccessListener(unused -> {
+                                SecurePrefs.get(this).edit()
+                                        .putString("firstName", firstName)
+                                        .apply();
+                                // Send verification email
+                                user.sendEmailVerification()
+                                        .addOnCompleteListener(verifyTask -> {
+                                            showVerificationDialog(email);
+                                        });
+                            })
+                            .addOnFailureListener(e ->
+                                    Toast.makeText(this, "Failed to save profile.", Toast.LENGTH_SHORT).show());
                 });
+    }
+
+    private void showVerificationDialog(String email) {
+        new AlertDialog.Builder(this)
+                .setTitle("Verify your email")
+                .setMessage("We sent a verification link to:\n\n" + email
+                        + "\n\nPlease check your inbox and verify before logging in.")
+                .setPositiveButton("OK", (d, w) -> {
+                    // Sign out so they are forced to log in after verifying
+                    FirebaseAuth.getInstance().signOut();
+                    finish();
+                })
+                .setCancelable(false)
+                .show();
     }
 }

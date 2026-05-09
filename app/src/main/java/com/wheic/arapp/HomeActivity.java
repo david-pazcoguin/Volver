@@ -193,6 +193,12 @@ public class HomeActivity extends AppCompatActivity {
         }
         showRandomFact();
 
+        // Tapping the top-right name chip opens the profile/settings screen.
+        View statChip = findViewById(R.id.statChip);
+        if (statChip != null) {
+            statChip.setOnClickListener(v -> startActivity(new Intent(this, SettingActivity.class)));
+        }
+
         if (BuildConfig.DEBUG && tvFullName != null) {
             tvFullName.setOnLongClickListener(v -> {
                 debugCompleteAllMissions();
@@ -248,9 +254,6 @@ public class HomeActivity extends AppCompatActivity {
                 layoutMissions.setVisibility(View.GONE);
                 layoutCollectibles.setVisibility(View.VISIBLE);
                 refreshCollectibleCounts();
-                return true;
-            } else if (id == R.id.nav_profile) {
-                startActivity(new Intent(this, SettingActivity.class));
                 return true;
             }
             return false;
