@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -7,74 +7,80 @@
     android:orientation="vertical"
     tools:context=".HomeActivity">
 
-    <!-- ── Top App Bar ────────────────────────────────────── -->
+    <!-- â”€â”€ Top App Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
     <LinearLayout
         android:id="@+id/topAppBar"
         android:orientation="horizontal"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:minHeight="56dp"
+        android:minHeight="90dp"
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
-        android:gravity="center_vertical|bottom"
-        android:background="#FFFBF3">
+        android:paddingTop="10dp"
+        android:paddingBottom="8dp"
+        android:gravity="bottom"
+        android:background="@color/bg_page">
 
-        <ImageView
-            android:layout_width="30dp"
-            android:layout_height="30dp"
-            android:src="@drawable/logo"
-            android:scaleType="fitCenter"
-            android:contentDescription="Volver logo" />
-
-        <TextView
+        <!-- Left: stacked app name + user name -->
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:fontFamily="@font/montserrat_bold"
-            android:text="VOLVER"
-            android:textColor="#3D2817"
-            android:textSize="20sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.10" />
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="32dp"
-            android:background="@drawable/bg_stat_card"
-            android:gravity="center"
-            android:orientation="horizontal"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp">
+            android:orientation="vertical">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="👤 "
-                android:textSize="11sp" />
+                android:fontFamily="@font/montserrat_bold"
+                android:text="VOLVER"
+                android:textColor="@color/primary"
+                android:textSize="11sp"
+                android:letterSpacing="0.18" />
 
             <TextView
                 android:id="@+id/tvFullName"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
                 android:fontFamily="@font/montserrat_bold"
                 android:text="Traveler"
-                android:textColor="#3D2817"
-                android:textSize="12sp"
+                android:textColor="@color/text_primary"
+                android:textSize="22sp"
                 android:textStyle="bold"
                 android:maxLines="1"
-                android:ellipsize="end"
-                android:maxWidth="110dp" />
+                android:ellipsize="end" />
         </LinearLayout>
+
+        <!-- Right: tappable avatar circle -->
+        <FrameLayout
+            android:id="@+id/statChip"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_avatar_circle"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackgroundBorderless">
+
+            <TextView
+                android:id="@+id/tvAvatarInitial"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:fontFamily="@font/montserrat_bold"
+                android:text="T"
+                android:textColor="@color/gold_hero"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+        </FrameLayout>
 
     </LinearLayout>
 
     <View
-        android:background="#EEE6CF"
+        android:background="@color/bg_separator"
         android:layout_width="match_parent"
         android:layout_height="1dp" />
 
-    <!-- ── HOME TAB CONTENT ─────────────────────────────── -->
+    <!-- â”€â”€ HOME TAB CONTENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
     <ScrollView
         android:id="@+id/layoutHome"
         android:layout_width="match_parent"
@@ -93,7 +99,7 @@
             android:paddingTop="14dp"
             android:paddingBottom="24dp">
 
-            <!-- ── Hero banner ─────────────────────────── -->
+            <!-- â”€â”€ Hero banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -116,7 +122,7 @@
                         android:layout_height="wrap_content"
                         android:fontFamily="@font/montserrat_regular"
                         android:text="Welcome to Intramuros"
-                        android:textColor="#FFE8B0"
+                        android:textColor="@color/gold_pale"
                         android:textSize="11sp" />
 
                     <TextView
@@ -126,7 +132,7 @@
                         android:layout_marginTop="2dp"
                         android:fontFamily="@font/montserrat_bold"
                         android:text="Mabuhay!"
-                        android:textColor="#FFFFFF"
+                        android:textColor="@color/bg_card"
                         android:textSize="22sp"
                         android:textStyle="bold" />
 
@@ -137,7 +143,7 @@
                         android:layout_marginTop="6dp"
                         android:fontFamily="@font/montserrat_regular"
                         android:text="Discover history, collect relics,\nearn your souvenir."
-                        android:textColor="#F5E6C0"
+                        android:textColor="@color/gold_hero"
                         android:textSize="12sp" />
 
                     <TextView
@@ -151,37 +157,24 @@
                         android:paddingEnd="18dp"
                         android:paddingTop="8dp"
                         android:paddingBottom="8dp"
-                        android:text="Explore Missions →"
-                        android:textColor="#3D2817"
+                        android:text="Explore Missions &#x2192;"
+                        android:textColor="@color/text_primary"
                         android:textSize="11sp"
                         android:textStyle="bold"
                         android:clickable="true"
                         android:focusable="true" />
                 </LinearLayout>
 
-                <LinearLayout
+                <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="10dp"
-                    android:orientation="vertical"
-                    android:gravity="center_horizontal">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="🏛️"
-                        android:textSize="48sp" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="🗺️"
-                        android:textSize="28sp" />
-                </LinearLayout>
+                    android:text="&#x1F3DB;"
+                    android:textSize="72sp"
+                    android:gravity="center" />
             </LinearLayout>
 
-            <!-- ── Stats row ───────────────────────────── -->
+            <!-- â”€â”€ Stats row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -203,7 +196,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="🗺️"
+                        android:text="&#x1F5FA;"
                         android:textSize="22sp" />
 
                     <TextView
@@ -213,7 +206,7 @@
                         android:layout_marginTop="4dp"
                         android:fontFamily="@font/montserrat_bold"
                         android:text="0/5"
-                        android:textColor="#3D2817"
+                        android:textColor="@color/text_primary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
@@ -222,7 +215,7 @@
                         android:layout_height="wrap_content"
                         android:fontFamily="@font/montserrat_regular"
                         android:text="Missions"
-                        android:textColor="#8B6F3D"
+                        android:textColor="@color/text_brown_medium"
                         android:textSize="10sp" />
                 </LinearLayout>
 
@@ -241,7 +234,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="🪙"
+                        android:text="&#x1FA99;"
                         android:textSize="22sp" />
 
                     <TextView
@@ -251,7 +244,7 @@
                         android:layout_marginTop="4dp"
                         android:fontFamily="@font/montserrat_bold"
                         android:text="0/50"
-                        android:textColor="#3D2817"
+                        android:textColor="@color/text_primary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
@@ -260,7 +253,7 @@
                         android:layout_height="wrap_content"
                         android:fontFamily="@font/montserrat_regular"
                         android:text="Relics"
-                        android:textColor="#8B6F3D"
+                        android:textColor="@color/text_brown_medium"
                         android:textSize="10sp" />
                 </LinearLayout>
 
@@ -278,7 +271,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="🏆"
+                        android:text="&#x1F3C6;"
                         android:textSize="22sp" />
 
                     <TextView
@@ -287,8 +280,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
                         android:fontFamily="@font/montserrat_bold"
-                        android:text="—"
-                        android:textColor="#3D2817"
+                        android:text="&#x2014;"
+                        android:textColor="@color/text_primary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
@@ -297,12 +290,12 @@
                         android:layout_height="wrap_content"
                         android:fontFamily="@font/montserrat_regular"
                         android:text="Souvenir"
-                        android:textColor="#8B6F3D"
+                        android:textColor="@color/text_brown_medium"
                         android:textSize="10sp" />
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ── Quest progress card ────────────────── -->
+            <!-- â”€â”€ Quest progress card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -323,7 +316,7 @@
                         android:layout_weight="1"
                         android:fontFamily="@font/montserrat_bold"
                         android:text="Your Quest"
-                        android:textColor="@color/black"
+                        android:textColor="@color/text_primary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
@@ -333,7 +326,7 @@
                         android:layout_height="wrap_content"
                         android:fontFamily="@font/montserrat_regular"
                         android:text="0 of 5"
-                        android:textColor="#A0691F"
+                        android:textColor="@color/text_brown_light"
                         android:textSize="13sp"
                         android:textStyle="bold" />
                 </LinearLayout>
@@ -346,8 +339,8 @@
                     android:layout_marginTop="10dp"
                     android:max="100"
                     android:progress="0"
-                    android:progressTint="#FFC107"
-                    android:progressBackgroundTint="#EEE6CF" />
+                    android:progressTint="@color/gold_bright"
+                    android:progressBackgroundTint="@color/bg_separator" />
 
                 <TextView
                     android:id="@+id/tvHomeProgressDetail"
@@ -356,11 +349,11 @@
                     android:layout_marginTop="8dp"
                     android:fontFamily="@font/montserrat_regular"
                     android:text="Begin your journey through the Walled City."
-                    android:textColor="#666666"
+                    android:textColor="@color/text_muted"
                     android:textSize="12sp" />
             </LinearLayout>
 
-            <!-- ── Featured / Continue mission card ───── -->
+            <!-- â”€â”€ Featured / Continue mission card â”€â”€â”€â”€â”€ -->
             <androidx.cardview.widget.CardView
                 android:id="@+id/cardFeaturedMission"
                 android:layout_width="match_parent"
@@ -398,7 +391,7 @@
                         android:layout_height="wrap_content"
                         android:fontFamily="@font/montserrat_bold"
                         android:text="NEXT MISSION"
-                        android:textColor="#FFC107"
+                        android:textColor="@color/gold_bright"
                         android:textSize="10sp"
                         android:textStyle="bold"
                         android:letterSpacing="0.15" />
@@ -421,12 +414,12 @@
                         android:layout_marginTop="2dp"
                         android:fontFamily="@font/montserrat_regular"
                         android:text="Tap to begin your adventure"
-                        android:textColor="#EEEEEE"
+                        android:textColor="#CCCCCC"
                         android:textSize="12sp" />
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 
-            <!-- ── Did You Know? fact card ─────────────── -->
+            <!-- â”€â”€ Did You Know? fact card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -444,7 +437,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="📜"
+                        android:text="&#x1F4DC;"
                         android:textSize="20sp" />
 
                     <TextView
@@ -454,7 +447,7 @@
                         android:layout_weight="1"
                         android:fontFamily="@font/montserrat_bold"
                         android:text="Did You Know?"
-                        android:textColor="#3D2817"
+                        android:textColor="@color/text_primary"
                         android:textSize="15sp"
                         android:textStyle="bold" />
 
@@ -466,8 +459,8 @@
                         android:focusable="true"
                         android:fontFamily="@font/montserrat_bold"
                         android:padding="6dp"
-                        android:text="↻"
-                        android:textColor="#A0691F"
+                        android:text="&#x21BB;"
+                        android:textColor="@color/text_brown_light"
                         android:textSize="18sp" />
                 </LinearLayout>
 
@@ -479,7 +472,7 @@
                     android:fontFamily="@font/montserrat_regular"
                     android:lineSpacingExtra="3dp"
                     android:text=""
-                    android:textColor="#5A4A2C"
+                    android:textColor="@color/text_secondary"
                     android:textSize="13sp" />
             </LinearLayout>
 
@@ -499,7 +492,7 @@
         </LinearLayout>
     </ScrollView>
 
-    <!-- ── MISSIONS TAB CONTENT ─────────────────────────── -->
+    <!-- â”€â”€ MISSIONS TAB CONTENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
     <LinearLayout
         android:id="@+id/layoutMissions"
         android:layout_width="match_parent"
@@ -515,7 +508,7 @@
             android:layout_marginEnd="15dp"
             android:layout_marginTop="10dp"
             android:textSize="13sp"
-            android:textColor="#888888"
+            android:textColor="@color/text_hint_color"
             android:fontFamily="@font/montserrat_regular"
             android:visibility="gone"
             android:layout_width="wrap_content"
@@ -534,7 +527,7 @@
             android:background="@android:color/transparent"
             android:clickable="true"
             android:focusable="true"
-            android:contentDescription="Treasure chest — tap to claim NFT">
+            android:contentDescription="Treasure chest &#x2014; tap to claim NFT">
 
             <ImageView
                 android:id="@+id/imgTreasureChest"
@@ -547,8 +540,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="A treasure has appeared…"
-                android:textColor="#8B4513"
+                android:text="A treasure has appeared&#x2026;"
+                android:textColor="@color/text_brown_accent"
                 android:textSize="14sp"
                 android:textStyle="bold"
                 android:fontFamily="@font/montserrat_bold" />
@@ -558,13 +551,13 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Tap to open"
-                android:textColor="#AA7B3C"
+                android:textColor="@color/text_brown_warm"
                 android:textSize="12sp"
                 android:fontFamily="@font/montserrat_regular" />
 
         </LinearLayout>
 
-        <!-- Legacy NFT claim card — kept hidden -->
+        <!-- Legacy NFT claim card â€” kept hidden -->
         <androidx.cardview.widget.CardView
             android:id="@+id/cardNFTClaim"
             android:layout_width="0dp"
@@ -581,7 +574,7 @@
             android:fontFamily="@font/montserrat_bold"
             android:textSize="22sp"
             android:textAlignment="center"
-            android:textColor="@color/black"
+            android:textColor="@color/text_primary"
             android:textStyle="bold"
             android:text="Mission(s)"
             android:layout_width="wrap_content"
@@ -595,7 +588,7 @@
 
     </LinearLayout>
 
-    <!-- ── COLLECTIBLES TAB CONTENT ─────────────────────── -->
+    <!-- â”€â”€ COLLECTIBLES TAB CONTENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
     <LinearLayout
         android:id="@+id/layoutCollectibles"
         android:layout_width="match_parent"
@@ -624,7 +617,7 @@
                 <TextView
                     android:fontFamily="@font/montserrat_bold"
                     android:textSize="22sp"
-                    android:textColor="@color/black"
+                    android:textColor="@color/text_primary"
                     android:textStyle="bold"
                     android:text="Collectibles"
                     android:layout_width="wrap_content"
@@ -634,7 +627,7 @@
                     android:id="@+id/tvCollectiblesTotal"
                     android:fontFamily="@font/montserrat_regular"
                     android:textSize="13sp"
-                    android:textColor="#888888"
+                    android:textColor="@color/text_hint_color"
                     android:text="0 / 10 collected"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content" />
@@ -653,13 +646,13 @@
                 android:paddingTop="6dp"
                 android:paddingBottom="6dp"
                 android:text="0/50"
-                android:textColor="#E8C96A"
+                android:textColor="@color/gold_text"
                 android:textSize="14sp" />
 
         </LinearLayout>
 
         <View
-            android:background="#EEEEEE"
+            android:background="@color/bg_light_gray"
             android:layout_marginBottom="8dp"
             android:layout_width="match_parent"
             android:layout_height="1dp" />
@@ -674,12 +667,12 @@
 
     </LinearLayout>
 
-    <!-- ── BOTTOM NAVIGATION ─────────────────────────────── -->
+    <!-- â”€â”€ BOTTOM NAVIGATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/bottomNav"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#FFFFFF"
+        android:background="@color/bg_card"
         app:menu="@menu/bottom_nav_menu"
         app:itemIconTint="@color/nav_icon_tint"
         app:itemTextColor="@color/nav_icon_tint"
