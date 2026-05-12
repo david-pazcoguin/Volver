@@ -435,35 +435,35 @@ public class HomeActivity extends AppCompatActivity {
                 "Intramuros Coin",
                 "An 8-reales (peso) silver coin minted during the Spanish Colonial period. " +
                 "The currency carried by merchants and Ilustrados through the gates of Intramuros.",
-                R.drawable.ic_coin, 0, 12));
+                R.drawable.render_coin, 0, 12));
 
         collectibleItems.add(new CollectibleItem(
                 "peineta",
                 "Peineta",
                 "An ornate Spanish hair comb worn by Filipina women during the colonial era. " +
                 "A symbol of elegance, identity, and the blending of cultures.",
-                R.drawable.ic_peineta, 0, 12));
+                R.drawable.render_peineta, 0, 12));
 
         collectibleItems.add(new CollectibleItem(
                 "salakot_elite",
                 "Salakot Elite",
                 "A ceremonial salakot adorned with fine gold engravings, worn by the principalia " +
                 "during official colonial gatherings and religious processions.",
-                R.drawable.ic_salakot, 0, 12));
+                R.drawable.render_salakot, 0, 12));
 
         collectibleItems.add(new CollectibleItem(
                 "farol_de_aceite",
                 "Farol de Aceite",
                 "An oil lantern that lit the cobblestone streets of Intramuros for centuries. " +
                 "Its warm glow guided merchants, soldiers, and friars through the Walled City.",
-                R.drawable.ic_lantern, 0, 12));
+                R.drawable.render_farol, 0, 12));
 
         collectibleItems.add(new CollectibleItem(
                 "pocket_watch",
                 "Antique Pocket Watch",
                 "A tarnished brass pocket watch with Roman numerals and a matching chain. " +
                 "The signature accessory of an educated Ilustrado gentleman.",
-                R.drawable.ic_pocket_watch, 0, 12));
+                R.drawable.render_pocket_watch, 0, 12));
 
         collectiblesAdapter = new CollectiblesAdapter(collectibleItems);
         recyclerCollectibles.setHasFixedSize(false);

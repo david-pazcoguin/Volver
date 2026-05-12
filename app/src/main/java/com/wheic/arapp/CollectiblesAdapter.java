@@ -1,8 +1,12 @@
 package com.wheic.arapp;
 
+import android.app.Dialog;
+import android.content.Context;
+import android.graphics.drawable.ColorDrawable;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -40,6 +44,27 @@ public class CollectiblesAdapter extends RecyclerView.Adapter<CollectiblesAdapte
 
         if (item.getThumbResId() != 0) {
             h.imgThumb.setImageResource(item.getThumbResId());
+        }
+
+        // Tap image to open fullscreen zoom viewer
+        if (item.getThumbResId() != 0) {
+            h.imgThumb.setClickable(true);
+            h.imgThumb.setOnClickListener(v -> {
+                Context ctx = v.getContext();
+                Dialog dialog = new Dialog(ctx);
+                dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+                dialog.setContentView(R.layout.dialog_image_zoom);
+                Window w = dialog.getWindow();
+                if (w != null) {
+                    w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT);
+                    w.setBackgroundDrawable(new ColorDrawable(0));
+                }
+                ZoomableImageView zoomView = dialog.findViewById(R.id.imgZoom);
+                zoomView.setImageResource(item.getThumbResId());
+                dialog.findViewById(R.id.btnCloseZoom).setOnClickListener(x -> dialog.dismiss());
+                dialog.show();
+            });
         }
 
         // Dim card if not yet collected
