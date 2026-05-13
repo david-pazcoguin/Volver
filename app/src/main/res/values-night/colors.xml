@@ -31,6 +31,8 @@
     <color name="gold_pale">#3A3018</color>
     <color name="hero_bg">#1A1818</color>
 
+    <color name="gold_text">#E8C96A</color>
+
     <!-- Accent colors lightened for dark backgrounds -->
     <color name="primary">#C8844A</color>
     <color name="silver">#9090A0</color>

@@ -10,4 +10,9 @@
         <item name="android:windowBackground">@color/bg_page</item>
         <item name="android:statusBarColor">@color/hero_bg</item>
     </style>
+    <style name="Theme.ARApp.Camera" parent="Theme.ARApp">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>

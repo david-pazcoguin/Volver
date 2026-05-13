@@ -18,7 +18,7 @@
         android:paddingEnd="16dp"
         android:paddingTop="10dp"
         android:paddingBottom="8dp"
-        android:gravity="bottom"
+        android:gravity="center_vertical"
         android:background="@color/bg_page">
 
         <ImageView
@@ -634,20 +634,25 @@
 
             </LinearLayout>
 
-            <!-- Total badge -->
-            <TextView
-                android:id="@+id/tvTotalBadge"
+            <!-- Try in AR button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnTryInAR"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:background="@drawable/bg_counter_badge"
                 android:fontFamily="@font/montserrat_bold"
                 android:paddingStart="14dp"
                 android:paddingEnd="14dp"
-                android:paddingTop="6dp"
-                android:paddingBottom="6dp"
-                android:text="0/50"
+                android:text="Try in AR"
                 android:textColor="@color/gold_text"
-                android:textSize="14sp" />
+                android:textSize="13sp"
+                app:strokeColor="@color/gold_text"
+                app:cornerRadius="20dp"
+                app:icon="@drawable/ic_ar_demo"
+                app:iconTint="@color/gold_text"
+                app:iconSize="16dp"
+                app:iconGravity="start"
+                app:iconPadding="4dp" />
 
         </LinearLayout>
 

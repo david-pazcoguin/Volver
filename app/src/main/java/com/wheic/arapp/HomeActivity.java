@@ -87,7 +87,7 @@ public class HomeActivity extends AppCompatActivity {
     private CollectiblesAdapter collectiblesAdapter;
     private List<CollectibleItem> collectibleItems;
     private TextView tvCollectiblesTotal;
-    private TextView tvTotalBadge;
+    private com.google.android.material.button.MaterialButton btnTryInAR;
 
     // ── Nav ─────────────────────────────────────────────
     private BottomNavigationView bottomNav;
@@ -174,7 +174,7 @@ public class HomeActivity extends AppCompatActivity {
         layoutCollectibles = findViewById(R.id.layoutCollectibles);
         recyclerCollectibles = findViewById(R.id.recyclerCollectibles);
         tvCollectiblesTotal  = findViewById(R.id.tvCollectiblesTotal);
-        tvTotalBadge         = findViewById(R.id.tvTotalBadge);
+        btnTryInAR           = findViewById(R.id.btnTryInAR);
         bottomNav            = findViewById(R.id.bottomNav);
 
         treasureChestContainer.setOnClickListener(v -> onTreasureChestTapped());
@@ -197,6 +197,15 @@ public class HomeActivity extends AppCompatActivity {
         View statChip = findViewById(R.id.statChip);
         if (statChip != null) {
             statChip.setOnClickListener(v -> startActivity(new Intent(this, SettingActivity.class)));
+        }
+
+        if (btnTryInAR != null) {
+            btnTryInAR.setOnClickListener(v -> {
+                Intent intent = new Intent(this, DemoARActivity.class);
+                // Default to intramuros_coin; user can switch inside the AR screen
+                intent.putExtra(DemoARActivity.EXTRA_RELIC_ID, "intramuros_coin");
+                startActivity(intent);
+            });
         }
 
         if (BuildConfig.DEBUG && tvFullName != null) {
@@ -446,7 +455,7 @@ public class HomeActivity extends AppCompatActivity {
 
         collectibleItems.add(new CollectibleItem(
                 "salakot_elite",
-                "Salakot Elite",
+                "Salakot",
                 "A ceremonial salakot adorned with fine gold engravings, worn by the principalia " +
                 "during official colonial gatherings and religious processions.",
                 R.drawable.render_salakot, 0, 12));
@@ -488,8 +497,6 @@ public class HomeActivity extends AppCompatActivity {
         int maxTotal = collectibleItems.size() * 12;
         if (tvCollectiblesTotal != null)
             tvCollectiblesTotal.setText(total + " / " + maxTotal + " collected");
-        if (tvTotalBadge != null)
-            tvTotalBadge.setText(total + "/" + maxTotal);
     }
 
     // ──────────────────────────────────────────────────────────────
