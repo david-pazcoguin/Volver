@@ -24,7 +24,7 @@
     <color name="primary">#8B4513</color>   <!-- Heritage saddle-brown, replaces light blue -->
     <color name="gold_accent">#C4922A</color>
     <color name="gold_bright">#FFC107</color>
-    <color name="gold_text">#E8C96A</color>
+    <color name="gold_text">#A07800</color>
     <color name="gold_hero">#F5E6C0</color>
     <color name="blue_nft">#2081E2</color>  <!-- OpenSea/blockchain brand blue — fixed -->
 

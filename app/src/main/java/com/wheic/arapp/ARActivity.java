@@ -1536,7 +1536,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             case "peineta":
                 return "Peineta";
             case "salakot_elite":
-                return "Salakot Elite";
+                return "Salakot";
             case "farol_de_aceite":
                 return "Farol de Aceite";
             case "pocket_watch":
