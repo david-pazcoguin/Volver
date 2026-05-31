@@ -573,26 +573,9 @@ public class HomeActivity extends AppCompatActivity {
 
     private void buildMissionList() {
         arHelpers = new ArrayList<>();
-        arHelpers.add(new ARHelper("Fort Santiago", "", 14.594265, 120.970425,
-                "fort_santiago", "José Rizal",
-                "In this cell, my thoughts turned to freedom. I leave behind my last poem, " +
-                "hidden within these walls. Seek it, and understand what we fought for.",
-                "rizal_character",
-                new double[]{14.594230, 14.594275}, new double[]{120.970460, 120.970507},
-                "intramuros_coin"));
-        arHelpers.add(new ARHelper("Baluarte de San Diego", "", 14.585491, 120.975702,
-                "baluarte_san_diego", "Antonio Sedeño",
-                "From this tower, we watched the galleons approach across Manila Bay. " +
-                "Help me raise these walls higher — the city's defence depends on us.",
-                "sedeno_character",
-                new double[]{14.585520, 14.585565}, new double[]{120.975730, 120.975683},
-                "farol_de_aceite"));
         arHelpers.add(new ARHelper("Casa Manila", "", 14.589630881841018, 120.97515722599451,
-                "casa_manila", "Imelda Marcos",
-                "This home revives our bahay na bato legacy. Every room tells a story " +
-                "of the merchant families who shaped colonial Manila. Let me show you.",
-                "marcos_character",
-                // 5 relic stages × 2 coins each, in order. The user must collect
+                "casa_manila",
+                // 5 relic stages × 2 relics each, in order. The user must collect
                 // each relic pair before the next pair appears.
                 new double[]{
                     // Stage 1: Intramuros Coin
@@ -620,25 +603,8 @@ public class HomeActivity extends AppCompatActivity {
                     "farol_de_aceite", "farol_de_aceite",
                     "pocket_watch",    "pocket_watch"
                 }));
-        arHelpers.add(new ARHelper("Museo de Intramuros", "", 14.589853, 120.973438,
-                "museo_intramuros", "Martin Tinio Jr.",
-                "These stones whisper Manila's four-hundred-year saga. " +
-                "Match the artifacts to their era and unlock the city's buried secrets.",
-                "tinio_character",
-                new double[]{14.589880, 14.589925}, new double[]{120.973410, 120.973457},
-                "salakot_elite"));
-        arHelpers.add(new ARHelper("Centro de Turismo", "", 14.590135, 120.973367,
-                "centro_turismo", "St. Ignatius of Loyola",
-                "From ruins, renewal rises. You have walked the length of the Walled City " +
-                "and kept the flame of memory alive. The Intramuros Souvenir is yours.",
-                "ignatius_character",
-                new double[]{14.590160, 14.590115}, new double[]{120.973395, 120.973442},
-                "pocket_watch"));
         arHelpers.add(new ARHelper("Lyceum of the Philippines University", "", 14.591600276085643, 120.97778918301911,
-                "lpu", "José P. Laurel",
-                "This university was born from the dream that education could rebuild a nation. " +
-                "Every relic you find here carries the spirit of those who shaped modern Manila.",
-                "san_bartolome_church",
+                "lpu",
                 new double[]{
                     // Stage 1: Intramuros Coin
                     14.59158019920811, 14.591682008790869,

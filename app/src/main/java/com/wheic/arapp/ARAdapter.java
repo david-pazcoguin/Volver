@@ -69,14 +69,11 @@ public class ARAdapter extends RecyclerView.Adapter<ARAdapter.ViewHolder>
                 bundle.putString("Content",          ARHelper.getContent());
                 bundle.putDouble("Latitude",         ARHelper.getLatitude());
                 bundle.putDouble("Longitude",        ARHelper.getLongitude());
-                bundle.putDoubleArray("CoinLatitudes",  ARHelper.getCoinLatitudes());
-                bundle.putDoubleArray("CoinLongitudes", ARHelper.getCoinLongitudes());
-                bundle.putStringArray("CoinRelicIds",   ARHelper.getCoinRelicIds());
+                bundle.putDoubleArray("RelicLatitudes",  ARHelper.getRelicLatitudes());
+                bundle.putDoubleArray("RelicLongitudes", ARHelper.getRelicLongitudes());
+                bundle.putStringArray("RelicIds",        ARHelper.getRelicIds());
                 bundle.putString("CollectibleId",    ARHelper.getCollectibleId());
                 bundle.putString("MissionId",        ARHelper.getMissionId());
-                bundle.putString("CharacterName",    ARHelper.getCharacterName());
-                bundle.putString("CharacterDialogue",ARHelper.getCharacterDialogue());
-                bundle.putString("ModelFileName",    ARHelper.getModelFileName());
 
                 intent.putExtras(bundle);
                 ((Activity) context).startActivity(intent);
