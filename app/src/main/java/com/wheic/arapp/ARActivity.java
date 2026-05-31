@@ -26,7 +26,6 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
@@ -92,15 +91,12 @@ import com.google.ar.core.Plane;
 import com.google.ar.core.Pose;
 import com.google.ar.sceneform.math.Quaternion;
 
-public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInitListener {
+public class ARActivity extends AppCompatActivity {
 
     private static final String TAG = "ARActivityTag";
 
     // ── AR ──────────────────────────────────────────────────────────
     private ArFragment arCam;
-    private boolean hasPlacedModel = false;
-    private CompletableFuture<ModelRenderable> modelFuture;
-    private boolean modelLoadFailed = false;
     private final Scene.OnUpdateListener sceneUpdateListener = this::onSceneUpdate;
     private int diagnosticFrameCount = 0;
     private boolean cameraStreamDiagLogged = false;
@@ -118,14 +114,14 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private double targetAltitude;
     private boolean isTargetReached = false;
 
-    // GPS positions for each coin (one entry per coin slot)
-    private double[] coinLatitudes;
-    private double[] coinLongitudes;
-    // Optional: parallel array of relic IDs (one per coin slot). When non-null,
-    // each coin spawns with that relic's GLB model and credits that relic on tap.
-    // When null, every coin uses the default coin model and the mission's
+    // GPS positions for each relic (one entry per relic slot)
+    private double[] relicLatitudes;
+    private double[] relicLongitudes;
+    // Optional: parallel array of relic IDs (one per relic slot). When non-null,
+    // each slot spawns with its own GLB model and credits that relic on tap.
+    // When null, every slot uses the default coin model and the mission's
     // single `collectibleId`. Used for the Casa Manila staged mission.
-    private String[] coinRelicIds;
+    private String[] relicIds;
 
     // Last GPS fix — used to compute bearing toward the coin spot
     private double lastUserLat = Double.NaN;
@@ -174,27 +170,18 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         public void onAccuracyChanged(Sensor sensor, int accuracy) {
         }
     };
-    private boolean hasGreeted = false; // play dialogue only once per visit
     private boolean geospatialConfigured = false;
 
-    // ── Mission / character data ────────────────────────────────────
+    // ── Mission data ────────────────────────────────────────────────
     private String missionId;
-    private String missionName; // location name e.g. "Fort Santiago"
-    private String characterName;
-    private String characterDialogue;
-    private String modelFileName;
-    private String collectibleId; // SharedPreferences key for awarding collectible items
+    private String missionName;
+    private String collectibleId;
     private String username;
-
-    // ── TTS ─────────────────────────────────────────────────────────
-    private TextToSpeech ttsEngine;
-    private boolean ttsReady = false;
 
     // ── UI ──────────────────────────────────────────────────────────
     private View locateLabelContainer;
     private TextView tvLocateLabel; // mission name inside the pill
     private TextView tvLocateDistance; // distance line inside the pill
-    private TextView tvCharacterName;
     private TextView tvCharacterHint;
 
     // ── Turn-by-turn directions ──────────────────────────────────────
@@ -340,16 +327,16 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         targetLatitude = extras.getDouble("Latitude");
         targetLongitude = extras.getDouble("Longitude");
         targetAltitude = extras.getDouble("Altitude", Double.NaN);
-        double[] cl = extras.getDoubleArray("CoinLatitudes");
-        double[] cn = extras.getDoubleArray("CoinLongitudes");
-        coinLatitudes = (cl != null && cl.length > 0) ? cl : new double[] { targetLatitude };
-        coinLongitudes = (cn != null && cn.length > 0) ? cn : new double[] { targetLongitude };
-        coinSlotCollected = new boolean[coinLatitudes.length];
-        String[] cri = extras.getStringArray("CoinRelicIds");
-        if (cri != null && cri.length == coinLatitudes.length) {
-            coinRelicIds = cri;
+        double[] cl = extras.getDoubleArray("RelicLatitudes");
+        double[] cn = extras.getDoubleArray("RelicLongitudes");
+        relicLatitudes = (cl != null && cl.length > 0) ? cl : new double[] { targetLatitude };
+        relicLongitudes = (cn != null && cn.length > 0) ? cn : new double[] { targetLongitude };
+        coinSlotCollected = new boolean[relicLatitudes.length];
+        String[] cri = extras.getStringArray("RelicIds");
+        if (cri != null && cri.length == relicLatitudes.length) {
+            relicIds = cri;
         } else {
-            coinRelicIds = null;
+            relicIds = null;
         }
 
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
@@ -358,9 +345,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         }
         missionId = extras.getString("MissionId", "unknown");
         missionName = extras.getString("MissionName", "Mission");
-        characterName = extras.getString("CharacterName", "Guide");
-        characterDialogue = extras.getString("CharacterDialogue", "Welcome.");
-        modelFileName = extras.getString("ModelFileName", "san_bartolome_church");
         collectibleId = extras.getString("CollectibleId", missionId);
 
         // Validate coordinates
@@ -373,11 +357,9 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
         username = SecurePrefs.get(this).getString("username", "");
 
-        // Bind character overlay views (defined in ar_activity.xml)
         locateLabelContainer = findViewById(R.id.locateLabelContainer);
         tvLocateLabel = findViewById(R.id.tvLocateLabel);
         tvLocateDistance = findViewById(R.id.tvLocateDistance);
-        tvCharacterName = findViewById(R.id.tvCharacterName);
         tvCharacterHint = findViewById(R.id.tvCharacterHint);
 
         // Show locate pill during navigation phase
@@ -473,7 +455,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             }, 5000);
         }
 
-        ttsEngine = new TextToSpeech(this, this);
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
 
         locationCallback = new LocationCallback() {
@@ -517,7 +498,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         }
 
         requestLocationPermission();
-        preloadCharacterModel();
         preloadCoinModel();
         setupMinimap();
         setupTapListener();
@@ -547,8 +527,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             locateLabelContainer.bringToFront();
         if (directionBanner != null)
             directionBanner.bringToFront();
-        if (tvCharacterName != null)
-            tvCharacterName.bringToFront();
         if (tvCharacterHint != null)
             tvCharacterHint.bringToFront();
     }
@@ -565,8 +543,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         if (arCam != null && arCam.getArSceneView() != null) {
             arCam.getArSceneView().getScene().removeOnUpdateListener(sceneUpdateListener);
         }
-        if (ttsEngine != null)
-            ttsEngine.stop();
     }
 
     @Override
@@ -574,10 +550,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         locationHandler.removeCallbacks(locationRunnable);
         if (navManager != null)
             navManager.destroy();
-        if (ttsEngine != null) {
-            ttsEngine.shutdown();
-            ttsEngine = null;
-        }
         super.onDestroy();
     }
 
@@ -656,34 +628,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     // ──────────────────────────────────────────────────────────────────
     // Model loading
     // ──────────────────────────────────────────────────────────────────
-
-    /**
-     * Tries to load the character-specific GLB (e.g. rizal_character.glb).
-     * Falls back to san_bartolome_church.glb if the file is not in res/raw/ yet.
-     *
-     * To add a real model: place the .glb file in app/src/main/res/raw/
-     * using the exact filename assigned in HomeActivity (e.g. rizal_character.glb).
-     */
-    private void preloadCharacterModel() {
-        int resId = getResources().getIdentifier(modelFileName, "raw", getPackageName());
-        if (resId == 0) {
-            Log.w(TAG, "Model '" + modelFileName + "' not found — using fallback model.");
-            resId = R.raw.san_bartolome_church;
-        }
-
-        modelFuture = ModelRenderable.builder()
-                .setSource(this, resId)
-                .setIsFilamentGltf(true)
-                .build();
-
-        modelFuture.exceptionally(throwable -> {
-            Log.e(TAG, "Failed to load model: " + throwable.getMessage());
-            modelLoadFailed = true;
-            runOnUiThread(() -> Toast.makeText(this, "Failed to load 3D model. Please restart.",
-                    Toast.LENGTH_LONG).show());
-            return null;
-        });
-    }
 
     // ──────────────────────────────────────────────────────────────────
     // Location
@@ -889,19 +833,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 tvMapCompassIcon.setText("🧭");
         }
 
-        // Hide the legacy character-name banner permanently—its position
-        // collides with the camera notch and the relic HUD already conveys
-        // everything the user needs.
-        if (tvCharacterName != null)
-            tvCharacterName.setVisibility(View.GONE);
         updateHint("Find and tap the floating coin to complete the mission!");
-
-        // Auto-speak the mission dialogue (once per visit)
-        if (!hasGreeted) {
-            hasGreeted = true;
-            if (ttsReady)
-                speakText(characterDialogue);
-        }
 
         Toast.makeText(this, "You reached the mission! Find the floating coin!",
                 Toast.LENGTH_LONG).show();
@@ -1053,9 +985,9 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         double aimLat = targetLatitude;
         double aimLng = targetLongitude;
         if (isTargetReached) {
-            if (slot >= 0 && coinLatitudes != null && slot < coinLatitudes.length) {
-                aimLat = coinLatitudes[slot];
-                aimLng = coinLongitudes[slot];
+            if (slot >= 0 && relicLatitudes != null && slot < relicLatitudes.length) {
+                aimLat = relicLatitudes[slot];
+                aimLng = relicLongitudes[slot];
             }
         }
 
@@ -1101,42 +1033,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     // ──────────────────────────────────────────────────────────────────
 
     private void setupTapListener() {
-        if (arCam == null)
-            return;
-        // Collection is BUTTON-ONLY. No tap listener on scene or nodes.
-
-        arCam.setOnTapArPlaneListener((HitResult hitResult, Plane plane, MotionEvent event) -> {
-            if (!isTargetReached) {
-                Toast.makeText(this, "Reach the mission location first!", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            if (hasPlacedModel) {
-                Toast.makeText(this, "Character already placed.", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            if (modelLoadFailed) {
-                Toast.makeText(this, "Model failed to load. Please restart.", Toast.LENGTH_LONG).show();
-                return;
-            }
-            if (modelFuture == null || !modelFuture.isDone() || modelFuture.isCompletedExceptionally()) {
-                Toast.makeText(this, "Model still loading — please wait.", Toast.LENGTH_SHORT).show();
-                return;
-            }
-
-            try {
-                // Try geospatial anchor first, fall back to plane hit-result anchor
-                Anchor anchor = createMissionAnchor();
-                if (anchor == null) {
-                    anchor = hitResult.createAnchor();
-                }
-                placeModel(anchor, modelFuture.get());
-                hasPlacedModel = true;
-                onMissionModelPlaced();
-            } catch (Exception e) {
-                Log.e(TAG, "Error placing model", e);
-                Toast.makeText(this, "Error placing model. Try tapping again.", Toast.LENGTH_LONG).show();
-            }
-        });
+        // Collection is button-only — no tap listener needed.
     }
 
     /**
@@ -1186,30 +1083,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         return earth != null && earth.getTrackingState() == TrackingState.TRACKING;
     }
 
-    private Anchor createMissionAnchor() {
-        if (!isGeospatialAvailable()) {
-            return null;
-        }
 
-        Session session = arCam.getArSceneView().getSession();
-        Earth earth = session != null ? session.getEarth() : null;
-        if (earth == null || earth.getTrackingState() != TrackingState.TRACKING) {
-            return null;
-        }
-
-        GeospatialPose cameraPose = earth.getCameraGeospatialPose();
-        if (cameraPose.getHorizontalAccuracy() >= 10f) {
-            return null;
-        }
-
-        double altitude = Double.isNaN(targetAltitude) ? cameraPose.getAltitude() : targetAltitude;
-        try {
-            return earth.createAnchor(targetLatitude, targetLongitude, altitude, 0f, 0f, 0f, 1f);
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to create geospatial anchor, will use plane anchor.", e);
-            return null;
-        }
-    }
 
     /**
      * Fires an async terrain-anchor request for the given slot.
@@ -1232,7 +1106,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             // Quaternion is 4 individual floats (identity = 0,0,0,1).
             // Callback is invoked on the AR GL thread — safe for Sceneform node ops.
             earth.resolveAnchorOnTerrainAsync(
-                    coinLatitudes[coinIdx], coinLongitudes[coinIdx],
+                    relicLatitudes[coinIdx], relicLongitudes[coinIdx],
                     1.6,  // 1.6 m above terrain ≈ eye/chest level; Google Maps provides ground truth
                     0f, 0f, 0f, 1f,
                     (anchor, state) -> {
@@ -1292,30 +1166,26 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                     + " relic=" + relicIdForThisCoin
                     + " geospatial=" + isGeospatialAvailable());
 
-            if (coinRelicIds != null) {
+            if (relicIds != null) {
                 final String relicName = displayNameForRelic(capturedRelicId);
-                final int totalRelics = coinLatitudes.length;
+                final int totalRelics = relicLatitudes.length;
                 final int slot = capturedIdx + 1;
                 runOnUiThread(() -> {
                     Toast.makeText(this,
                             "Find the " + relicName + " (" + slot + " of " + totalRelics + ")",
                             Toast.LENGTH_LONG).show();
                     updateHint("Find the " + relicName + " — walk close and press Collect.");
-                    if (tvCharacterName != null)
-                        tvCharacterName.setVisibility(View.GONE);
                 });
             } else if (coinAnchorNodes.size() == 1) {
                 runOnUiThread(() -> {
                     Toast.makeText(this,
-                            coinLatitudes.length > 1
+                            relicLatitudes.length > 1
                                     ? "Coins are floating nearby! Find and tap them!"
                                     : "A coin is floating nearby! Find and tap it!",
                             Toast.LENGTH_LONG).show();
-                    updateHint(coinLatitudes.length > 1
+                    updateHint(relicLatitudes.length > 1
                             ? "Find the floating coins and tap them to complete the mission!"
                             : "Find the floating coin and tap it to complete the mission!");
-                    if (tvCharacterName != null)
-                        tvCharacterName.setVisibility(View.GONE);
                 });
             }
         } catch (Exception e) {
@@ -1324,21 +1194,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             // rather than blocking permanently on a slot that failed to attach.
             terrainAnchorPending.put(coinIdx, false);
         }
-    }
-
-    private void placeModel(Anchor anchor, ModelRenderable renderable) {
-        AnchorNode anchorNode = new AnchorNode(anchor);
-        anchorNode.setParent(arCam.getArSceneView().getScene());
-
-        TransformableNode model = new TransformableNode(arCam.getTransformationSystem());
-        model.setParent(anchorNode);
-        model.setRenderable(renderable);
-        model.setLocalScale(new Vector3(0.01f, 0.01f, 0.01f));
-        model.select();
-
-        model.setOnTapListener((hitResult, node) -> speakText(characterDialogue));
-
-        updateHint("Tap the coin to hear the story. Collect the coin to complete this mission!");
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -1397,11 +1252,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
                 });
     }
 
-    /** Fire-and-forget overload for the legacy plane-tap placement flow. */
-    private void onMissionModelPlaced() {
-        onMissionModelPlaced(null, null);
-    }
-
     private void showNFTUnlockedDialog() {
         if (isFinishing() || isDestroyed())
             return;
@@ -1415,33 +1265,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // TTS
-    // ──────────────────────────────────────────────────────────────────
-
-    @Override
-    public void onInit(int status) {
-        if (isFinishing() || isDestroyed())
-            return;
-        if (status == TextToSpeech.SUCCESS) {
-            ttsEngine.setLanguage(Locale.US);
-            ttsReady = true;
-            // If the user arrived at the location before TTS was ready, speak now
-            if (isTargetReached && hasGreeted) {
-                speakText(characterDialogue);
-            }
-        }
-    }
-
-    private void speakText(String text) {
-        try {
-            if (ttsEngine != null && ttsReady && text != null && !text.isEmpty()) {
-                ttsEngine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "character_dialogue");
-            }
-        } catch (Exception e) {
-            // TTS may have been shutdown between the null-check and speak() call
-        }
-    }
-
     // ──────────────────────────────────────────────────────────────────
     // Coin model preload
     // ──────────────────────────────────────────────────────────────────
@@ -1459,9 +1282,9 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
         // For staged-relic missions (e.g. Casa Manila), preload one renderable
         // per unique relic id so each spawn uses the correct GLB.
-        if (coinRelicIds != null) {
+        if (relicIds != null) {
             Set<String> unique = new HashSet<>();
-            for (String id : coinRelicIds)
+            for (String id : relicIds)
                 if (id != null)
                     unique.add(id);
             for (String relicId : unique) {
@@ -1567,10 +1390,10 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         // Pre-fill the marker list with nulls so indices align with relic
         // indices, then show ONLY the first relic's red dot. Subsequent dots
         // are added in collectCoin() once the previous relic is collected.
-        if (coinLatitudes != null && coinLongitudes != null) {
-            for (int i = 0; i < coinLatitudes.length; i++)
+        if (relicLatitudes != null && relicLongitudes != null) {
+            for (int i = 0; i < relicLatitudes.length; i++)
                 coinMapMarkers.add(null);
-            if (coinLatitudes.length > 0) {
+            if (relicLatitudes.length > 0) {
                 showRelicDot(0);
             }
         }
@@ -1580,12 +1403,12 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private void showRelicDot(int index) {
         if (minimap == null)
             return;
-        if (coinLatitudes == null || index < 0 || index >= coinLatitudes.length)
+        if (relicLatitudes == null || index < 0 || index >= relicLatitudes.length)
             return;
         if (index < coinMapMarkers.size() && coinMapMarkers.get(index) != null)
             return;
         Marker m = new Marker(minimap);
-        m.setPosition(new GeoPoint(coinLatitudes[index], coinLongitudes[index]));
+        m.setPosition(new GeoPoint(relicLatitudes[index], relicLongitudes[index]));
         m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER);
         m.setIcon(createDotDrawable(Color.parseColor("#E53935"), 18));
         m.setTitle("Relic " + (index + 1));
@@ -1657,9 +1480,9 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
      * or next staged), or -1 if none. Shared by HUD + compass + minimap.
      */
     private int currentRelicSlot() {
-        if (coinLatitudes == null || coinLatitudes.length == 0)
+        if (relicLatitudes == null || relicLatitudes.length == 0)
             return -1;
-        if (coinSlotCollected == null || coinSlotCollected.length != coinLatitudes.length)
+        if (coinSlotCollected == null || coinSlotCollected.length != relicLatitudes.length)
             return -1;
         // First slot that hasn't been collected yet is the active one.
         for (int i = 0; i < coinSlotCollected.length; i++) {
@@ -1672,13 +1495,13 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
     private void updateRelicHud() {
         if (!isTargetReached)
             return;
-        if (coinRelicIds == null || coinLatitudes == null)
+        if (relicIds == null || relicLatitudes == null)
             return;
         if (Double.isNaN(lastUserLat) || Double.isNaN(lastUserLng))
             return;
 
         int slot = currentRelicSlot();
-        if (slot < 0 || slot >= coinLatitudes.length) {
+        if (slot < 0 || slot >= relicLatitudes.length) {
             runOnUiThread(() -> {
                 if (collectButtonContainer != null)
                     collectButtonContainer.setVisibility(View.GONE);
@@ -1693,7 +1516,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             return;
         }
 
-        String relicName = displayNameForRelic(coinRelicIds[slot]);
+        String relicName = displayNameForRelic(relicIds[slot]);
         boolean relicSpawned = slot < coinAnchorNodes.size() && coinAnchorNodes.get(slot) != null;
 
         // Distance: when the relic is spawned in the scene we use the actual
@@ -1712,7 +1535,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         } else {
             float[] d = new float[1];
             Location.distanceBetween(lastUserLat, lastUserLng,
-                    coinLatitudes[slot], coinLongitudes[slot], d);
+                    relicLatitudes[slot], relicLongitudes[slot], d);
             distMeters = d[0];
         }
         int meters = Math.round(distMeters);
@@ -1775,8 +1598,8 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             collectButtonContainer.setClickable(false);
             collectButtonContainer.setVisibility(View.GONE);
         }
-        String relicId = (coinRelicIds != null && slot < coinRelicIds.length)
-                ? coinRelicIds[slot] : null;
+        String relicId = (relicIds != null && slot < relicIds.length)
+                ? relicIds[slot] : null;
         String relicName = displayNameForRelic(relicId);
         playCollectAnimation(relicName);
         collectCoin(slot, anchorNode, relicId);
@@ -1866,7 +1689,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         // ── unreachable legacy logic, retained for reference ──
         if (!isGeospatialAvailable())
             return;
-        if (coinRelicIds == null)
+        if (relicIds == null)
             return;
         if (coinAnchorNodes.isEmpty())
             return;
@@ -1878,7 +1701,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             return; // already collected
         float[] d = new float[1];
         Location.distanceBetween(lastUserLat, lastUserLng,
-                coinLatitudes[lastIdx], coinLongitudes[lastIdx], d);
+                relicLatitudes[lastIdx], relicLongitudes[lastIdx], d);
         if (d[0] <= RELIC_DESPAWN_RADIUS_M)
             return;
 
@@ -1953,8 +1776,8 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         while (coinAnchorNodes.size() <= slot) coinAnchorNodes.add(null);
         if (coinAnchorNodes.get(slot) != null) return; // already spawned
         // Only pre-warm when the model is already in memory.
-        String relicId = (coinRelicIds != null && slot < coinRelicIds.length)
-                ? coinRelicIds[slot] : null;
+        String relicId = (relicIds != null && slot < relicIds.length)
+                ? relicIds[slot] : null;
         ModelRenderable renderable;
         if (relicId != null) {
             renderable = resolvedRelicRenderables.get(relicId);
@@ -1975,11 +1798,11 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
      */
     private void preResolveUpcomingSlotAnchors() {
         if (!isGeospatialAvailable()) return;
-        if (coinLatitudes == null) return;
+        if (relicLatitudes == null) return;
         int current = currentRelicSlot();
         if (current < 0) return;
         // Pre-resolve every slot after the current active one.
-        for (int s = current + 1; s < coinLatitudes.length; s++) {
+        for (int s = current + 1; s < relicLatitudes.length; s++) {
             if (coinSlotCollected != null && s < coinSlotCollected.length && coinSlotCollected[s]) continue;
             preResolveNextSlotAnchor(s);
         }
@@ -1997,13 +1820,13 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
      */
     private void preResolveNextSlotAnchor(int slot) {
         if (!isGeospatialAvailable()) return;
-        if (coinLatitudes == null || slot >= coinLatitudes.length) return;
+        if (relicLatitudes == null || slot >= relicLatitudes.length) return;
         if (preResolvedAnchors.containsKey(slot)) return;             // already resolved
         if (Boolean.TRUE.equals(nextSlotPreWarmPending.get(slot))) return; // in-flight
         if (Boolean.TRUE.equals(terrainAnchorPending.get(slot))) return;   // spawn req in-flight
 
-        String relicId = (coinRelicIds != null && slot < coinRelicIds.length)
-                ? coinRelicIds[slot] : null;
+        String relicId = (relicIds != null && slot < relicIds.length)
+                ? relicIds[slot] : null;
         ModelRenderable renderable;
         if (relicId != null) {
             renderable = resolvedRelicRenderables.get(relicId);
@@ -2021,7 +1844,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
         Log.d(TAG, "preResolveNextSlotAnchor: firing for slot=" + slot);
         try {
             earth.resolveAnchorOnTerrainAsync(
-                    coinLatitudes[slot], coinLongitudes[slot],
+                    relicLatitudes[slot], relicLongitudes[slot],
                     1.6, 0f, 0f, 0f, 1f,
                     (anchor, state) -> {
                         if (state == Anchor.TerrainAnchorState.SUCCESS) {
@@ -2119,17 +1942,17 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
         // Brief delay after collection so the old relic's disappear animation
         // finishes before the next one spawns in the same direction.
-        if (coinRelicIds != null && System.currentTimeMillis() - lastCollectedTimeMs < 1500L)
+        if (relicIds != null && System.currentTimeMillis() - lastCollectedTimeMs < 1500L)
             return;
 
         // ── Spawn-radius gate (applies to ALL devices) ────────────────────────────
         // The relic only spawns once the user is within RELIC_SPAWN_RADIUS_M of
         // the configured GPS coordinate. Beyond that the HUD shows "walk closer".
         if (!Double.isNaN(lastUserLat) && !Double.isNaN(lastUserLng)
-                && coinIdx < coinLatitudes.length) {
+                && coinIdx < relicLatitudes.length) {
             float[] dGate = new float[1];
             Location.distanceBetween(lastUserLat, lastUserLng,
-                    coinLatitudes[coinIdx], coinLongitudes[coinIdx], dGate);
+                    relicLatitudes[coinIdx], relicLongitudes[coinIdx], dGate);
             if (dGate[0] > RELIC_SPAWN_RADIUS_M) return;
         }
 
@@ -2152,7 +1975,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
         // Pick the right renderable: per-relic for staged missions, else default.
         ModelRenderable coinRenderable = null;
-        String relicIdForThisCoin = (coinRelicIds != null) ? coinRelicIds[coinIdx] : null;
+        String relicIdForThisCoin = (relicIds != null) ? relicIds[coinIdx] : null;
         if (relicIdForThisCoin != null) {
             CompletableFuture<ModelRenderable> fut = relicModelFutures.get(relicIdForThisCoin);
             if (fut == null || !fut.isDone()) {
@@ -2230,7 +2053,7 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             // GPS bearing + distance from user to the configured coord.
             float[] geo = new float[2];
             Location.distanceBetween(lastUserLat, lastUserLng,
-                    coinLatitudes[coinIdx], coinLongitudes[coinIdx], geo);
+                    relicLatitudes[coinIdx], relicLongitudes[coinIdx], geo);
             float gpsDistance = geo[0];                  // metres
             float gpsBearingDeg = geo[1];                // 0=N, +clockwise, range -180..180
 
@@ -2368,13 +2191,13 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
 
         // Reveal the next relic’s red dot now that this one is collected.
         final int nextIdx = index + 1;
-        if (coinLatitudes != null && nextIdx < coinLatitudes.length) {
+        if (relicLatitudes != null && nextIdx < relicLatitudes.length) {
             runOnUiThread(() -> showRelicDot(nextIdx));
         }
 
         // If this mission has multiple coins, only complete after the LAST one is
         // tapped.
-        int totalCoins = (coinLatitudes != null) ? coinLatitudes.length : 1;
+        int totalCoins = (relicLatitudes != null) ? relicLatitudes.length : 1;
         if (coinsCollected < totalCoins) {
             int remaining = totalCoins - coinsCollected;
             final String collectedName = (relicIdOverride != null)
@@ -2383,8 +2206,8 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             // For staged missions, hint at the next relic so the user knows what to look
             // for.
             final String nextHint;
-            if (coinRelicIds != null && coinsCollected < coinRelicIds.length) {
-                nextHint = "Now find the " + displayNameForRelic(coinRelicIds[coinsCollected]) + ".";
+            if (relicIds != null && coinsCollected < relicIds.length) {
+                nextHint = "Now find the " + displayNameForRelic(relicIds[coinsCollected]) + ".";
             } else {
                 nextHint = "Find the next one!";
             }
@@ -2398,9 +2221,6 @@ public class ARActivity extends AppCompatActivity implements TextToSpeech.OnInit
             return;
         }
 
-        // Optimistic UI — instant feedback, but the final dialog is deferred
-        // until Firestore (including its offline queue) confirms the write.
-        hasPlacedModel = true;
         updateHint("Saving your progress...");
         boolean offline = !NetworkUtils.isConnected(this);
 
