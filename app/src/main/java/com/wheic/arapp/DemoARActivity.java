@@ -232,14 +232,14 @@ public class DemoARActivity extends AppCompatActivity {
     }
 
     private float scaleForRelic(String id) {
-        if (id == null) return 0.30f;
+        if (id == null) return 0.21f;
         switch (id) {
-            case "intramuros_coin": return 0.30f;
-            case "peineta":         return 1.30f;
-            case "salakot_elite":   return 0.65f;
-            case "farol_de_aceite": return 0.80f;
-            case "pocket_watch":    return 3.20f;
-            default: return 0.30f;
+            case "intramuros_coin": return 0.21f;
+            case "peineta":         return 0.91f;
+            case "salakot_elite":   return 0.455f;
+            case "farol_de_aceite": return 0.56f;
+            case "pocket_watch":    return 2.24f;
+            default: return 0.21f;
         }
     }
 

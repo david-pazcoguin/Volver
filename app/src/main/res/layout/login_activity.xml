@@ -67,7 +67,7 @@
                 <!-- Username label -->
                 <TextView
                     android:fontFamily="@font/montserrat_bold"
-                    android:text="Username"
+                    android:text="Email or username"
                     android:textSize="12sp"
                     android:textColor="@color/wet_asp"
                     android:layout_marginBottom="4dp"
@@ -88,8 +88,8 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:fontFamily="@font/cabin"
-                        android:hint="Enter your username"
-                        android:inputType="text"
+                        android:hint="Enter your email or username"
+                        android:inputType="textEmailAddress"
                         android:imeOptions="actionNext"
                         android:textSize="15sp"
                         android:textColor="@color/text_dark" />

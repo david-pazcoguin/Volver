@@ -19,6 +19,8 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.android.gms.auth.api.signin.GoogleSignIn;
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
@@ -187,20 +189,38 @@ public class SettingActivity extends AppCompatActivity {
         dialog.setCanceledOnTouchOutside(true);
         dialog.setContentView(R.layout.logout_confirmation_layout);
         dialog.getWindow().setBackgroundDrawable(new ColorDrawable(android.graphics.Color.TRANSPARENT));
-        dialog.getWindow().setLayout(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        int dialogWidth = (int) Math.min(
+                getResources().getDisplayMetrics().widthPixels * 0.9f,
+                getResources().getDisplayMetrics().density * 420f);
+        dialog.getWindow().setLayout(dialogWidth, LinearLayout.LayoutParams.WRAP_CONTENT);
         WindowManager.LayoutParams wlp = dialog.getWindow().getAttributes();
-        wlp.gravity = Gravity.BOTTOM;
+        wlp.gravity = Gravity.CENTER;
         dialog.getWindow().setAttributes(wlp);
 
         dialog.findViewById(R.id.cardViewNo).setOnClickListener(v -> dialog.dismiss());
         dialog.findViewById(R.id.cardViewYes).setOnClickListener(v -> {
             dialog.dismiss();
-            FirebaseAuth.getInstance().signOut();
-            SecurePrefs.get(this).edit().remove("username").apply();
-            finishAffinity();
-            startActivity(new Intent(this, LoginActivity.class));
+            performLogout();
         });
         dialog.show();
+    }
+
+    private void performLogout() {
+        FirebaseAuth.getInstance().signOut();
+        SecurePrefs.get(this).edit()
+                .remove("username")
+                .remove("firstName")
+                .apply();
+
+        GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestIdToken(getString(R.string.default_web_client_id))
+                .requestEmail()
+                .build();
+        GoogleSignIn.getClient(this, gso).signOut()
+                .addOnCompleteListener(task -> {
+                    finishAffinity();
+                    startActivity(new Intent(this, LoginActivity.class));
+                });
     }
 
     // ── Helper ────────────────────────────────────────────────

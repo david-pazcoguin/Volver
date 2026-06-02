@@ -97,9 +97,11 @@ public class HomeActivity extends AppCompatActivity {
     private static final String PREF_MISSION_BYPASS_STATE = "mission_bypass_state";
     private static final String BYPASS_STATE_COMPLETE = "complete";
     private static final String BYPASS_STATE_RESET = "reset";
+    private static final String STATE_SELECTED_TAB = "selected_tab";
     private static final long   CHEST_REVEAL_DELAY_MS = 1500L;
 
     private String username;
+    private int selectedTabId = R.id.nav_home;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -131,17 +133,11 @@ public class HomeActivity extends AppCompatActivity {
         SharedPreferences sh = SecurePrefs.get(this);
         username = sh.getString("username", "");
 
-        // One-time migration: wipe collectible counts that were written before the
-        // pendingCollectibleAwards buffer was introduced. Counts are now only written
-        // after a mission is fully completed, so any partial values are incorrect.
+        // v1 used to wipe partial collectible counts. Partial relic runs are now
+        // intentional progress, so keep any existing values and only mark the
+        // old migration as satisfied.
         if (!sh.getBoolean("migration_collectibles_cleared_v1", false)) {
-            SharedPreferences.Editor wipe = sh.edit();
-            for (String key : sh.getAll().keySet()) {
-                if (key.startsWith("collectible_") && key.endsWith("_count")) {
-                    wipe.remove(key);
-                }
-            }
-            wipe.putBoolean("migration_collectibles_cleared_v1", true).apply();
+            sh.edit().putBoolean("migration_collectibles_cleared_v1", true).apply();
         }
 
         recyclerView     = findViewById(R.id.recyclerView);
@@ -229,7 +225,16 @@ public class HomeActivity extends AppCompatActivity {
         buildMissionList();
         setupRecyclerView();
         buildCollectiblesList();
+        if (savedInstanceState != null) {
+            selectedTabId = savedInstanceState.getInt(STATE_SELECTED_TAB, R.id.nav_home);
+        }
         setupBottomNav();
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        outState.putInt(STATE_SELECTED_TAB, selectedTabId);
+        super.onSaveInstanceState(outState);
     }
 
     @Override
@@ -257,28 +262,38 @@ public class HomeActivity extends AppCompatActivity {
 
     private void setupBottomNav() {
         bottomNav.setOnItemSelectedListener(item -> {
-            int id = item.getItemId();
-            if (id == R.id.nav_home) {
-                layoutHome.setVisibility(View.VISIBLE);
-                layoutMissions.setVisibility(View.GONE);
-                layoutCollectibles.setVisibility(View.GONE);
-                showRandomFact();
-                return true;
-            } else if (id == R.id.nav_missions) {
-                layoutHome.setVisibility(View.GONE);
-                layoutMissions.setVisibility(View.VISIBLE);
-                layoutCollectibles.setVisibility(View.GONE);
-                return true;
-            } else if (id == R.id.nav_collectibles) {
-                layoutHome.setVisibility(View.GONE);
-                layoutMissions.setVisibility(View.GONE);
-                layoutCollectibles.setVisibility(View.VISIBLE);
-                refreshCollectibleCounts();
-                return true;
-            }
-            return false;
+            return showTab(item.getItemId());
         });
-        bottomNav.setSelectedItemId(R.id.nav_home);
+        if (!showTab(selectedTabId)) {
+            selectedTabId = R.id.nav_home;
+            showTab(selectedTabId);
+        }
+        bottomNav.setSelectedItemId(selectedTabId);
+    }
+
+    private boolean showTab(int id) {
+        if (id == R.id.nav_home) {
+            selectedTabId = id;
+            layoutHome.setVisibility(View.VISIBLE);
+            layoutMissions.setVisibility(View.GONE);
+            layoutCollectibles.setVisibility(View.GONE);
+            showRandomFact();
+            return true;
+        } else if (id == R.id.nav_missions) {
+            selectedTabId = id;
+            layoutHome.setVisibility(View.GONE);
+            layoutMissions.setVisibility(View.VISIBLE);
+            layoutCollectibles.setVisibility(View.GONE);
+            return true;
+        } else if (id == R.id.nav_collectibles) {
+            selectedTabId = id;
+            layoutHome.setVisibility(View.GONE);
+            layoutMissions.setVisibility(View.GONE);
+            layoutCollectibles.setVisibility(View.VISIBLE);
+            refreshCollectibleCounts();
+            return true;
+        }
+        return false;
     }
 
     // ───────────────────────────────────────────────────────────────
@@ -384,10 +399,9 @@ public class HomeActivity extends AppCompatActivity {
 
     private int getTotalRelicCount() {
         if (collectibleItems == null) return 0;
-        SharedPreferences sh = SecurePrefs.get(this);
         int total = 0;
         for (CollectibleItem item : collectibleItems) {
-            total += sh.getInt("collectible_" + item.getId() + "_count", 0);
+            total += UserProgressStore.getCollectibleCount(this, item.getId());
         }
         return total;
     }
@@ -496,10 +510,9 @@ public class HomeActivity extends AppCompatActivity {
 
     private void refreshCollectibleCounts() {
         if (collectibleItems == null || collectiblesAdapter == null) return;
-        SharedPreferences sh = SecurePrefs.get(this);
         int total = 0;
         for (CollectibleItem item : collectibleItems) {
-            int count = sh.getInt("collectible_" + item.getId() + "_count", 0);
+            int count = UserProgressStore.getCollectibleCount(this, item.getId());
             item.setCount(count);
             total += count;
         }
@@ -584,11 +597,34 @@ public class HomeActivity extends AppCompatActivity {
 
     private void buildMissionList() {
         arHelpers = new ArrayList<>();
-        arHelpers.add(new ARHelper("Fort Santiago", "", 14.594265, 120.970425,
+        arHelpers.add(new ARHelper("Fort Santiago", "", 14.593044708068172, 120.97143750155884,
                 "fort_santiago",
-                new double[]{14.594230, 14.594275},
-                new double[]{120.970460, 120.970507},
-                "intramuros_coin"));
+                new double[]{
+                    // Stage 1: Intramuros Coin
+                    14.593044708068172, 14.59314008007322,
+                    // Stage 2: Peineta
+                    14.593252456432959, 14.593548180087934,
+                    // Stage 3: Salakot Elite
+                    14.593676868501156, 14.593797107606992,
+                    // Stage 4: Farol de Aceite
+                    14.594330058521104, 14.594543238525146,
+                    // Stage 5: Antique Pocket Watch
+                    14.594574284169067, 14.59478972403372
+                },
+                new double[]{
+                    120.97143750155884, 120.97134429799283,
+                    120.97124671764531, 120.97099755054893,
+                    120.97086457187729, 120.97076853172469,
+                    120.97017818704226, 120.97028564454487,
+                    120.96993187024967, 120.96980848862428
+                },
+                new String[]{
+                    "intramuros_coin", "intramuros_coin",
+                    "peineta",         "peineta",
+                    "salakot_elite",   "salakot_elite",
+                    "farol_de_aceite", "farol_de_aceite",
+                    "pocket_watch",    "pocket_watch"
+                }));
         arHelpers.add(new ARHelper("Baluarte de San Diego", "", 14.585491, 120.975702,
                 "baluarte_san_diego",
                 new double[]{14.585520, 14.585565},
@@ -600,22 +636,22 @@ public class HomeActivity extends AppCompatActivity {
                 // each relic pair before the next pair appears.
                 new double[]{
                     // Stage 1: Intramuros Coin
-                    14.589663203491886, 14.589618427314848,
+                    14.589616244109674, 14.589658424566982,
                     // Stage 2: Peineta
-                    14.589609963023207, 14.58966382422264,
+                    14.589616244109674, 14.589658424566982,
                     // Stage 3: Salakot Elite
-                    14.589598931209652, 14.58964370739066,
+                    14.589616244109674, 14.589658424566982,
                     // Stage 4: Farol de Aceite
-                    14.589579685619842, 14.589676987413734,
+                    14.589616244109674, 14.589658424566982,
                     // Stage 5: Antique Pocket Watch
-                    14.589638138561947, 14.589585575216757
+                    14.589616244109674, 14.589658424566982
                 },
                 new double[]{
-                    120.97526796641772, 120.97521968665782,
-                    120.97526797947917, 120.97523914573368,
-                    120.97518617210824, 120.97530754206021,
-                    120.9752383013906,  120.97527811405568,
-                    120.9752492421618,  120.975198280193
+                    120.97522396558945, 120.97526755148382,
+                    120.97522396558945, 120.97526755148382,
+                    120.97522396558945, 120.97526755148382,
+                    120.97522396558945, 120.97526755148382,
+                    120.97522396558945, 120.97526755148382
                 },
                 new String[]{
                     "intramuros_coin", "intramuros_coin",
@@ -736,9 +772,15 @@ public class HomeActivity extends AppCompatActivity {
     private void applyCollectibleBypass(SharedPreferences.Editor editor, boolean completed) {
         if (editor == null || collectibleItems == null) return;
         for (CollectibleItem item : collectibleItems) {
-            editor.putInt(
-                    "collectible_" + item.getId() + "_count",
-                    completed ? item.getMaxCount() : 0);
+            UserProgressStore.putCollectibleCount(
+                    this, editor, item.getId(), completed ? item.getMaxCount() : 0);
+        }
+        if (!completed && arHelpers != null) {
+            for (ARHelper helper : arHelpers) {
+                if (helper != null) {
+                    UserProgressStore.removeMissionProgress(this, editor, helper.getMissionId());
+                }
+            }
         }
     }
 
