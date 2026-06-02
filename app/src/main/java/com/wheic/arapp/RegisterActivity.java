@@ -160,9 +160,8 @@ public class RegisterActivity extends AppCompatActivity {
                                         .apply();
                                 // Send verification email
                                 user.sendEmailVerification()
-                                        .addOnCompleteListener(verifyTask -> {
-                                            showVerificationDialog(email);
-                                        });
+                                        .addOnSuccessListener(verifyTask -> showVerificationDialog(email))
+                                        .addOnFailureListener(e -> showVerificationFailureDialog(user, email));
                             })
                             .addOnFailureListener(e ->
                                     Toast.makeText(this, "Failed to save profile.", Toast.LENGTH_SHORT).show());
@@ -176,6 +175,22 @@ public class RegisterActivity extends AppCompatActivity {
                         + "\n\nPlease check your inbox and verify before logging in.")
                 .setPositiveButton("OK", (d, w) -> {
                     // Sign out so they are forced to log in after verifying
+                    FirebaseAuth.getInstance().signOut();
+                    finish();
+                })
+                .setCancelable(false)
+                .show();
+    }
+
+    private void showVerificationFailureDialog(FirebaseUser user, String email) {
+        new AlertDialog.Builder(this)
+                .setTitle("Verification email not sent")
+                .setMessage("We created your account, but Firebase could not send the verification link yet. Please try sending it again.")
+                .setPositiveButton("Resend", (d, w) -> user.sendEmailVerification()
+                        .addOnSuccessListener(unused -> showVerificationDialog(email))
+                        .addOnFailureListener(e ->
+                                Toast.makeText(this, "Still could not send the email. Please try again later.", Toast.LENGTH_LONG).show()))
+                .setNegativeButton("Back to login", (d, w) -> {
                     FirebaseAuth.getInstance().signOut();
                     finish();
                 })

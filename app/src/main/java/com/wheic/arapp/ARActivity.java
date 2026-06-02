@@ -14,9 +14,11 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.drawable.ColorDrawable;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -26,9 +28,13 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -100,12 +106,16 @@ public class ARActivity extends AppCompatActivity {
     private final Scene.OnUpdateListener sceneUpdateListener = this::onSceneUpdate;
     private int diagnosticFrameCount = 0;
     private boolean cameraStreamDiagLogged = false;
+    private Dialog exitGameDialog;
 
     // ── Location ────────────────────────────────────────────────────
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
     private static final int LOCATION_PERM_CODE = 1001;
     private static final float ACTIVATION_RADIUS_METERS = 30.0f;
+    private static final float MAX_ACTIVATION_ACCURACY_METERS = 25.0f;
+    private static final int REQUIRED_CONSECUTIVE_ACTIVATION_FIXES = 2;
+    private static final long ACTIVATION_CONFIRMATION_WINDOW_MS = 12_000L;
     private static final long LOCATION_CHECK_INTERVAL = 10_000L; // when searching for target
     private static final long LOCATION_CHECK_INTERVAL_IDLE = 30_000L; // after target reached
 
@@ -113,6 +123,8 @@ public class ARActivity extends AppCompatActivity {
     private double targetLongitude;
     private double targetAltitude;
     private boolean isTargetReached = false;
+    private int activationConfirmationCount = 0;
+    private long lastActivationConfirmationElapsedMs = 0L;
 
     // GPS positions for each relic (one entry per relic slot)
     private double[] relicLatitudes;
@@ -126,6 +138,8 @@ public class ARActivity extends AppCompatActivity {
     // Last GPS fix — used to compute bearing toward the coin spot
     private double lastUserLat = Double.NaN;
     private double lastUserLng = Double.NaN;
+    private float lastUserAccuracyMeters = Float.NaN;
+    private long lastUserFixElapsedRealtimeMs = 0L;
 
     // Compass heading (degrees, 0 = north, clockwise) from SensorManager.
     // Smoothed via a low-pass filter to prevent jitter.
@@ -235,9 +249,6 @@ public class ARActivity extends AppCompatActivity {
     private boolean coinsSpawned = false;
     private int coinsCollected = 0;
     private float coinCollectedValue = 0f;
-    // Collectible awards buffered during a mission; only written to
-    // SharedPreferences when the mission is fully completed (not on early exit).
-    private final List<String> pendingCollectibleAwards = new ArrayList<>();
     private float coinRotationAngle = 0f;
     // Tracks which relic slots have an in-flight terrain-anchor request so we
     // don't fire duplicates while the async response is pending (or retry after
@@ -264,16 +275,18 @@ public class ARActivity extends AppCompatActivity {
     // with a clean fix. The real proximity check is the spawn radius below — if
     // the relic is visible in AR, the user is close enough to collect it.
     private static final float RELIC_COLLECT_RADIUS_M = 25.0f;
-    // Distance at which a staged relic spawns into the scene. 15 m matches the
+    // Distance at which a staged relic spawns into the scene. 12 m matches the
     // user-visible "walk closer" threshold and is large enough that urban-canyon
     // GPS drift (±5-10 m) never prevents a relic from appearing in range.
-    private static final float RELIC_SPAWN_RADIUS_M = 15.0f;
+    private static final float RELIC_SPAWN_RADIUS_M = 12.0f;
     // Distance (metres) within which the COLLECT button is shown.
     // Keeps the button hidden until the user is genuinely close.
-    private static final float RELIC_COLLECT_BUTTON_M = 7.0f;
+    private static final float RELIC_COLLECT_BUTTON_M = 5.0f;
+    private static final float MAX_RELIC_GATING_ACCURACY_METERS = 25.0f;
     // Distance at which a staged relic is despawned again (hysteresis to avoid
     // flicker).
     private static final float RELIC_DESPAWN_RADIUS_M = 20.0f;
+    private static final long MAX_LOCATION_FIX_AGE_MS = 8_000L;
     // ── Periodic location check ──────────────────────────────────────
     private final float[] distanceResults = new float[1];
     private final Handler locationHandler = new Handler(Looper.getMainLooper());
@@ -346,6 +359,7 @@ public class ARActivity extends AppCompatActivity {
         missionId = extras.getString("MissionId", "unknown");
         missionName = extras.getString("MissionName", "Mission");
         collectibleId = extras.getString("CollectibleId", missionId);
+        restoreSavedRelicProgress();
 
         // Validate coordinates
         if (targetLatitude < -90 || targetLatitude > 90
@@ -467,8 +481,7 @@ public class ARActivity extends AppCompatActivity {
                 }
                 Log.e(TAG, "onLocationResult: " + location.getLatitude() + "," + location.getLongitude());
 
-                lastUserLat = location.getLatitude();
-                lastUserLng = location.getLongitude();
+                updateUserFixFromLocation(location);
 
                 Location.distanceBetween(
                         location.getLatitude(), location.getLongitude(),
@@ -482,9 +495,7 @@ public class ARActivity extends AppCompatActivity {
                     if (navManager != null) {
                         navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
                     }
-                    if (distance <= ACTIVATION_RADIUS_METERS) {
-                        onTargetReached();
-                    }
+                    maybeActivateTarget(distance, lastUserAccuracyMeters, "locationCallback");
                 }
                 updateMinimapUser();
                 updateRelicHud();
@@ -550,12 +561,52 @@ public class ARActivity extends AppCompatActivity {
         locationHandler.removeCallbacks(locationRunnable);
         if (navManager != null)
             navManager.destroy();
+        if (exitGameDialog != null && exitGameDialog.isShowing()) {
+            exitGameDialog.dismiss();
+        }
         super.onDestroy();
     }
 
     // ──────────────────────────────────────────────────────────────────
     // Session & scene callbacks
     // ──────────────────────────────────────────────────────────────────
+
+    @Override
+    public void onBackPressed() {
+        showExitGameDialog();
+    }
+
+    private void showExitGameDialog() {
+        if (exitGameDialog != null && exitGameDialog.isShowing()) {
+            return;
+        }
+
+        exitGameDialog = new Dialog(this);
+        exitGameDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        exitGameDialog.setCancelable(false);
+        exitGameDialog.setCanceledOnTouchOutside(false);
+        exitGameDialog.setContentView(R.layout.dialog_exit_game);
+
+        Window window = exitGameDialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(android.graphics.Color.TRANSPARENT));
+            int dialogWidth = (int) Math.min(
+                    getResources().getDisplayMetrics().widthPixels * 0.9f,
+                    getResources().getDisplayMetrics().density * 420f);
+            window.setLayout(dialogWidth, LinearLayout.LayoutParams.WRAP_CONTENT);
+            WindowManager.LayoutParams wlp = window.getAttributes();
+            wlp.gravity = Gravity.CENTER;
+            window.setAttributes(wlp);
+        }
+
+        exitGameDialog.findViewById(R.id.cardViewCancelExit).setOnClickListener(v -> exitGameDialog.dismiss());
+        exitGameDialog.findViewById(R.id.cardViewConfirmExit).setOnClickListener(v -> {
+            exitGameDialog.dismiss();
+            finish();
+        });
+        exitGameDialog.setOnDismissListener(d -> exitGameDialog = null);
+        exitGameDialog.show();
+    }
 
     /** Called once when the ARCore session is first created. */
     private void onSessionCreated(Session session) {
@@ -571,17 +622,10 @@ public class ARActivity extends AppCompatActivity {
         }
         // Lighting is managed by ENVIRONMENTAL_HDR — no manual override needed.
 
-        // Pre-warm fires as soon as geospatial locks — even during navigation
-        // before the user reaches the mission zone. The terrain anchor resolves
-        // 1-3 s later so the item is already in the scene when they arrive.
-        preWarmCurrentSlotTerrainAnchor();
-        // Pre-resolve ALL upcoming slot anchors every frame so each one is
-        // ready the instant it becomes active. Called every frame because
-        // preResolveNextSlotAnchor has its own idempotent guards, and retrying
-        // every frame handles network failures without extra retry logic.
-        preResolveUpcomingSlotAnchors();
-
         if (isTargetReached) {
+            // Upcoming-slot anchors are safe to pre-resolve now because they
+            // remain detached until their slot becomes active.
+            preResolveUpcomingSlotAnchors();
             // Recover any permanently-lost anchors BEFORE trying to spawn so the
             // cleared slot is immediately eligible for re-spawn in the same frame.
             checkAndRespawnLostAnchor();
@@ -672,8 +716,7 @@ public class ARActivity extends AppCompatActivity {
                             ? location.getLatitude() + "," + location.getLongitude()
                             : "null"));
                     if (location != null) {
-                        lastUserLat = location.getLatitude();
-                        lastUserLng = location.getLongitude();
+                        updateUserFixFromLocation(location);
                         if (!isTargetReached) {
                             Location.distanceBetween(
                                     location.getLatitude(), location.getLongitude(),
@@ -683,9 +726,7 @@ public class ARActivity extends AppCompatActivity {
                             if (navManager != null) {
                                 navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
                             }
-                            if (distance <= ACTIVATION_RADIUS_METERS) {
-                                onTargetReached();
-                            }
+                            maybeActivateTarget(distance, lastUserAccuracyMeters, "getCurrentLocation");
                         }
                         updateMinimapUser();
                         updateRelicHud();
@@ -726,8 +767,7 @@ public class ARActivity extends AppCompatActivity {
                     // the AR relic is actually anchored. Falling back to fused
                     // GPS while the AR uses geospatial caused the compass to
                     // point the wrong direction.
-                    lastUserLat = cameraPose.getLatitude();
-                    lastUserLng = cameraPose.getLongitude();
+                    updateUserFixFromGeospatial(cameraPose);
                     // Capture the precise AR-aligned heading too.
                     try {
                         geospatialHeadingDeg = (float) cameraPose.getHeading();
@@ -750,9 +790,7 @@ public class ARActivity extends AppCompatActivity {
                     updateRelicHud();
                     updateCompassArrow();
 
-                    if (distance <= ACTIVATION_RADIUS_METERS) {
-                        onTargetReached();
-                    }
+                    maybeActivateTarget(distance, (float) cameraPose.getHorizontalAccuracy(), "geospatial");
                     return;
                 }
                 updateHint("Improving GPS accuracy...");
@@ -775,8 +813,15 @@ public class ARActivity extends AppCompatActivity {
                 return;
             }
 
-            lastUserLat = location.getLatitude();
-            lastUserLng = location.getLongitude();
+            if (!isLocationFresh(location)) {
+                Log.d(TAG, "getLastLocation: ignoring stale fix ageMs=" + getLocationAgeMs(location));
+                if (tvDirectionDistance != null && !isTargetReached) {
+                    tvDirectionDistance.setText("Searching for GPS\u2026");
+                }
+                return;
+            }
+
+            updateUserFixFromLocation(location);
 
             Location.distanceBetween(
                     location.getLatitude(), location.getLongitude(),
@@ -793,9 +838,7 @@ public class ARActivity extends AppCompatActivity {
             updateMinimapUser();
             updateRelicHud();
 
-            if (distance <= ACTIVATION_RADIUS_METERS) {
-                onTargetReached();
-            }
+            maybeActivateTarget(distance, lastUserAccuracyMeters, "getLastLocation");
         });
     }
 
@@ -807,6 +850,7 @@ public class ARActivity extends AppCompatActivity {
         if (isTargetReached)
             return; // already triggered
         isTargetReached = true;
+        resetActivationConfirmation();
 
         // Hide direction UI
         if (locateLabelContainer != null)
@@ -844,6 +888,99 @@ public class ARActivity extends AppCompatActivity {
             tvCharacterHint.setText(text);
             tvCharacterHint.setVisibility(View.VISIBLE);
         }
+    }
+
+    private void maybeActivateTarget(float distanceMeters, float accuracyMeters, String source) {
+        if (isTargetReached) {
+            return;
+        }
+
+        boolean reliable = !Float.isNaN(accuracyMeters) && accuracyMeters <= MAX_ACTIVATION_ACCURACY_METERS;
+        boolean insideActivationRadius = distanceMeters <= ACTIVATION_RADIUS_METERS;
+        if (!reliable || !insideActivationRadius) {
+            resetActivationConfirmation();
+            return;
+        }
+
+        long now = SystemClock.elapsedRealtime();
+        if (lastActivationConfirmationElapsedMs <= 0L
+                || now - lastActivationConfirmationElapsedMs > ACTIVATION_CONFIRMATION_WINDOW_MS) {
+            activationConfirmationCount = 0;
+        }
+        lastActivationConfirmationElapsedMs = now;
+        activationConfirmationCount++;
+        Log.d(TAG, "maybeActivateTarget: source=" + source
+                + " distance=" + distanceMeters
+                + " accuracy=" + accuracyMeters
+                + " count=" + activationConfirmationCount);
+        if (activationConfirmationCount >= REQUIRED_CONSECUTIVE_ACTIVATION_FIXES) {
+            onTargetReached();
+        }
+    }
+
+    private void resetActivationConfirmation() {
+        activationConfirmationCount = 0;
+        lastActivationConfirmationElapsedMs = 0L;
+    }
+
+    private void updateUserFixFromLocation(@NonNull Location location) {
+        lastUserLat = location.getLatitude();
+        lastUserLng = location.getLongitude();
+        lastUserAccuracyMeters = location.hasAccuracy() ? location.getAccuracy() : Float.NaN;
+        lastUserFixElapsedRealtimeMs = getLocationElapsedRealtimeMs(location);
+    }
+
+    private void updateUserFixFromGeospatial(@NonNull GeospatialPose cameraPose) {
+        lastUserLat = cameraPose.getLatitude();
+        lastUserLng = cameraPose.getLongitude();
+        lastUserAccuracyMeters = (float) cameraPose.getHorizontalAccuracy();
+        lastUserFixElapsedRealtimeMs = SystemClock.elapsedRealtime();
+    }
+
+    private boolean isLocationFresh(@NonNull Location location) {
+        return getLocationAgeMs(location) <= MAX_LOCATION_FIX_AGE_MS;
+    }
+
+    private long getLocationAgeMs(@NonNull Location location) {
+        long elapsedRealtimeMs = getLocationElapsedRealtimeMs(location);
+        return Math.max(0L, SystemClock.elapsedRealtime() - elapsedRealtimeMs);
+    }
+
+    private long getLocationElapsedRealtimeMs(@NonNull Location location) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1
+                && location.getElapsedRealtimeNanos() > 0L) {
+            return location.getElapsedRealtimeNanos() / 1_000_000L;
+        }
+        return SystemClock.elapsedRealtime();
+    }
+
+    private boolean hasReliableRelicGateFix() {
+        if (Double.isNaN(lastUserLat) || Double.isNaN(lastUserLng)) {
+            return false;
+        }
+        if (Float.isNaN(lastUserAccuracyMeters) || lastUserAccuracyMeters > MAX_RELIC_GATING_ACCURACY_METERS) {
+            return false;
+        }
+        return lastUserFixElapsedRealtimeMs > 0L
+                && SystemClock.elapsedRealtime() - lastUserFixElapsedRealtimeMs <= MAX_LOCATION_FIX_AGE_MS;
+    }
+
+    private boolean isWithinReliableRelicSpawnWindow(int slot) {
+        if (!isTargetReached) {
+            return false;
+        }
+        if (slot < 0 || relicLatitudes == null || slot >= relicLatitudes.length) {
+            return false;
+        }
+        if (slot != currentRelicSlot()) {
+            return false;
+        }
+        if (!hasReliableRelicGateFix()) {
+            return false;
+        }
+        Location.distanceBetween(lastUserLat, lastUserLng,
+                relicLatitudes[slot], relicLongitudes[slot], distanceResults);
+        return distanceResults[0] <= RELIC_SPAWN_RADIUS_M;
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -1140,6 +1277,17 @@ public class ARActivity extends AppCompatActivity {
             try { anchor.detach(); } catch (Exception ignored) {}
             return;
         }
+        // Strong gate: async terrain callbacks are not allowed to surface a
+        // relic unless the player is confirmed inside the spawn window for the
+        // active slot right now.
+        if (!isWithinReliableRelicSpawnWindow(coinIdx)) {
+            Log.d(TAG, "spawnRelicNode: rejected slot=" + coinIdx
+                    + " reached=" + isTargetReached
+                    + " accuracy=" + lastUserAccuracyMeters);
+            terrainAnchorPending.remove(coinIdx);
+            try { anchor.detach(); } catch (Exception ignored) {}
+            return;
+        }
         // Guard: node already in slot (concurrent callback + frame loop).
         while (coinAnchorNodes.size() <= coinIdx) coinAnchorNodes.add(null);
         while (coinNodes.size() <= coinIdx) coinNodes.add(null);
@@ -1388,13 +1536,13 @@ public class ARActivity extends AppCompatActivity {
         }
 
         // Pre-fill the marker list with nulls so indices align with relic
-        // indices, then show ONLY the first relic's red dot. Subsequent dots
-        // are added in collectCoin() once the previous relic is collected.
+        // indices, then show only the next uncollected relic's red dot.
         if (relicLatitudes != null && relicLongitudes != null) {
             for (int i = 0; i < relicLatitudes.length; i++)
                 coinMapMarkers.add(null);
-            if (relicLatitudes.length > 0) {
-                showRelicDot(0);
+            int nextSlot = currentRelicSlot();
+            if (nextSlot >= 0) {
+                showRelicDot(nextSlot);
             }
         }
     }
@@ -1492,6 +1640,28 @@ public class ARActivity extends AppCompatActivity {
         return -1; // all done
     }
 
+    private void restoreSavedRelicProgress() {
+        if (relicLatitudes == null || coinSlotCollected == null
+                || coinSlotCollected.length != relicLatitudes.length) {
+            return;
+        }
+        boolean[] savedSlots = UserProgressStore.loadCollectedSlots(
+                this, missionId, relicLatitudes.length);
+        int restored = 0;
+        for (int i = 0; i < savedSlots.length; i++) {
+            if (savedSlots[i]) {
+                coinSlotCollected[i] = true;
+                restored++;
+            }
+        }
+        coinsCollected = restored;
+        coinCollectedValue = restored * COIN_VALUE;
+        if (restored > 0) {
+            Log.d(TAG, "restoreSavedRelicProgress: " + restored
+                    + "/" + relicLatitudes.length + " slots restored for " + missionId);
+        }
+    }
+
     private void updateRelicHud() {
         if (!isTargetReached)
             return;
@@ -1520,7 +1690,7 @@ public class ARActivity extends AppCompatActivity {
         boolean relicSpawned = slot < coinAnchorNodes.size() && coinAnchorNodes.get(slot) != null;
 
         // Distance: when the relic is spawned in the scene we use the actual
-        // AR-world distance from camera to anchor (so the 7 m collect gate
+        // AR-world distance from camera to anchor (so the 5 m collect gate
         // matches what the user sees), else fall back to GPS distance for the
         // pre-spawn "walk closer" hint.
         float distMeters;
@@ -1540,7 +1710,7 @@ public class ARActivity extends AppCompatActivity {
         }
         int meters = Math.round(distMeters);
         int oneBased = slot + 1;
-        // COLLECT button only appears when the user is genuinely close (7 m or less).
+        // COLLECT button only appears when the user is genuinely close (5 m or less).
         boolean withinCollectRange = relicSpawned && meters <= RELIC_COLLECT_BUTTON_M;
         String suffix;
         if (withinCollectRange) {
@@ -1578,6 +1748,18 @@ public class ARActivity extends AppCompatActivity {
     }
 
     /** Collects the currently active relic — called by the COLLECT button. */
+    private float distanceToAnchorMeters(AnchorNode anchorNode) {
+        if (anchorNode == null || arCam == null || arCam.getArSceneView() == null
+                || arCam.getArSceneView().getScene() == null) {
+            return Float.MAX_VALUE;
+        }
+        Vector3 relicWorld = anchorNode.getWorldPosition();
+        Vector3 cameraWorld = arCam.getArSceneView().getScene().getCamera().getWorldPosition();
+        float dx = relicWorld.x - cameraWorld.x;
+        float dz = relicWorld.z - cameraWorld.z;
+        return (float) Math.sqrt(dx * dx + dz * dz);
+    }
+
     private void collectCurrentRelic() {
         // Debounce: ignore taps while a previous collect animation is in flight
         // so the user can't double-credit a relic or fire stale taps after the
@@ -1590,6 +1772,10 @@ public class ARActivity extends AppCompatActivity {
         AnchorNode anchorNode = coinAnchorNodes.get(slot);
         if (anchorNode == null)
             return;
+        if (distanceToAnchorMeters(anchorNode) > RELIC_COLLECT_BUTTON_M) {
+            updateRelicHud();
+            return;
+        }
         isCollecting = true;
         // Hide the button immediately so it can't be tapped again during the
         // bounce animation. playCollectAnimation() still runs its scale anim
@@ -1948,13 +2134,8 @@ public class ARActivity extends AppCompatActivity {
         // ── Spawn-radius gate (applies to ALL devices) ────────────────────────────
         // The relic only spawns once the user is within RELIC_SPAWN_RADIUS_M of
         // the configured GPS coordinate. Beyond that the HUD shows "walk closer".
-        if (!Double.isNaN(lastUserLat) && !Double.isNaN(lastUserLng)
-                && coinIdx < relicLatitudes.length) {
-            float[] dGate = new float[1];
-            Location.distanceBetween(lastUserLat, lastUserLng,
-                    relicLatitudes[coinIdx], relicLongitudes[coinIdx], dGate);
-            if (dGate[0] > RELIC_SPAWN_RADIUS_M) return;
-        }
+        if (!isWithinReliableRelicSpawnWindow(coinIdx))
+            return;
 
         // ── Routing ───────────────────────────────────────────────────────────────
         // Strategy: place the relic AS CLOSE TO the configured GPS coordinate as
@@ -2066,11 +2247,11 @@ public class ARActivity extends AppCompatActivity {
             double relRad = Math.toRadians(relativeBearingDeg);
 
             // Clamp distance: never spawn at the user's feet (< 2 m) and never
-            // beyond a comfortable visual range (6 m) so the relic is always
+            // beyond a comfortable visual range (4 m) so the relic is always
             // visible AND reachable in tight courtyards / indoor spaces. The
             // user may be inside a building with a wall a few metres ahead;
-            // capping at 6 m keeps the relic on the same side of typical walls.
-            float dist = Math.max(2.0f, Math.min(gpsDistance, 6.0f));
+            // capping at 4 m keeps the relic on the same side of typical walls.
+            float dist = Math.max(2.0f, Math.min(gpsDistance, 4.0f));
 
             // Build a "yaw-only" pose at the camera's world position so the
             // relic stays at chest height regardless of how the user is
@@ -2167,18 +2348,18 @@ public class ARActivity extends AppCompatActivity {
 
         coinsCollected++;
         coinCollectedValue += COIN_VALUE;
+        int totalCoins = (relicLatitudes != null) ? relicLatitudes.length : 1;
 
-        // Award the collectible item for this slot (capped at maxCount=10).
+        // Award the collectible item for this slot.
         // For staged-relic missions the per-slot relic id wins; otherwise
         // every coin credits the mission's single `collectibleId`.
         String idToAward = (relicIdOverride != null && !relicIdOverride.isEmpty())
                 ? relicIdOverride
                 : collectibleId;
-        // Buffer the award; it will only be committed to SharedPreferences once
-        // the final mission-completion handshake with Firestore succeeds so that
-        // partially-completed (exited) missions never pollute the collectibles count.
-        if (idToAward != null && !idToAward.isEmpty()) {
-            pendingCollectibleAwards.add(idToAward);
+        boolean firstSavedCollection = UserProgressStore.markRelicSlotCollected(
+                this, missionId, index, totalCoins);
+        if (firstSavedCollection && idToAward != null && !idToAward.isEmpty()) {
+            UserProgressStore.incrementCollectibleCount(this, idToAward);
         }
 
         // Remove red dot from minimap
@@ -2197,7 +2378,6 @@ public class ARActivity extends AppCompatActivity {
 
         // If this mission has multiple coins, only complete after the LAST one is
         // tapped.
-        int totalCoins = (relicLatitudes != null) ? relicLatitudes.length : 1;
         if (coinsCollected < totalCoins) {
             int remaining = totalCoins - coinsCollected;
             final String collectedName = (relicIdOverride != null)
@@ -2291,22 +2471,10 @@ public class ARActivity extends AppCompatActivity {
     // ──────────────────────────────────────────────────────────────────
 
     /**
-     * Writes all buffered collectible awards to SharedPreferences and clears
-     * the buffer. Call only after mission completion is confirmed server-side.
+     * Kept for older completion paths. Relic awards are now committed at the
+     * moment each slot is collected so partial runs survive app exits.
      */
     private void flushPendingCollectibleAwards() {
-        if (pendingCollectibleAwards.isEmpty()) return;
-        android.content.SharedPreferences prefs = SecurePrefs.get(this);
-        android.content.SharedPreferences.Editor editor = prefs.edit();
-        for (String id : pendingCollectibleAwards) {
-            String key = "collectible_" + id + "_count";
-            int current = prefs.getInt(key, 0);
-            if (current < 12) {
-                editor.putInt(key, current + 1);
-            }
-        }
-        editor.apply();
-        pendingCollectibleAwards.clear();
     }
 
     // ──────────────────────────────────────────────────────────────────

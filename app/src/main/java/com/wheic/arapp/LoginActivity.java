@@ -52,10 +52,15 @@ public class LoginActivity extends AppCompatActivity {
 
         // Auto-login if session exists
         SharedPreferences sh = SecurePrefs.get(this);
-        if (!sh.getString("username", "").isEmpty()) {
+        if (FirebaseAuth.getInstance().getCurrentUser() != null
+                && !sh.getString("username", "").isEmpty()) {
             startActivity(new Intent(this, HomeActivity.class));
             finish();
             return;
+        }
+        if (FirebaseAuth.getInstance().getCurrentUser() == null
+                && !sh.getString("username", "").isEmpty()) {
+            sh.edit().remove("username").remove("firstName").apply();
         }
 
         txtUsername = findViewById(R.id.txtUsername);
@@ -92,8 +97,10 @@ public class LoginActivity extends AppCompatActivity {
                 .build();
         googleSignInClient = GoogleSignIn.getClient(this, gso);
         cardViewGoogle.setOnClickListener(v -> {
-            Intent signInIntent = googleSignInClient.getSignInIntent();
-            googleSignInLauncher.launch(signInIntent);
+            googleSignInClient.signOut().addOnCompleteListener(task -> {
+                Intent signInIntent = googleSignInClient.getSignInIntent();
+                googleSignInLauncher.launch(signInIntent);
+            });
         });
     }
 
@@ -104,19 +111,25 @@ public class LoginActivity extends AppCompatActivity {
     }
 
     private void attemptLogin() {
-        String usernameInput = txtUsername.getText().toString().trim();
-        if (!usernameInput.matches("^[a-zA-Z0-9_]{3,30}$")) {
-            Toast.makeText(this, "Invalid username format.", Toast.LENGTH_SHORT).show();
+        String accountInput = txtUsername.getText().toString().trim();
+        boolean isEmail = android.util.Patterns.EMAIL_ADDRESS.matcher(accountInput).matches();
+        if (!isEmail && !accountInput.matches("^[a-zA-Z0-9_]{3,30}$")) {
+            Toast.makeText(this, "Enter a valid email or username.", Toast.LENGTH_SHORT).show();
             return;
         }
-        String authEmail = usernameInput + "@volver.app";
+        String authEmail = isEmail ? accountInput : accountInput + "@volver.app";
         String password = txtPassword.getText().toString();
 
         FirebaseAuth.getInstance()
                 .signInWithEmailAndPassword(authEmail, password)
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful()) {
-                        onLoginSuccess(usernameInput);
+                        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+                        if (user != null && isPasswordUser(user) && !user.isEmailVerified()) {
+                            resendVerificationAndSignOut(user);
+                            return;
+                        }
+                        loadProfileAndEnter(user, isEmail ? accountInput : accountInput);
                     } else {
                         Exception ex = task.getException();
                         if (ex instanceof FirebaseAuthInvalidUserException
@@ -135,6 +148,60 @@ public class LoginActivity extends AppCompatActivity {
                         }
                     }
                 });
+    }
+
+    private boolean isPasswordUser(FirebaseUser user) {
+        if (user == null || user.getProviderData() == null) return false;
+        for (com.google.firebase.auth.UserInfo info : user.getProviderData()) {
+            if ("password".equals(info.getProviderId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void resendVerificationAndSignOut(FirebaseUser user) {
+        String email = user.getEmail() != null ? user.getEmail() : "your email";
+        user.sendEmailVerification()
+                .addOnCompleteListener(task -> {
+                    FirebaseAuth.getInstance().signOut();
+                    SecurePrefs.get(this).edit().remove("username").remove("firstName").apply();
+                    String message = task.isSuccessful()
+                            ? "Please verify your email first. We sent a new verification link to " + email + "."
+                            : "Please verify your email first. We could not resend the link right now.";
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                });
+    }
+
+    private void loadProfileAndEnter(FirebaseUser user, String fallbackUsername) {
+        if (user == null) {
+            Toast.makeText(this, "Login failed. Please try again.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        FirebaseConfig.getFirestore()
+                .collection("users")
+                .document(user.getUid())
+                .get()
+                .addOnSuccessListener(doc -> {
+                    String username = doc != null ? doc.getString("username") : null;
+                    String firstName = doc != null ? doc.getString("firstName") : null;
+                    if (username == null || username.trim().isEmpty()) {
+                        if (fallbackUsername != null && fallbackUsername.contains("@")) {
+                            username = fallbackUsername.split("@")[0];
+                        } else {
+                            username = fallbackUsername != null ? fallbackUsername : "user";
+                        }
+                    }
+                    SharedPreferences.Editor ed = SecurePrefs.get(this).edit()
+                            .putString("username", username);
+                    if (firstName != null) ed.putString("firstName", firstName);
+                    ed.apply();
+                    onLoginSuccess(username);
+                })
+                .addOnFailureListener(e -> onLoginSuccess(
+                        fallbackUsername != null && fallbackUsername.contains("@")
+                                ? fallbackUsername.split("@")[0]
+                                : fallbackUsername));
     }
 
     private void handleGoogleSignInResult(ActivityResult result) {
@@ -194,22 +261,7 @@ public class LoginActivity extends AppCompatActivity {
                                         Toast.makeText(this, "Failed to save profile.", Toast.LENGTH_SHORT).show());
                     } else {
                         // Returning Google user - fetch username from Firestore
-                        FirebaseConfig.getFirestore()
-                                .collection("users")
-                                .document(user.getUid())
-                                .get()
-                                .addOnSuccessListener(doc -> {
-                                    String username = doc.getString("username");
-                                    String firstName = doc.getString("firstName");
-                                    if (username == null) username = user.getEmail() != null
-                                            ? user.getEmail().split("@")[0] : "user";
-                                    SharedPreferences.Editor ed = SecurePrefs.get(this).edit()
-                                            .putString("username", username);
-                                    if (firstName != null) ed.putString("firstName", firstName);
-                                    ed.apply();
-                                    onLoginSuccess(username);
-                                })
-                                .addOnFailureListener(e -> onLoginSuccess("user"));
+                        loadProfileAndEnter(user, user.getEmail());
                     }
                 });
     }
@@ -250,6 +302,9 @@ public class LoginActivity extends AppCompatActivity {
     }
 
     private void onLoginSuccess(String username) {
+        if (username == null || username.trim().isEmpty()) {
+            username = "user";
+        }
         SecurePrefs.get(this).edit().putString("username", username).apply();
         startActivity(new Intent(this, HomeActivity.class));
         finish();
