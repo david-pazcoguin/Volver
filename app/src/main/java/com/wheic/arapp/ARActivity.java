@@ -1256,9 +1256,9 @@ public class ARActivity extends AppCompatActivity {
         if (isFinishing() || isDestroyed())
             return;
         new AlertDialog.Builder(this)
-                .setTitle("Intramuros Souvenir Complete!")
+                .setTitle("Volver Heritage Souvenir Complete!")
                 .setMessage(
-                        "You have visited all 5 sites. Return to the home screen to claim your Walled City Key NFT.")
+                        "You have completed the Volver mission list. Return to the home screen to claim your heritage NFT.")
                 .setPositiveButton("Go to Home", (d, w) -> finish())
                 .setNegativeButton("Stay in AR", null)
                 .show();

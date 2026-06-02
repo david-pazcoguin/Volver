@@ -2,7 +2,7 @@
   "name": "Volver Heritage Souvenir",
   "description": "Awarded for completing the Volver AR mission list through Intramuros, Manila. This logo-based Volver heritage souvenir marks the journey through the Walled City experience.",
   "image": "https://volver-5610b.web.app/nft/souvenir.png",
-  "external_url": "https://volver.app",
+  "external_url": "https://volver-5610b.web.app",
   "attributes": [
     { "trait_type": "City",      "value": "Intramuros, Manila" },
     { "trait_type": "Edition",   "value": "Volver Heritage Crest" },

@@ -94,6 +94,9 @@ public class HomeActivity extends AppCompatActivity {
 
     private static final String PREF_NFT_CLAIMED   = "nft_claimed";
     private static final String PREF_CHEST_DISMISS = "chest_dismissed";
+    private static final String PREF_MISSION_BYPASS_STATE = "mission_bypass_state";
+    private static final String BYPASS_STATE_COMPLETE = "complete";
+    private static final String BYPASS_STATE_RESET = "reset";
     private static final long   CHEST_REVEAL_DELAY_MS = 1500L;
 
     private String username;
@@ -176,6 +179,7 @@ public class HomeActivity extends AppCompatActivity {
         tvCollectiblesTotal  = findViewById(R.id.tvCollectiblesTotal);
         btnTryInAR           = findViewById(R.id.btnTryInAR);
         bottomNav            = findViewById(R.id.bottomNav);
+        ImageView imgVolverLogo = findViewById(R.id.imgVolverLogo);
 
         treasureChestContainer.setOnClickListener(v -> onTreasureChestTapped());
         if (btnContinueQuest != null) {
@@ -205,6 +209,13 @@ public class HomeActivity extends AppCompatActivity {
                 // Default to intramuros_coin; user can switch inside the AR screen
                 intent.putExtra(DemoARActivity.EXTRA_RELIC_ID, "intramuros_coin");
                 startActivity(intent);
+            });
+        }
+
+        if (imgVolverLogo != null) {
+            imgVolverLogo.setOnLongClickListener(v -> {
+                toggleMissionBypass();
+                return true;
             });
         }
 
@@ -573,6 +584,16 @@ public class HomeActivity extends AppCompatActivity {
 
     private void buildMissionList() {
         arHelpers = new ArrayList<>();
+        arHelpers.add(new ARHelper("Fort Santiago", "", 14.594265, 120.970425,
+                "fort_santiago",
+                new double[]{14.594230, 14.594275},
+                new double[]{120.970460, 120.970507},
+                "intramuros_coin"));
+        arHelpers.add(new ARHelper("Baluarte de San Diego", "", 14.585491, 120.975702,
+                "baluarte_san_diego",
+                new double[]{14.585520, 14.585565},
+                new double[]{120.975730, 120.975683},
+                "farol_de_aceite"));
         arHelpers.add(new ARHelper("Casa Manila", "", 14.589630881841018, 120.97515722599451,
                 "casa_manila",
                 // 5 relic stages × 2 relics each, in order. The user must collect
@@ -603,6 +624,16 @@ public class HomeActivity extends AppCompatActivity {
                     "farol_de_aceite", "farol_de_aceite",
                     "pocket_watch",    "pocket_watch"
                 }));
+        arHelpers.add(new ARHelper("Museo de Intramuros", "", 14.589853, 120.973438,
+                "museo_intramuros",
+                new double[]{14.589880, 14.589925},
+                new double[]{120.973410, 120.973457},
+                "salakot_elite"));
+        arHelpers.add(new ARHelper("Centro de Turismo", "", 14.590135, 120.973367,
+                "centro_turismo",
+                new double[]{14.590160, 14.590115},
+                new double[]{120.973395, 120.973442},
+                "pocket_watch"));
         arHelpers.add(new ARHelper("Lyceum of the Philippines University", "", 14.591600276085643, 120.97778918301911,
                 "lpu",
                 new double[]{
@@ -651,18 +682,100 @@ public class HomeActivity extends AppCompatActivity {
         MissionCompletionHelper.getMissionProgress(this,
                 new MissionCompletionHelper.ProgressCallback() {
                     @Override public void onResult(Set<String> completedIds, boolean allComplete) {
-                        if (!isFinishing() && !isDestroyed())
-                            runOnUiThread(() -> updateProgressUI(completedIds, allComplete));
+                        if (!isFinishing() && !isDestroyed()) {
+                            MissionProgressState state = resolveMissionProgressState(completedIds, allComplete);
+                            runOnUiThread(() -> updateProgressUI(state.completedIds, state.allComplete));
+                        }
                     }
                     @Override public void onError(String message) {
-                        if (!isFinishing() && !isDestroyed()) runOnUiThread(() -> {
-                            if (tvProgressLabel != null) {
-                                tvProgressLabel.setText("Unable to load progress — check your connection");
-                                tvProgressLabel.setVisibility(View.VISIBLE);
+                        if (!isFinishing() && !isDestroyed()) {
+                            MissionProgressState state = resolveMissionProgressState(null, false);
+                            if (state != null) {
+                                runOnUiThread(() -> updateProgressUI(state.completedIds, state.allComplete));
+                            } else {
+                                runOnUiThread(() -> {
+                                    if (tvProgressLabel != null) {
+                                        tvProgressLabel.setText("Unable to load progress — check your connection");
+                                        tvProgressLabel.setVisibility(View.VISIBLE);
+                                    }
+                                });
                             }
-                        });
+                        }
                     }
                 });
+    }
+
+    private void toggleMissionBypass() {
+        SharedPreferences sh = SecurePrefs.get(this);
+        String currentState = sh.getString(PREF_MISSION_BYPASS_STATE, "");
+        boolean completeNext = !BYPASS_STATE_COMPLETE.equals(currentState);
+
+        SharedPreferences.Editor editor = sh.edit();
+        if (completeNext) {
+            editor.putString(PREF_MISSION_BYPASS_STATE, BYPASS_STATE_COMPLETE);
+            editor.putBoolean(PREF_NFT_CLAIMED, false);
+            editor.putBoolean(PREF_CHEST_DISMISS, false);
+            applyCollectibleBypass(editor, true);
+        } else {
+            editor.putString(PREF_MISSION_BYPASS_STATE, BYPASS_STATE_RESET);
+            editor.putBoolean(PREF_NFT_CLAIMED, false);
+            editor.putBoolean(PREF_CHEST_DISMISS, false);
+            applyCollectibleBypass(editor, false);
+        }
+        editor.apply();
+
+        refreshCollectibleCounts();
+        loadMissionProgress();
+        Toast.makeText(this,
+                completeNext
+                        ? "Bypass enabled: all missions complete."
+                        : "Bypass reset: mission progress cleared.",
+                Toast.LENGTH_SHORT).show();
+    }
+
+    private void applyCollectibleBypass(SharedPreferences.Editor editor, boolean completed) {
+        if (editor == null || collectibleItems == null) return;
+        for (CollectibleItem item : collectibleItems) {
+            editor.putInt(
+                    "collectible_" + item.getId() + "_count",
+                    completed ? item.getMaxCount() : 0);
+        }
+    }
+
+    private MissionProgressState resolveMissionProgressState(Set<String> completedIds, boolean allComplete) {
+        SharedPreferences sh = SecurePrefs.get(this);
+        String bypassState = sh.getString(PREF_MISSION_BYPASS_STATE, "");
+        if (BYPASS_STATE_COMPLETE.equals(bypassState)) {
+            return new MissionProgressState(buildVisibleMissionIds(), true);
+        }
+        if (BYPASS_STATE_RESET.equals(bypassState)) {
+            return new MissionProgressState(new java.util.HashSet<>(), false);
+        }
+        if (completedIds == null) {
+            return null;
+        }
+        return new MissionProgressState(completedIds, allComplete);
+    }
+
+    private Set<String> buildVisibleMissionIds() {
+        Set<String> ids = new java.util.HashSet<>();
+        if (arHelpers == null) return ids;
+        for (ARHelper helper : arHelpers) {
+            if (helper != null && helper.getMissionId() != null) {
+                ids.add(helper.getMissionId());
+            }
+        }
+        return ids;
+    }
+
+    private static final class MissionProgressState {
+        final Set<String> completedIds;
+        final boolean allComplete;
+
+        MissionProgressState(Set<String> completedIds, boolean allComplete) {
+            this.completedIds = completedIds;
+            this.allComplete = allComplete;
+        }
     }
 
     private void updateProgressUI(Set<String> completedIds, boolean allComplete) {
@@ -694,7 +807,7 @@ public class HomeActivity extends AppCompatActivity {
         boolean claimed = sh.getBoolean(PREF_NFT_CLAIMED, false);
         if (claimed) {
             imgTreasureChest.setImageResource(R.drawable.treasure_chest_open);
-            tvTreasureCaption.setText("Your Intramuros Souvenir");
+            tvTreasureCaption.setText("Your Volver Heritage Souvenir");
             tvTreasureHint.setText("Tap to view");
         } else {
             imgTreasureChest.setImageResource(R.drawable.treasure_chest_closed);
@@ -750,7 +863,7 @@ public class HomeActivity extends AppCompatActivity {
                 .withEndAction(() -> {
                     if (imgTreasureChest == null) return;
                     imgTreasureChest.setImageResource(R.drawable.treasure_chest_open);
-                    tvTreasureCaption.setText("Your Intramuros Souvenir!");
+                    tvTreasureCaption.setText("Your Volver Heritage Souvenir!");
                     tvTreasureHint.setText("Opening…");
                     imgTreasureChest.animate().scaleX(1.0f).scaleY(1.0f).setDuration(250)
                             .withEndAction(() -> uiHandler.postDelayed(this::launchNFTClaimFlow, 450))

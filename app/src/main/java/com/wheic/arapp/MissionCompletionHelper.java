@@ -34,7 +34,7 @@ import java.util.Set;
  */
 public class MissionCompletionHelper {
 
-    private static final int TOTAL_LANDMARKS = 5;
+    private static final int TOTAL_LANDMARKS = 6;
 
     /**
      * Whitelist of valid mission IDs. Must stay in sync with the list in
@@ -58,7 +58,7 @@ public class MissionCompletionHelper {
     public interface ProgressCallback {
         /**
          * @param completedIds  Set of mission IDs the user has finished.
-         * @param allComplete   True when all 5 missions are done.
+         * @param allComplete   True when all 6 missions are done.
          */
         void onResult(Set<String> completedIds, boolean allComplete);
         void onError(String message);

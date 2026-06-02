@@ -103,7 +103,7 @@ async function assertEligibleForMint(uid, walletAddress, auth) {
 }
 
 /**
- * Mints the Intramuros Souvenir NFT to the user's wallet.
+ * Mints the Volver Heritage Souvenir NFT to the user's wallet.
  * Gas is paid by the owner wallet configured in server secrets.
  */
 exports.mintSouvenir = functions.https.onCall(async (request) => {

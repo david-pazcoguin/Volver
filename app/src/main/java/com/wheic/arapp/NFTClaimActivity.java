@@ -22,7 +22,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * NFT claim screen — shown after all 5 missions are complete and the wallet is set up.
+ * NFT claim screen — shown after all missions are complete and the wallet is set up.
  *
  * Path A (current): mint is performed server-side by the mintSouvenir Cloud Function,
  * which signs the transaction with the owner wallet. The user pays zero gas and never
@@ -89,7 +89,7 @@ public class NFTClaimActivity extends AppCompatActivity {
             btnMintNFT.setBackgroundTintList(
                     android.content.res.ColorStateList.valueOf(0xFF2E7D32));
             tvMintStatus.setVisibility(View.VISIBLE);
-            tvMintStatus.setText("Your Intramuros Souvenir has already been minted to this wallet.");
+            tvMintStatus.setText("Your Volver Heritage Souvenir has already been minted to this wallet.");
             // Show wallet-level links (tx hash is not persisted across launches).
             btnViewTx.setVisibility(View.GONE);
             layoutMintActions.setVisibility(View.VISIBLE);
@@ -170,7 +170,7 @@ public class NFTClaimActivity extends AppCompatActivity {
                         SecurePrefs.get(NFTClaimActivity.this).edit()
                                 .putBoolean("nft_claimed", true)
                                 .apply();
-                        showError("This wallet has already claimed its Intramuros Souvenir.");
+                        showError("This wallet has already claimed its Volver Heritage Souvenir.");
                     } else {
                         showError("Minting failed: " + msg);
                     }
@@ -195,7 +195,7 @@ public class NFTClaimActivity extends AppCompatActivity {
                 .putBoolean("chest_dismissed", false)
                 .apply();
 
-        StringBuilder msg = new StringBuilder("Your Intramuros Souvenir has been minted!");
+        StringBuilder msg = new StringBuilder("Your Volver Heritage Souvenir has been minted!");
         if (txHash != null && !txHash.isEmpty()) {
             msg.append("\n\nTransaction:\n").append(txHash);
             final String txUrl = PolygonService.getPolygonScanTxUrl(txHash);
