@@ -245,6 +245,8 @@ public class LoginActivity extends AppCompatActivity {
                         userData.put("lastName", lastName);
                         userData.put("email", googleEmail);
                         userData.put("createdAt", FieldValue.serverTimestamp());
+                        userData.put(FirebaseConfig.FIELD_LEADERBOARD_VISIBILITY,
+                                LeaderboardRepository.VISIBILITY_PUBLIC);
 
                         FirebaseConfig.getFirestore()
                                 .collection("users")

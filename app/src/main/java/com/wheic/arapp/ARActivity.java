@@ -150,6 +150,7 @@ public class ARActivity extends AppCompatActivity {
     // the magnetometer when available because it shares its reference frame
     // with the AR relic anchors, so the compass always agrees with the scene.
     private float geospatialHeadingDeg = Float.NaN;
+    private long geospatialHeadingElapsedMs = 0L;
     private SensorManager sensorManager;
     private Sensor rotationVectorSensor;
     private final SensorEventListener compassListener = new SensorEventListener() {
@@ -220,6 +221,7 @@ public class ARActivity extends AppCompatActivity {
     private boolean isCollecting = false;
     // True when the user has toggled the bottom-right slot to the compass view
     private boolean isCompassToggled = false;
+    private long lastCompassFrameUpdateMs = 0L;
 
     // ── Minimap ─────────────────────────────────────────────────────
     private MapView minimap;
@@ -283,6 +285,7 @@ public class ARActivity extends AppCompatActivity {
     // Keeps the button hidden until the user is genuinely close.
     private static final float RELIC_COLLECT_BUTTON_M = 5.0f;
     private static final float MAX_RELIC_GATING_ACCURACY_METERS = 25.0f;
+    private static final long GEOSPATIAL_HEADING_MAX_AGE_MS = 1_500L;
     // Distance at which a staged relic is despawned again (hysteresis to avoid
     // flicker).
     private static final float RELIC_DESPAWN_RADIUS_M = 20.0f;
@@ -637,6 +640,7 @@ public class ARActivity extends AppCompatActivity {
         if (!coinNodes.isEmpty()) {
             animateCoins();
         }
+        refreshCompassArrowFromFrame();
 
         // One-time diagnostic: after a few frames, check if camera stream is healthy
         diagnosticFrameCount++;
@@ -771,8 +775,10 @@ public class ARActivity extends AppCompatActivity {
                     // Capture the precise AR-aligned heading too.
                     try {
                         geospatialHeadingDeg = (float) cameraPose.getHeading();
+                        geospatialHeadingElapsedMs = SystemClock.elapsedRealtime();
                     } catch (Throwable t) {
                         geospatialHeadingDeg = Float.NaN;
+                        geospatialHeadingElapsedMs = 0L;
                     }
 
                     Location.distanceBetween(
@@ -794,12 +800,14 @@ public class ARActivity extends AppCompatActivity {
                     return;
                 }
                 updateHint("Improving GPS accuracy...");
+                clearGeospatialHeading();
                 return;
             }
             // Geospatial is available but not yet tracking — fall through to fused location
         }
 
         // Fallback: fused location when geospatial is unavailable or not yet tracking.
+        clearGeospatialHeading();
         if (ActivityCompat.checkSelfPermission(this,
                 Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
             return;
@@ -1144,9 +1152,7 @@ public class ARActivity extends AppCompatActivity {
         // Prefer the AR-aligned heading from ARCore Geospatial when available
         // — magnetometer drifts indoors and near metal, which causes the
         // compass to disagree with where the AR relic actually is.
-        float headingDeg = !Float.isNaN(geospatialHeadingDeg)
-                ? geospatialHeadingDeg
-                : smoothedAzimuthDeg;
+        float headingDeg = currentCompassHeadingDeg();
         float relative = bearingDeg - headingDeg;
         // Normalise to (-180, 180] so the animation always takes the short arc
         while (relative > 180f)  relative -= 360f;
@@ -1163,6 +1169,32 @@ public class ARActivity extends AppCompatActivity {
                 : String.format(java.util.Locale.US, "%d m", (int) distance);
         if (compassDistance != null)
             compassDistance.setText(distText);
+    }
+
+    private void refreshCompassArrowFromFrame() {
+        if (compassOverlay == null || compassOverlay.getVisibility() != View.VISIBLE) {
+            return;
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastCompassFrameUpdateMs < 150L) {
+            return;
+        }
+        lastCompassFrameUpdateMs = now;
+        updateCompassArrow();
+    }
+
+    private float currentCompassHeadingDeg() {
+        if (!Float.isNaN(geospatialHeadingDeg)
+                && geospatialHeadingElapsedMs > 0L
+                && SystemClock.elapsedRealtime() - geospatialHeadingElapsedMs <= GEOSPATIAL_HEADING_MAX_AGE_MS) {
+            return geospatialHeadingDeg;
+        }
+        return smoothedAzimuthDeg;
+    }
+
+    private void clearGeospatialHeading() {
+        geospatialHeadingDeg = Float.NaN;
+        geospatialHeadingElapsedMs = 0L;
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -2241,8 +2273,7 @@ public class ARActivity extends AppCompatActivity {
             // Heading the device believes is north. Geospatial heading (when
             // Earth is at least horizontal-tracking) is more stable than the
             // raw magnetometer; otherwise fall back to the smoothed compass.
-            float headingDeg = !Float.isNaN(geospatialHeadingDeg)
-                    ? geospatialHeadingDeg : smoothedAzimuthDeg;
+            float headingDeg = currentCompassHeadingDeg();
             float relativeBearingDeg = gpsBearingDeg - headingDeg;
             double relRad = Math.toRadians(relativeBearingDeg);
 
@@ -2373,7 +2404,12 @@ public class ARActivity extends AppCompatActivity {
         // Reveal the next relic’s red dot now that this one is collected.
         final int nextIdx = index + 1;
         if (relicLatitudes != null && nextIdx < relicLatitudes.length) {
-            runOnUiThread(() -> showRelicDot(nextIdx));
+            runOnUiThread(() -> {
+                showRelicDot(nextIdx);
+                updateMinimapUser();
+                updateRelicHud();
+                updateCompassArrow();
+            });
         }
 
         // If this mission has multiple coins, only complete after the LAST one is
@@ -2397,6 +2433,8 @@ public class ARActivity extends AppCompatActivity {
                         Toast.LENGTH_SHORT).show();
                 updateHint(collectedName + " " + coinsCollected + " of " + totalCoins
                         + " collected. " + nextHint);
+                updateRelicHud();
+                updateCompassArrow();
             });
             return;
         }

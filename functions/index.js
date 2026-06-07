@@ -10,9 +10,16 @@
 //   4. Owner wallet pays gas; user pays nothing.
 //   5. Returns tx hash + tokenId.
 
-const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const { ethers } = require("ethers");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const logger = require("firebase-functions/logger");
+const {
+  MISSION_MAP,
+  didLeaderboardProfileChange,
+  syncUserPublicEntries,
+} = require("./leaderboards");
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -21,10 +28,13 @@ if (!admin.apps.length) {
 const REQUIRED_MISSIONS = 5;
 
 function getPolygonConfig() {
+  // Prefer env vars for Gen 2, but keep Runtime Config fallback until migrated.
   let cfg = {};
   try {
-    cfg = (typeof functions.config === "function" ? functions.config().polygon : null) || {};
-  } catch (_) { /* v7 removes config(); ignore */ }
+    // eslint-disable-next-line global-require
+    const legacyFunctions = require("firebase-functions/v1");
+    cfg = (typeof legacyFunctions.config === "function" ? legacyFunctions.config().polygon : null) || {};
+  } catch (_) { /* ignore */ }
   return {
     ownerKey:        cfg.owner_key        || process.env.POLYGON_OWNER_KEY,
     contractAddress: cfg.contract_address || process.env.POLYGON_CONTRACT_ADDRESS,
@@ -34,26 +44,26 @@ function getPolygonConfig() {
 
 async function assertEligibleForMint(uid, walletAddress, auth) {
   if (!auth) {
-    throw new functions.https.HttpsError("unauthenticated", "Authentication is required.");
+    throw new HttpsError("unauthenticated", "Authentication is required.");
   }
   if (typeof uid !== "string" || uid.trim().length === 0) {
-    throw new functions.https.HttpsError("invalid-argument", "uid must be a non-empty string.");
+    throw new HttpsError("invalid-argument", "uid must be a non-empty string.");
   }
   if (typeof walletAddress !== "string" || walletAddress.trim().length === 0) {
-    throw new functions.https.HttpsError("invalid-argument", "walletAddress must be a non-empty string.");
+    throw new HttpsError("invalid-argument", "walletAddress must be a non-empty string.");
   }
   if (uid !== auth.uid) {
-    throw new functions.https.HttpsError("permission-denied", "UID mismatch for authenticated caller.");
+    throw new HttpsError("permission-denied", "UID mismatch for authenticated caller.");
   }
   if (!ethers.isAddress(walletAddress)) {
-    throw new functions.https.HttpsError("invalid-argument", "walletAddress is not a valid address.");
+    throw new HttpsError("invalid-argument", "walletAddress is not a valid address.");
   }
 
   const db = admin.firestore();
   const userRef = db.collection("users").doc(uid);
   const userSnap = await userRef.get();
   if (!userSnap.exists) {
-    throw new functions.https.HttpsError("not-found", "User profile not found.");
+    throw new HttpsError("not-found", "User profile not found.");
   }
 
   const userData = userSnap.data() || {};
@@ -61,20 +71,20 @@ async function assertEligibleForMint(uid, walletAddress, auth) {
   // Use server-side stored wallet, not the one from the client payload.
   const storedWallet = userData.walletAddress;
   if (typeof storedWallet !== "string" || !ethers.isAddress(storedWallet)) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "failed-precondition",
       "No valid wallet address on file. Save your wallet first."
     );
   }
   if (storedWallet.toLowerCase() !== walletAddress.toLowerCase()) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "permission-denied",
       "Wallet address does not match the one saved to your profile."
     );
   }
 
   if (userData.allComplete !== true) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "failed-precondition",
       "All missions must be completed before minting."
     );
@@ -86,14 +96,14 @@ async function assertEligibleForMint(uid, walletAddress, auth) {
     .get();
 
   if (missionsSnap.size < REQUIRED_MISSIONS) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "failed-precondition",
       `Only ${missionsSnap.size} of ${REQUIRED_MISSIONS} missions are completed.`
     );
   }
 
   if (userData.souvenirMinted === true) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "already-exists",
       "Souvenir has already been minted for this account."
     );
@@ -106,7 +116,7 @@ async function assertEligibleForMint(uid, walletAddress, auth) {
  * Mints the Volver Heritage Souvenir NFT to the user's wallet.
  * Gas is paid by the owner wallet configured in server secrets.
  */
-exports.mintSouvenir = functions.https.onCall(async (request) => {
+exports.mintSouvenir = onCall(async (request) => {
   const data = request.data || {};
   const auth = request.auth;
   const uid = data.uid;
@@ -116,13 +126,13 @@ exports.mintSouvenir = functions.https.onCall(async (request) => {
 
   const { ownerKey, contractAddress, rpcUrl } = getPolygonConfig();
   if (!ownerKey || !contractAddress || !rpcUrl) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "failed-precondition",
       "Missing polygon config. Set owner_key, contract_address, and rpc_url."
     );
   }
   if (!ethers.isAddress(contractAddress)) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "failed-precondition",
       "Configured contract_address is invalid."
     );
@@ -161,13 +171,34 @@ exports.mintSouvenir = functions.https.onCall(async (request) => {
 
     return { success: true, txHash: tx.hash, tokenId };
   } catch (error) {
-    console.error("mintSouvenir failed", {
+    logger.error("mintSouvenir failed", {
       uid,
       error: error && error.message ? error.message : error,
     });
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "internal",
       "Failed to mint souvenir on-chain."
     );
   }
 });
+
+exports.syncHallOfExplorersOnMissionComplete = onDocumentCreated("users/{uid}/missions/{missionId}", async (event) => {
+    const missionId = event.params.missionId;
+    if (!MISSION_MAP.has(missionId)) {
+      return null;
+    }
+
+    await syncUserPublicEntries(admin.firestore(), event.params.uid);
+    return null;
+  });
+
+exports.syncHallOfExplorersOnUserUpdate = onDocumentUpdated("users/{uid}", async (event) => {
+    const before = (event.data && event.data.before ? event.data.before.data() : null) || {};
+    const after = (event.data && event.data.after ? event.data.after.data() : null) || {};
+    if (!didLeaderboardProfileChange(before, after)) {
+      return null;
+    }
+
+    await syncUserPublicEntries(admin.firestore(), event.params.uid);
+    return null;
+  });

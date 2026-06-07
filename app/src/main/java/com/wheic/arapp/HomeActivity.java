@@ -76,6 +76,7 @@ public class HomeActivity extends AppCompatActivity {
     private TextView tvStatMissions;
     private TextView tvStatRelics;
     private TextView tvStatNFT;
+    private View cardHallOfExplorers;
     private View cardFeaturedMission;
     private android.widget.ImageView imgFeaturedMission;
     private TextView tvFeaturedLabel;
@@ -164,6 +165,7 @@ public class HomeActivity extends AppCompatActivity {
         tvStatMissions       = findViewById(R.id.tvStatMissions);
         tvStatRelics         = findViewById(R.id.tvStatRelics);
         tvStatNFT            = findViewById(R.id.tvStatNFT);
+        cardHallOfExplorers  = findViewById(R.id.cardHallOfExplorers);
         cardFeaturedMission  = findViewById(R.id.cardFeaturedMission);
         imgFeaturedMission   = findViewById(R.id.imgFeaturedMission);
         tvFeaturedLabel      = findViewById(R.id.tvFeaturedLabel);
@@ -183,6 +185,10 @@ public class HomeActivity extends AppCompatActivity {
         }
         if (cardFeaturedMission != null) {
             cardFeaturedMission.setOnClickListener(v -> bottomNav.setSelectedItemId(R.id.nav_missions));
+        }
+        if (cardHallOfExplorers != null) {
+            cardHallOfExplorers.setOnClickListener(v ->
+                    startActivity(new Intent(this, HallOfExplorersActivity.class)));
         }
         View btnHeroExplore = findViewById(R.id.btnHeroExplore);
         if (btnHeroExplore != null) {
