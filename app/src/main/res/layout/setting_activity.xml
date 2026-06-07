@@ -162,6 +162,70 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:fontFamily="@font/montserrat_bold"
+                android:text="HALL OF EXPLORERS"
+                android:textColor="@color/primary"
+                android:textSize="11sp"
+                android:letterSpacing="0.12"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/cabin"
+                android:text="Choose how your name appears in public rankings."
+                android:textColor="@color/text_muted"
+                android:textSize="12sp"
+                android:layout_marginBottom="12dp" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chipGroupLeaderboardVisibility"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="24dp"
+                app:singleSelection="true"
+                app:selectionRequired="true">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipVisibilityPublic"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Public"
+                    app:checkedIconVisible="false"
+                    app:chipBackgroundColor="@color/bg_field"
+                    app:chipStrokeColor="@color/primary"
+                    app:chipStrokeWidth="1dp"
+                    app:rippleColor="@color/gold_bright" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipVisibilityAnonymous"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Anonymous"
+                    app:checkedIconVisible="false"
+                    app:chipBackgroundColor="@color/bg_field"
+                    app:chipStrokeColor="@color/primary"
+                    app:chipStrokeWidth="1dp"
+                    app:rippleColor="@color/gold_bright" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipVisibilityHidden"
+                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Hidden"
+                    app:checkedIconVisible="false"
+                    app:chipBackgroundColor="@color/bg_field"
+                    app:chipStrokeColor="@color/primary"
+                    app:chipStrokeWidth="1dp"
+                    app:rippleColor="@color/gold_bright" />
+            </com.google.android.material.chip.ChipGroup>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/montserrat_bold"
                 android:text="CHANGE PASSWORD"
                 android:textColor="@color/primary"
                 android:textSize="11sp"

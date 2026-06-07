@@ -2,6 +2,8 @@ package com.wheic.arapp;
 
 import androidx.appcompat.app.AppCompatActivity;
 import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.chip.Chip;
+import com.google.android.material.chip.ChipGroup;
 
 import android.app.Dialog;
 import android.content.Intent;
@@ -37,6 +39,10 @@ public class SettingActivity extends AppCompatActivity {
     private CardView cardViewUpdate;
     private TextInputEditText txtFirstName, txtLastName, txtPassword, txtConfirmPassword;
     private TextView tvFullName, tvUsernameLabel, tvAvatarInitial;
+    private ChipGroup chipGroupLeaderboardVisibility;
+    private Chip chipVisibilityPublic;
+    private Chip chipVisibilityAnonymous;
+    private Chip chipVisibilityHidden;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,6 +59,10 @@ public class SettingActivity extends AppCompatActivity {
         tvFullName         = findViewById(R.id.tvFullName);
         tvUsernameLabel    = findViewById(R.id.tvUsernameLabel);
         tvAvatarInitial    = findViewById(R.id.tvAvatarInitial);
+        chipGroupLeaderboardVisibility = findViewById(R.id.chipGroupLeaderboardVisibility);
+        chipVisibilityPublic = findViewById(R.id.chipVisibilityPublic);
+        chipVisibilityAnonymous = findViewById(R.id.chipVisibilityAnonymous);
+        chipVisibilityHidden = findViewById(R.id.chipVisibilityHidden);
 
         // Disable update button initially — enabled only when name fields have content
         setUpdateEnabled(false);
@@ -94,6 +104,7 @@ public class SettingActivity extends AppCompatActivity {
                     String firstName = doc.getString("firstName");
                     String lastName  = doc.getString("lastName");
                     String username  = doc.getString("username");
+                    String visibility = doc.getString(FirebaseConfig.FIELD_LEADERBOARD_VISIBILITY);
 
                     if (firstName == null) firstName = "";
                     if (lastName  == null) lastName  = "";
@@ -111,6 +122,7 @@ public class SettingActivity extends AppCompatActivity {
                     // Avatar initial
                     String initial = firstName.isEmpty() ? "?" : String.valueOf(firstName.charAt(0)).toUpperCase();
                     tvAvatarInitial.setText(initial);
+                    applyVisibilitySelection(visibility);
 
                     refreshUpdateButton();
                 })
@@ -151,6 +163,7 @@ public class SettingActivity extends AppCompatActivity {
         Map<String, Object> updates = new HashMap<>();
         updates.put("firstName", first);
         updates.put("lastName", last);
+        updates.put(FirebaseConfig.FIELD_LEADERBOARD_VISIBILITY, getSelectedVisibility());
 
         FirebaseConfig.getFirestore()
                 .collection("users")
@@ -234,5 +247,43 @@ public class SettingActivity extends AppCompatActivity {
         cardViewUpdate.setAlpha(enabled ? 1f : 0.4f);
         cardViewUpdate.setClickable(enabled);
         cardViewUpdate.setFocusable(enabled);
+    }
+
+    private void applyVisibilitySelection(String visibility) {
+        if (chipGroupLeaderboardVisibility == null) {
+            return;
+        }
+        switch (normalizeVisibility(visibility)) {
+            case LeaderboardRepository.VISIBILITY_ANONYMOUS:
+                chipGroupLeaderboardVisibility.check(R.id.chipVisibilityAnonymous);
+                break;
+            case LeaderboardRepository.VISIBILITY_HIDDEN:
+                chipGroupLeaderboardVisibility.check(R.id.chipVisibilityHidden);
+                break;
+            case LeaderboardRepository.VISIBILITY_PUBLIC:
+            default:
+                chipGroupLeaderboardVisibility.check(R.id.chipVisibilityPublic);
+                break;
+        }
+    }
+
+    private String getSelectedVisibility() {
+        if (chipVisibilityAnonymous != null && chipVisibilityAnonymous.isChecked()) {
+            return LeaderboardRepository.VISIBILITY_ANONYMOUS;
+        }
+        if (chipVisibilityHidden != null && chipVisibilityHidden.isChecked()) {
+            return LeaderboardRepository.VISIBILITY_HIDDEN;
+        }
+        return LeaderboardRepository.VISIBILITY_PUBLIC;
+    }
+
+    private String normalizeVisibility(String visibility) {
+        if (LeaderboardRepository.VISIBILITY_ANONYMOUS.equals(visibility)) {
+            return LeaderboardRepository.VISIBILITY_ANONYMOUS;
+        }
+        if (LeaderboardRepository.VISIBILITY_HIDDEN.equals(visibility)) {
+            return LeaderboardRepository.VISIBILITY_HIDDEN;
+        }
+        return LeaderboardRepository.VISIBILITY_PUBLIC;
     }
 }
