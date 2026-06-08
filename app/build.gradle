@@ -34,6 +34,28 @@ android {
             buildConfigField "long", "POLYGON_CHAIN_ID", "${project.findProperty('POLYGON_CHAIN_ID') ?: '80002L'}"
         }
     }
+
+    // Fail release builds if blockchain config is missing / still a placeholder.
+    // Runs only when a release task is actually executed, not during general configuration.
+    gradle.taskGraph.whenReady { graph ->
+        def buildingRelease = graph.allTasks.any { t ->
+            t.project == project && (
+                t.name.toLowerCase().contains('release') &&
+                (t.name.startsWith('assemble') || t.name.startsWith('bundle') ||
+                 t.name.startsWith('package')  || t.name.startsWith('install')))
+        }
+        if (buildingRelease) {
+            def nftAddr = project.findProperty('NFT_CONTRACT_ADDRESS') ?: ''
+            def rpcUrl  = project.findProperty('POLYGON_RPC_URL') ?: ''
+            def chainId = project.findProperty('POLYGON_CHAIN_ID') ?: ''
+            if (!nftAddr || nftAddr == '0x0000000000000000000000000000000000000000') {
+                throw new GradleException(
+                    'Release build requires NFT_CONTRACT_ADDRESS in gradle.properties (non-zero).')
+            }
+            if (!rpcUrl)  { throw new GradleException('Release build requires POLYGON_RPC_URL in gradle.properties.') }
+            if (!chainId) { throw new GradleException('Release build requires POLYGON_CHAIN_ID in gradle.properties.') }
+        }
+    }
     compileOptions {
         coreLibraryDesugaringEnabled true
         sourceCompatibility JavaVersion.VERSION_11
@@ -80,6 +102,7 @@ dependencies {
     implementation 'com.google.zxing:core:3.5.3'
     implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
     implementation 'com.google.android.gms:play-services-location:21.3.0'
+    implementation 'com.google.android.gms:play-services-auth:21.3.0'
 
     // Web3j — Polygon/Ethereum blockchain interaction
     implementation 'org.web3j:core:4.9.8'
@@ -89,10 +112,6 @@ dependencies {
 
     // Encrypted session storage
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
-
-    // Glide — efficient image loading with caching
-    implementation 'com.github.bumptech.glide:glide:4.16.0'
-    annotationProcessor 'com.github.bumptech.glide:compiler:4.16.0'
 
     // Core library desugaring for Java 8+ API on older Android versions
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'

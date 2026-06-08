@@ -1,9 +1,25 @@
-// SECURITY: Never commit real values of owner_key to source control
-// Set via: firebase functions:config:set polygon.owner_key="YOUR_KEY"
+// SECURITY: Never commit real values of owner_key to source control.
+// Set via one of:
+//   firebase functions:secrets:set POLYGON_OWNER_KEY
+//   firebase functions:config:set polygon.owner_key="0x..."
+//
+// Path A flow (current):
+//   1. Client calls mintSouvenir({ uid, walletAddress }).
+//   2. CF verifies auth, 5 missions complete, wallet matches stored profile.
+//   3. CF uses owner key to call adminMintTo(walletAddress) on Polygon.
+//   4. Owner wallet pays gas; user pays nothing.
+//   5. Returns tx hash + tokenId.
 
-const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const { ethers } = require("ethers");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const logger = require("firebase-functions/logger");
+const {
+  MISSION_MAP,
+  didLeaderboardProfileChange,
+  syncUserPublicEntries,
+} = require("./leaderboards");
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -11,61 +27,66 @@ if (!admin.apps.length) {
 
 const REQUIRED_MISSIONS = 5;
 
-exports.whitelistWallet = functions.https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      "unauthenticated",
-      "Authentication is required."
-    );
+function getPolygonConfig() {
+  // Prefer env vars for Gen 2, but keep Runtime Config fallback until migrated.
+  let cfg = {};
+  try {
+    // eslint-disable-next-line global-require
+    const legacyFunctions = require("firebase-functions/v1");
+    cfg = (typeof legacyFunctions.config === "function" ? legacyFunctions.config().polygon : null) || {};
+  } catch (_) { /* ignore */ }
+  return {
+    ownerKey:        cfg.owner_key        || process.env.POLYGON_OWNER_KEY,
+    contractAddress: cfg.contract_address || process.env.POLYGON_CONTRACT_ADDRESS,
+    rpcUrl:          cfg.rpc_url          || process.env.POLYGON_RPC_URL,
+  };
+}
+
+async function assertEligibleForMint(uid, walletAddress, auth) {
+  if (!auth) {
+    throw new HttpsError("unauthenticated", "Authentication is required.");
   }
-
-  const uid = data && data.uid;
-  const walletAddress = data && data.walletAddress;
-
   if (typeof uid !== "string" || uid.trim().length === 0) {
-    throw new functions.https.HttpsError(
-      "invalid-argument",
-      "uid must be a non-empty string."
-    );
+    throw new HttpsError("invalid-argument", "uid must be a non-empty string.");
   }
-
   if (typeof walletAddress !== "string" || walletAddress.trim().length === 0) {
-    throw new functions.https.HttpsError(
-      "invalid-argument",
-      "walletAddress must be a non-empty string."
-    );
+    throw new HttpsError("invalid-argument", "walletAddress must be a non-empty string.");
   }
-
-  if (uid !== context.auth.uid) {
-    throw new functions.https.HttpsError(
-      "permission-denied",
-      "UID mismatch for authenticated caller."
-    );
+  if (uid !== auth.uid) {
+    throw new HttpsError("permission-denied", "UID mismatch for authenticated caller.");
   }
-
   if (!ethers.isAddress(walletAddress)) {
-    throw new functions.https.HttpsError(
-      "invalid-argument",
-      "walletAddress is not a valid address."
-    );
+    throw new HttpsError("invalid-argument", "walletAddress is not a valid address.");
   }
 
   const db = admin.firestore();
   const userRef = db.collection("users").doc(uid);
-
   const userSnap = await userRef.get();
   if (!userSnap.exists) {
-    throw new functions.https.HttpsError(
-      "not-found",
-      "User profile not found."
-    );
+    throw new HttpsError("not-found", "User profile not found.");
   }
 
   const userData = userSnap.data() || {};
-  if (userData.allComplete !== true) {
-    throw new functions.https.HttpsError(
+
+  // Use server-side stored wallet, not the one from the client payload.
+  const storedWallet = userData.walletAddress;
+  if (typeof storedWallet !== "string" || !ethers.isAddress(storedWallet)) {
+    throw new HttpsError(
       "failed-precondition",
-      "All missions must be completed before whitelisting."
+      "No valid wallet address on file. Save your wallet first."
+    );
+  }
+  if (storedWallet.toLowerCase() !== walletAddress.toLowerCase()) {
+    throw new HttpsError(
+      "permission-denied",
+      "Wallet address does not match the one saved to your profile."
+    );
+  }
+
+  if (userData.allComplete !== true) {
+    throw new HttpsError(
+      "failed-precondition",
+      "All missions must be completed before minting."
     );
   }
 
@@ -75,26 +96,43 @@ exports.whitelistWallet = functions.https.onCall(async (data, context) => {
     .get();
 
   if (missionsSnap.size < REQUIRED_MISSIONS) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "failed-precondition",
       `Only ${missionsSnap.size} of ${REQUIRED_MISSIONS} missions are completed.`
     );
   }
 
-  const polygonConfig = functions.config().polygon || {};
-  const ownerKey = polygonConfig.owner_key;
-  const contractAddress = polygonConfig.contract_address;
-  const rpcUrl = polygonConfig.rpc_url;
+  if (userData.souvenirMinted === true) {
+    throw new HttpsError(
+      "already-exists",
+      "Souvenir has already been minted for this account."
+    );
+  }
 
+  return { userRef, storedWallet };
+}
+
+/**
+ * Mints the Volver Heritage Souvenir NFT to the user's wallet.
+ * Gas is paid by the owner wallet configured in server secrets.
+ */
+exports.mintSouvenir = onCall(async (request) => {
+  const data = request.data || {};
+  const auth = request.auth;
+  const uid = data.uid;
+  const walletAddress = data.walletAddress;
+
+  const { userRef, storedWallet } = await assertEligibleForMint(uid, walletAddress, auth);
+
+  const { ownerKey, contractAddress, rpcUrl } = getPolygonConfig();
   if (!ownerKey || !contractAddress || !rpcUrl) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "failed-precondition",
       "Missing polygon config. Set owner_key, contract_address, and rpc_url."
     );
   }
-
   if (!ethers.isAddress(contractAddress)) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       "failed-precondition",
       "Configured contract_address is invalid."
     );
@@ -102,24 +140,65 @@ exports.whitelistWallet = functions.https.onCall(async (data, context) => {
 
   try {
     const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const signer = new ethers.Wallet(ownerKey, provider);
-    const abi = ["function whitelistAddress(address wallet) external"];
+    const signer   = new ethers.Wallet(ownerKey, provider);
+    const abi = [
+      "function adminMintTo(address to) external returns (uint256)",
+      "event SouvenirMinted(address indexed user, uint256 tokenId)",
+    ];
     const contract = new ethers.Contract(contractAddress, abi, signer);
 
-    const tx = await contract.whitelistAddress(walletAddress);
-    await tx.wait();
+    const tx = await contract.adminMintTo(storedWallet);
+    const receipt = await tx.wait();
+
+    // Extract tokenId from emitted event (best-effort).
+    let tokenId = null;
+    try {
+      for (const log of receipt.logs || []) {
+        const parsed = contract.interface.parseLog(log);
+        if (parsed && parsed.name === "SouvenirMinted") {
+          tokenId = parsed.args.tokenId.toString();
+          break;
+        }
+      }
+    } catch (_) { /* ignore parse failures */ }
 
     await userRef.update({
-      whitelisted: true,
-      whitelistedAt: admin.firestore.FieldValue.serverTimestamp(),
+      souvenirMinted: true,
+      souvenirTxHash: tx.hash,
+      souvenirTokenId: tokenId,
+      souvenirMintedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    return { success: true };
+    return { success: true, txHash: tx.hash, tokenId };
   } catch (error) {
-    console.error("whitelistWallet failed", { uid, error: error && error.message ? error.message : error });
-    throw new functions.https.HttpsError(
+    logger.error("mintSouvenir failed", {
+      uid,
+      error: error && error.message ? error.message : error,
+    });
+    throw new HttpsError(
       "internal",
-      "Failed to whitelist wallet on-chain."
+      "Failed to mint souvenir on-chain."
     );
   }
 });
+
+exports.syncHallOfExplorersOnMissionComplete = onDocumentCreated("users/{uid}/missions/{missionId}", async (event) => {
+    const missionId = event.params.missionId;
+    if (!MISSION_MAP.has(missionId)) {
+      return null;
+    }
+
+    await syncUserPublicEntries(admin.firestore(), event.params.uid);
+    return null;
+  });
+
+exports.syncHallOfExplorersOnUserUpdate = onDocumentUpdated("users/{uid}", async (event) => {
+    const before = (event.data && event.data.before ? event.data.before.data() : null) || {};
+    const after = (event.data && event.data.after ? event.data.after.data() : null) || {};
+    if (!didLeaderboardProfileChange(before, after)) {
+      return null;
+    }
+
+    await syncUserPublicEntries(admin.firestore(), event.params.uid);
+    return null;
+  });

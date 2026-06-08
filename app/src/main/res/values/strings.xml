@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Volver</string>
+    <!-- Placeholder; overridden by google-services plugin once Google Sign-In is enabled in Firebase Console -->
+    <string name="default_web_client_id">PLACEHOLDER_ENABLE_GOOGLE_SIGN_IN</string>
 </resources>

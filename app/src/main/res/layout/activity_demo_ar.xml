@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Full-screen AR fragment -->
+    <fragment
+        android:id="@+id/demoArFragment"
+        android:name="com.wheic.arapp.DemoArFragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- ── LAYER 1: DEMO badge + close button (top) ── -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_marginTop="16dp"
+        android:layout_marginStart="14dp"
+        android:layout_marginEnd="14dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <!-- DEMO badge -->
+        <TextView
+            android:id="@+id/tvDemoBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_demo_badge"
+            android:fontFamily="@font/montserrat_bold"
+            android:letterSpacing="0.12"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:text="DEMO MODE"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp" />
+
+        <!-- Spacer -->
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <!-- Close button -->
+        <TextView
+            android:id="@+id/btnDemoBack"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_avatar_circle"
+            android:fontFamily="@font/montserrat_bold"
+            android:gravity="center"
+            android:text="✕"
+            android:textColor="@color/gold_hero"
+            android:textSize="18sp" />
+
+    </LinearLayout>
+
+    <!-- ── LAYER 2: Hint pill (top, below DEMO bar) ── -->
+    <TextView
+        android:id="@+id/tvDemoHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="80dp"
+        android:layout_marginStart="32dp"
+        android:layout_marginEnd="32dp"
+        android:background="@drawable/bg_hint_pill"
+        android:fontFamily="@font/montserrat_regular"
+        android:gravity="center"
+        android:maxLines="2"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:text="Scanning for a surface…"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp" />
+
+    <!-- ── BOTTOM: selected name + scrollable carousel ── -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#80000000"
+        android:orientation="vertical"
+        android:paddingTop="14dp"
+        android:paddingBottom="28dp">
+
+        <!-- Name of the currently active collectible -->
+        <TextView
+            android:id="@+id/tvSelectedName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:fontFamily="@font/montserrat_bold"
+            android:gravity="center"
+            android:text="Intramuros Coin"
+            android:textColor="@color/gold_hero"
+            android:textSize="15sp" />
+
+        <!-- Horizontal carousel — items built programmatically -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/carouselContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal" />
+
+        </HorizontalScrollView>
+
+    </LinearLayout>
+
+</FrameLayout>

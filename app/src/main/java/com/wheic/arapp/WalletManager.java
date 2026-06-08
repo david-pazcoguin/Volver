@@ -109,6 +109,19 @@ public class WalletManager {
      */
     public EmbeddedWallet generateEmbeddedWallet() {
         try {
+            // Web3j's internal BouncyCastle setup needs nudging on Android because the
+            // platform ships a stripped "AndroidOpenSSL" BC variant that lacks some
+            // algorithms Keys.createEcKeyPair() requests. Installing the full BC
+            // provider at position 1 fixes NoSuchAlgorithmException / InvalidKeyException
+            // on first run.
+            try {
+                java.security.Security.removeProvider("BC");
+                java.security.Security.insertProviderAt(
+                        new org.bouncycastle.jce.provider.BouncyCastleProvider(), 1);
+            } catch (Throwable ignored) {
+                // BC may already be installed; proceed regardless.
+            }
+
             ECKeyPair keyPair = Keys.createEcKeyPair();
             String privateKey = Numeric.toHexStringWithPrefix(keyPair.getPrivateKey());
             String address    = "0x" + Keys.getAddress(keyPair);
@@ -122,8 +135,18 @@ public class WalletManager {
 
             return new EmbeddedWallet(address, privateKey);
         } catch (Exception e) {
+            android.util.Log.e("WalletManager", "generateEmbeddedWallet failed", e);
+            com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
+            lastGenerationError = e.getClass().getSimpleName()
+                    + (e.getMessage() != null ? ": " + e.getMessage() : "");
             return null;
         }
+    }
+
+    /** Last wallet-generation failure reason, for debug UI. Never leak to prod UI. */
+    private String lastGenerationError;
+    public String getLastGenerationError() {
+        return lastGenerationError;
     }
 
     public void clearWallet() {

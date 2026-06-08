@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Circle outline -->
+    <path
+        android:strokeColor="@android:color/black"
+        android:strokeWidth="2"
+        android:fillColor="#00000000"
+        android:pathData="M12,2 A10,10 0 1,0 12,22 A10,10 0 1,0 12,2 Z" />
+    <!-- i dot -->
+    <path
+        android:fillColor="@android:color/black"
+        android:pathData="M12,7 m-1,0 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0" />
+    <!-- i stem -->
+    <path
+        android:fillColor="@android:color/black"
+        android:pathData="M11,10 L11,17 L13,17 L13,10 Z" />
+</vector>

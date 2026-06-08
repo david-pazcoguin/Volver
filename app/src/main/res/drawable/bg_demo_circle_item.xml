@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Selected / activated: dark mahogany + gold stroke -->
+    <item android:state_activated="true">
+        <shape android:shape="oval">
+            <solid android:color="#3D2010" />
+            <stroke android:color="#F5E6C0" android:width="2.5dp" />
+        </shape>
+    </item>
+
+    <!-- Default: plain dark mahogany -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#2A1608" />
+        </shape>
+    </item>
+
+</selector>

@@ -9,8 +9,6 @@ import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
-import android.text.method.HideReturnsTransformationMethod;
-import android.text.method.PasswordTransformationMethod;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -49,37 +47,8 @@ public class AccountSettingActivity extends AppCompatActivity {
         tvConfirmShowHide = findViewById(R.id.tvConfirmShowHide);
         cardViewUpdate = findViewById(R.id.cardViewUpdate);
 
-        tvShowHide.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                if(tvShowHide.getText().toString().equals("SHOW"))
-                {
-                    tvShowHide.setText("HIDE");
-                    txtPassword.setTransformationMethod(HideReturnsTransformationMethod.getInstance());
-                }
-                else
-                {
-                    tvShowHide.setText("SHOW");
-                    txtPassword.setTransformationMethod(PasswordTransformationMethod.getInstance());
-                }
-            }
-        });
-
-        tvConfirmShowHide.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                if(tvConfirmShowHide.getText().toString().equals("SHOW"))
-                {
-                    tvConfirmShowHide.setText("HIDE");
-                    txtConfirmPassword.setTransformationMethod(HideReturnsTransformationMethod.getInstance());
-                }
-                else
-                {
-                    tvConfirmShowHide.setText("SHOW");
-                    txtConfirmPassword.setTransformationMethod(PasswordTransformationMethod.getInstance());
-                }
-            }
-        });
+        PasswordToggleHelper.attach(tvShowHide, txtPassword);
+        PasswordToggleHelper.attach(tvConfirmShowHide, txtConfirmPassword);
 
         linearLayoutBack.setOnClickListener(new View.OnClickListener() {
             @Override
