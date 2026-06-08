@@ -15,17 +15,25 @@ service cloud.firestore {
                     && request.resource.data.firstName is string
                     && request.resource.data.lastName is string
                     && request.resource.data.email is string
+                    && request.resource.data.leaderboardVisibility is string
                     && request.resource.data.username.size() >= 3
-                    && request.resource.data.username.size() <= 30;
+                    && request.resource.data.username.size() <= 30
+                    && request.resource.data.leaderboardVisibility in ['public', 'anonymous', 'hidden'];
 
       // Allow updates only for the owner and only for mutable profile/progress fields.
       // email and createdAt are immutable — they can only be set during create.
+      // Souvenir mint fields (souvenirMinted, souvenirTxHash, souvenirTokenId,
+      // souvenirMintedAt) are written server-side by the mintSouvenir Cloud
+      // Function via admin SDK and therefore intentionally excluded from the
+      // client update allowlist.
       allow update: if request.auth != null
                     && request.auth.uid == uid
                     && request.resource.data.diff(resource.data).affectedKeys()
                        .hasOnly(['username', 'firstName', 'lastName',
                                  'walletAddress', 'allComplete',
-                                 'whitelisted', 'whitelistedAt']);
+                                 'leaderboardVisibility'])
+                    && (!('leaderboardVisibility' in request.resource.data)
+                        || request.resource.data.leaderboardVisibility in ['public', 'anonymous', 'hidden']);
 
       // Never allow profile deletes from clients.
       allow delete: if false;
@@ -37,17 +45,35 @@ service cloud.firestore {
                     && request.auth.uid == uid;
 
         // Mission records are append-only and only valid when marked completed.
-        // Requires missionId field to be a string for predictable schema.
-        // Validates completedAt is a timestamp and not in the future.
+        // missionId must match the document ID and be one of the 5 known landmarks.
         allow create: if request.auth != null
                       && request.auth.uid == uid
                       && request.resource.data.completed == true
                       && request.resource.data.missionId is string
+                      && request.resource.data.missionId == missionId
+                      && request.resource.data.missionId in [
+                           'fort_santiago',
+                           'baluarte_san_diego',
+                           'casa_manila',
+                           'museo_intramuros',
+                           'centro_turismo',
+                           'lpu'
+                         ]
                       && request.resource.data.completedAt is timestamp;
 
         // Missions cannot be edited or removed once written.
         allow update: if false;
         allow delete: if false;
+      }
+    }
+
+    match /leaderboards/{boardId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+
+      match /entries/{entryId} {
+        allow read: if request.auth != null;
+        allow write: if false;
       }
     }
 

@@ -1,3 +1,4 @@
 {
-    "cursor.terminal.enableAiChecks": false
+    "cursor.terminal.enableAiChecks": false,
+    "java.configuration.updateBuildConfiguration": "interactive"
 }

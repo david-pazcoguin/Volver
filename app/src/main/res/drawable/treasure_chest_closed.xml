@@ -1,0 +1,57 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="160dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+
+    <!-- Chest body -->
+    <path
+        android:fillColor="#8B4513"
+        android:pathData="M6,26 L6,54 Q6,58 10,58 L54,58 Q58,58 58,54 L58,26 Z" />
+
+    <!-- Chest body shadow (left edge) -->
+    <path
+        android:fillColor="#5D2E0C"
+        android:pathData="M6,26 L6,54 Q6,58 10,58 L14,58 L14,26 Z" />
+
+    <!-- Horizontal metal band across body -->
+    <path
+        android:fillColor="#D4A017"
+        android:pathData="M6,40 L58,40 L58,44 L6,44 Z" />
+
+    <!-- Lid (domed top) -->
+    <path
+        android:fillColor="#A0522D"
+        android:pathData="M6,26 Q6,12 32,12 Q58,12 58,26 Z" />
+
+    <!-- Lid shadow -->
+    <path
+        android:fillColor="#703814"
+        android:pathData="M6,26 Q6,12 32,12 L32,16 Q14,16 10,26 Z" />
+
+    <!-- Lid top metal band -->
+    <path
+        android:fillColor="#D4A017"
+        android:pathData="M6,24 Q6,20 10,20 L54,20 Q58,20 58,24 L58,27 L6,27 Z" />
+
+    <!-- Vertical metal strip (center) -->
+    <path
+        android:fillColor="#D4A017"
+        android:pathData="M29,14 L35,14 L35,58 L29,58 Z" />
+
+    <!-- Lock plate -->
+    <path
+        android:fillColor="#B8860B"
+        android:pathData="M26,34 L38,34 L38,48 L26,48 Z" />
+
+    <!-- Keyhole -->
+    <path
+        android:fillColor="#2B1810"
+        android:pathData="M31,38 L33,38 L33,42 L34,46 L30,46 L31,42 Z" />
+
+    <!-- Top highlight on lid -->
+    <path
+        android:fillColor="#C67F3D"
+        android:pathData="M14,16 Q22,12 32,12 Q34,12 34,14 Q24,14 16,18 Z" />
+
+</vector>

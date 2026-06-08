@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark mode: neutral dark-gray base with warm gold/amber accents.
+         NOT chocolate brown — surfaces are near-black gray, text is off-white. -->
+
+    <color name="text_primary">#F0EDE8</color>
+    <color name="text_dark">#EDEAE5</color>
+    <color name="text_secondary">#C8C0B4</color>
+    <color name="text_medium">#B8B0A8</color>
+    <color name="text_muted">#9C9690</color>
+    <color name="text_hint_color">#7A7670</color>
+    <color name="text_dim">#8A8680</color>
+    <color name="text_faint">#6A6660</color>
+    <color name="text_brown_accent">#D4944E</color>
+    <color name="text_gold_dark">#C8A830</color>
+    <color name="text_brown_medium">#B8A882</color>
+    <color name="text_brown_warm">#C8A06A</color>
+    <color name="text_brown_light">#C4A060</color>
+    <color name="text_medium_dark">#D8D4CE</color>
+    <color name="text_medium_light">#B0ACA8</color>
+
+    <!-- Surfaces: dark gray, not brown -->
+    <color name="bg_page">#161618</color>
+    <color name="bg_card">#222226</color>
+    <color name="bg_card_warm">#1E1E22</color>
+    <color name="bg_card_alt">#262628</color>
+    <color name="bg_separator">#38363A</color>
+    <color name="bg_field">#1A1A1E</color>
+    <color name="bg_light_gray">#2E2E32</color>
+    <color name="bg_gold_pale">#2A2410</color>
+    <color name="gold_pale">#3A3018</color>
+    <color name="hero_bg">#1A1818</color>
+
+    <color name="gold_text">#E8C96A</color>
+
+    <!-- Accent colors lightened for dark backgrounds -->
+    <color name="primary">#C8844A</color>
+    <color name="silver">#9090A0</color>
+    <color name="wet_asp">#A8A4B8</color>
+</resources>

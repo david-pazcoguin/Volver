@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Carousel circle item: ImageView (circle) + label below -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <ImageView
+        android:id="@+id/imgCarouselItem"
+        android:layout_width="68dp"
+        android:layout_height="68dp"
+        android:background="@drawable/bg_demo_circle_item"
+        android:padding="10dp"
+        android:scaleType="centerInside" />
+
+    <TextView
+        android:id="@+id/tvCarouselLabel"
+        android:layout_width="80dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="5dp"
+        android:ellipsize="end"
+        android:fontFamily="@font/montserrat_regular"
+        android:gravity="center"
+        android:maxLines="1"
+        android:textColor="#CCFFFFFF"
+        android:textSize="10sp" />
+
+</LinearLayout>

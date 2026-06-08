@@ -1,22 +1,58 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Legacy names kept for compatibility -->
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>
     <color name="purple_700">#FF3700B3</color>
     <color name="teal_200">#202020</color>
     <color name="teal_700">#FF018786</color>
-    <color name="black">#202020</color>
     <color name="clouds">#ecf0f1</color>
-    <color name="silver">#bdc3c7</color>
     <color name="peter_river">#3498db</color>
     <color name="pink">#e84393</color>
-    <color name="white">#FFFFFFFF</color>
-    <color name="wet_asp">#34495e</color>
     <color name="sunflower">#f1c40f</color>
     <color name="alizarin">#e74c3c</color>
     <color name="emerald">#2ecc71</color>
-    <color name="primary">#3aafff</color>
     <color name="secondary">#a55fef</color>
     <color name="third">#ff8811</color>
     <color name="fourth">#fddf50</color>
+
+    <!-- Always-fixed colors (do NOT override in night) -->
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#202020</color>
+    <color name="silver">#bdc3c7</color>
+    <color name="wet_asp">#34495e</color>
+    <color name="primary">#8B4513</color>   <!-- Heritage saddle-brown, replaces light blue -->
+    <color name="gold_accent">#C4922A</color>
+    <color name="gold_bright">#FFC107</color>
+    <color name="gold_text">#A07800</color>
+    <color name="gold_hero">#F5E6C0</color>
+    <color name="blue_nft">#2081E2</color>  <!-- OpenSea/blockchain brand blue — fixed -->
+
+    <!-- Semantic day colors (overridden in values-night/colors.xml) -->
+    <color name="text_primary">#3D2817</color>
+    <color name="text_dark">#1A1A1A</color>
+    <color name="text_secondary">#5A4A2C</color>
+    <color name="text_medium">#444444</color>
+    <color name="text_muted">#666666</color>
+    <color name="text_hint_color">#888888</color>
+    <color name="text_dim">#777777</color>
+    <color name="text_faint">#AAAAAA</color>
+    <color name="text_brown_accent">#8B4513</color>
+    <color name="text_gold_dark">#856404</color>
+    <color name="text_brown_medium">#8B6F3D</color>
+    <color name="text_brown_warm">#AA7B3C</color>
+    <color name="text_brown_light">#A0691F</color>
+    <color name="text_medium_dark">#333333</color>
+    <color name="text_medium_light">#555555</color>
+
+    <color name="bg_page">#FFFBF3</color>
+    <color name="bg_card">#FFFFFF</color>
+    <color name="bg_card_warm">#FAFAF8</color>
+    <color name="bg_card_alt">#F0EDE8</color>
+    <color name="bg_separator">#EEE6CF</color>
+    <color name="bg_field">#F5F7FA</color>
+    <color name="bg_light_gray">#EEEEEE</color>
+    <color name="bg_gold_pale">#FFF3CD</color>
+    <color name="gold_pale">#FFE8B0</color>
+    <color name="hero_bg">#3D2817</color>
 </resources>

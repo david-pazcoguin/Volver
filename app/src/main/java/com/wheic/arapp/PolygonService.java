@@ -1,12 +1,19 @@
 package com.wheic.arapp;
 
 import org.web3j.abi.FunctionEncoder;
+import org.web3j.abi.FunctionReturnDecoder;
+import org.web3j.abi.TypeReference;
+import org.web3j.abi.datatypes.Address;
+import org.web3j.abi.datatypes.Bool;
 import org.web3j.abi.datatypes.Function;
+import org.web3j.abi.datatypes.Type;
 import org.web3j.crypto.Credentials;
 import org.web3j.crypto.RawTransaction;
 import org.web3j.crypto.TransactionEncoder;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
+import org.web3j.protocol.core.methods.request.Transaction;
+import org.web3j.protocol.core.methods.response.EthCall;
 import org.web3j.protocol.core.methods.response.EthGasPrice;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
@@ -14,7 +21,9 @@ import org.web3j.protocol.http.HttpService;
 import org.web3j.utils.Numeric;
 
 import java.math.BigInteger;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -54,6 +63,28 @@ public class PolygonService {
         return base + txHash;
     }
 
+    /**
+     * PolygonScan wallet page — token transfers tab, where users see the NFT
+     * they received along with any other ERC-20/ERC-721 activity.
+     */
+    public static String getPolygonScanAddressUrl(String walletAddress) {
+        String base = (CHAIN_ID == 137)
+                ? "https://polygonscan.com/address/"
+                : "https://amoy.polygonscan.com/address/";
+        return base + walletAddress + "#tokentxns";
+    }
+
+    /**
+     * OpenSea profile for the wallet. On mainnet this shows the actual NFT
+     * artwork; testnet uses testnets.opensea.io (limited indexing).
+     */
+    public static String getOpenSeaUrl(String walletAddress) {
+        String base = (CHAIN_ID == 137)
+                ? "https://opensea.io/"
+                : "https://testnets.opensea.io/";
+        return base + walletAddress;
+    }
+
     /** Single background thread for blockchain operations. */
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
 
@@ -64,6 +95,58 @@ public class PolygonService {
     public interface TxCallback {
         void onSuccess(String txHash);
         void onError(String errorMessage);
+    }
+
+    /** Result of a pre-flight eligibility check. */
+    public static final class Eligibility {
+        public final boolean whitelisted;
+        public final boolean alreadyMinted;
+        Eligibility(boolean whitelisted, boolean alreadyMinted) {
+            this.whitelisted   = whitelisted;
+            this.alreadyMinted = alreadyMinted;
+        }
+    }
+
+    public interface EligibilityCallback {
+        void onResult(Eligibility result);
+        void onError(String errorMessage);
+    }
+
+    /**
+     * Read-only pre-flight: checks whether the wallet is whitelisted and
+     * whether it has already minted. Saves gas on doomed transactions.
+     */
+    public static void checkEligibility(String walletAddress, EligibilityCallback cb) {
+        EXECUTOR.execute(() -> {
+            Web3j web3j = null;
+            try {
+                web3j = Web3j.build(new HttpService(RPC_URL));
+                boolean whitelisted = callBoolView(web3j, "isWhitelisted", walletAddress);
+                boolean minted      = callBoolView(web3j, "hasMinted",    walletAddress);
+                cb.onResult(new Eligibility(whitelisted, minted));
+            } catch (Exception e) {
+                com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
+                cb.onError(e.getMessage() != null ? e.getMessage() : "Unknown error");
+            } finally {
+                if (web3j != null) web3j.shutdown();
+            }
+        });
+    }
+
+    private static boolean callBoolView(Web3j web3j, String method, String walletAddress)
+            throws Exception {
+        Function fn = new Function(
+                method,
+                Collections.singletonList(new Address(walletAddress)),
+                Collections.singletonList(new TypeReference<Bool>() {}));
+        String encoded = FunctionEncoder.encode(fn);
+        EthCall resp = web3j.ethCall(
+                Transaction.createEthCallTransaction(walletAddress, NFT_CONTRACT_ADDRESS, encoded),
+                DefaultBlockParameterName.LATEST).send();
+        if (resp.hasError()) throw new RuntimeException(resp.getError().getMessage());
+        List<Type> decoded = FunctionReturnDecoder.decode(resp.getValue(), fn.getOutputParameters());
+        if (decoded.isEmpty()) return false;
+        return ((Bool) decoded.get(0)).getValue();
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -148,6 +231,7 @@ public class PolygonService {
                 }
 
             } catch (Exception e) {
+                com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
                 callback.onError(e.getMessage() != null ? e.getMessage() : "Unknown error");
             } finally {
                 if (web3j != null) web3j.shutdown();

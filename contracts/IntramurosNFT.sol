@@ -1,108 +1,50 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-// Deploy via Remix IDE or Hardhat.
-// Install OpenZeppelin: npm install @openzeppelin/contracts
+// Deploy via Remix IDE. OpenZeppelin is auto-imported by Remix from GitHub.
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
- * @title  IntramurosPassport
- * @notice ERC-721 NFT for completing all 5 Intramuros AR missions.
- *
- * Minting flow:
- *   1. Backend verifies the user has completed all 5 missions.
- *   2. Backend calls whitelistAddress(userWallet) — owner pays a tiny gas fee.
- *   3. User calls claimPassport() from their own wallet — USER pays gas.
- *   4. Each address can only mint once.
- *
- * Deploy to Polygon Amoy testnet (chain 80002) for development,
- * then re-deploy to Polygon mainnet (chain 137) for production.
- *
- * After deployment, paste the contract address into:
- *   PolygonService.java → NFT_CONTRACT_ADDRESS
+ * @title  IntramurosSouvenir
+ * @notice Minimal ERC-721 for the Volver Intramuros AR tour.
+ *         Owner (Cloud Function wallet) mints directly to each user
+ *         after Firestore confirms 5 missions complete.
+ *         All tokens share a single metadata URI (identical souvenirs).
  */
-contract IntramurosPassport is ERC721URIStorage, Ownable {
+contract IntramurosSouvenir is ERC721, Ownable {
 
     uint256 private _tokenIds;
+    string  private _tokenUri;
 
-    /**
-     * IPFS URI pointing to the NFT metadata JSON.
-     * Example metadata JSON:
-     * {
-     *   "name": "Intramuros Passport — Walled City Key",
-     *   "description": "Awarded for completing all 5 Intramuros AR missions.",
-     *   "image": "ipfs://<YOUR_IMAGE_CID>",
-     *   "attributes": [{ "trait_type": "Edition", "value": "Founding Explorer" }]
-     * }
-     *
-     * Upload the image + JSON to Pinata (pinata.cloud) or NFT.Storage,
-     * then replace the CID below.
-     */
-    string public constant PASSPORT_URI = "ipfs://YOUR_METADATA_CID_HERE";
+    event SouvenirMinted(address indexed user, uint256 tokenId);
 
-    /// Addresses whitelisted by the backend after mission verification
-    mapping(address => bool) public isWhitelisted;
-
-    /// Prevents double-minting
-    mapping(address => bool) public hasMinted;
-
-    event AddressWhitelisted(address indexed user);
-    event PassportMinted(address indexed user, uint256 tokenId);
-
-    constructor() ERC721("Intramuros Passport", "IPSP") Ownable(msg.sender) {}
-
-    // ─────────────────────────────────────────────────────────────
-    // Owner functions
-    // ─────────────────────────────────────────────────────────────
-
-    /**
-     * @notice Backend calls this after confirming all 5 missions are done.
-     *         Only the contract owner (your server wallet) can whitelist.
-     * @param  user  The player's Polygon wallet address.
-     */
-    function whitelistAddress(address user) external onlyOwner {
-        isWhitelisted[user] = true;
-        emit AddressWhitelisted(user);
+    constructor(string memory initialUri)
+        ERC721("Intramuros Souvenir", "VOLVER")
+        Ownable(msg.sender)
+    {
+        _tokenUri = initialUri;
     }
 
-    /// Batch whitelist for convenience (max 100 per call to prevent out-of-gas)
-    function whitelistBatch(address[] calldata users) external onlyOwner {
-        require(users.length <= 100, "Batch too large");
-        for (uint i = 0; i < users.length; i++) {
-            isWhitelisted[users[i]] = true;
-            emit AddressWhitelisted(users[i]);
-        }
+    /// All tokens resolve to the same metadata.
+    function tokenURI(uint256) public view override returns (string memory) {
+        return _tokenUri;
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // User function — USER pays gas
-    // ─────────────────────────────────────────────────────────────
+    /// Owner can update metadata after deploy (e.g. real IPFS CID later).
+    function setTokenUri(string calldata newUri) external onlyOwner {
+        _tokenUri = newUri;
+    }
 
-    /**
-     * @notice Call this from your Polygon wallet to receive your NFT.
-     *         Your wallet must be whitelisted first (backend handles this).
-     *         You pay the gas (fractions of a cent on Polygon).
-     */
-    function claimPassport() external {
-        require(isWhitelisted[msg.sender], "Complete all 5 Intramuros missions first.");
-        require(!hasMinted[msg.sender],    "You have already claimed your Passport NFT.");
-
-        hasMinted[msg.sender] = true;
+    /// Owner mints directly to a user. Firestore enforces one-per-user upstream.
+    function adminMintTo(address to) external onlyOwner returns (uint256) {
         _tokenIds++;
         uint256 tokenId = _tokenIds;
-
-        _safeMint(msg.sender, tokenId);
-        _setTokenURI(tokenId, PASSPORT_URI);
-
-        emit PassportMinted(msg.sender, tokenId);
+        _safeMint(to, tokenId);
+        emit SouvenirMinted(to, tokenId);
+        return tokenId;
     }
-
-    // ─────────────────────────────────────────────────────────────
-    // View helpers
-    // ─────────────────────────────────────────────────────────────
 
     function totalMinted() external view returns (uint256) {
         return _tokenIds;
