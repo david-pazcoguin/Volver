@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 import com.google.firebase.auth.FirebaseAuth;
@@ -43,6 +44,10 @@ public final class HallOfExplorersActivity extends AppCompatActivity {
     private TextView tvCurrentUserSouvenir;
     private LinearLayout layoutHiddenNotice;
     private TextView btnManageVisibility;
+    private BottomNavigationView bottomNavLeaderboard;
+    private TextView tvSpotlightLabel;
+    private TextView tvSpotlightTitle;
+    private TextView tvSpotlightBody;
 
     private ExplorerRankingAdapter adapter;
     private LeaderboardRepository repository;
@@ -80,6 +85,10 @@ public final class HallOfExplorersActivity extends AppCompatActivity {
         tvCurrentUserSouvenir = findViewById(R.id.tvCurrentUserSouvenir);
         layoutHiddenNotice = findViewById(R.id.layoutHiddenNotice);
         btnManageVisibility = findViewById(R.id.btnManageVisibility);
+        bottomNavLeaderboard = findViewById(R.id.bottomNavLeaderboard);
+        tvSpotlightLabel = findViewById(R.id.tvSpotlightLabel);
+        tvSpotlightTitle = findViewById(R.id.tvSpotlightTitle);
+        tvSpotlightBody = findViewById(R.id.tvSpotlightBody);
 
         recyclerRankings.setLayoutManager(new LinearLayoutManager(this));
         adapter = new ExplorerRankingAdapter(this, currentUid, this::detailForCurrentMode);
@@ -93,6 +102,7 @@ public final class HallOfExplorersActivity extends AppCompatActivity {
                 startActivity(new Intent(this, SettingActivity.class)));
 
         bindMissionChips();
+        setupBottomNav();
         switchMode(MODE_OVERALL);
     }
 
@@ -108,6 +118,8 @@ public final class HallOfExplorersActivity extends AppCompatActivity {
         setMissionChip(R.id.chipCasaManila, LeaderboardRepository.BOARD_MISSION_CASA_MANILA);
         setMissionChip(R.id.chipMuseo, LeaderboardRepository.BOARD_MISSION_MUSEO_INTRAMUROS);
         setMissionChip(R.id.chipCentro, LeaderboardRepository.BOARD_MISSION_CENTRO_DE_TURISMO);
+        setMissionChip(R.id.chipSanAgustin, LeaderboardRepository.BOARD_MISSION_SAN_AGUSTIN_CHURCH);
+        setMissionChip(R.id.chipManilaCathedral, LeaderboardRepository.BOARD_MISSION_MANILA_CATHEDRAL);
     }
 
     private void setMissionChip(int chipId, String boardId) {
@@ -115,8 +127,32 @@ public final class HallOfExplorersActivity extends AppCompatActivity {
         chip.setOnClickListener(v -> {
             selectedBoardId = boardId;
             chip.setChecked(true);
+            updateSpotlight();
             loadCurrentBoard();
         });
+    }
+
+    private void setupBottomNav() {
+        if (bottomNavLeaderboard == null) {
+            return;
+        }
+        bottomNavLeaderboard.setOnItemSelectedListener(item -> {
+            int id = item.getItemId();
+            if (id == R.id.nav_leaderboard) {
+                return true;
+            }
+            openHomeTab(id);
+            return true;
+        });
+        bottomNavLeaderboard.setSelectedItemId(R.id.nav_leaderboard);
+    }
+
+    private void openHomeTab(int tabId) {
+        Intent intent = new Intent(this, HomeActivity.class);
+        intent.putExtra(HomeActivity.EXTRA_START_TAB, tabId);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(intent);
+        finish();
     }
 
     private void switchMode(String mode) {
@@ -132,7 +168,35 @@ public final class HallOfExplorersActivity extends AppCompatActivity {
             Chip firstChip = findViewById(R.id.chipFortSantiago);
             firstChip.setChecked(true);
         }
+        updateSpotlight();
         loadCurrentBoard();
+    }
+
+    private void updateSpotlight() {
+        if (tvSpotlightLabel == null || tvSpotlightTitle == null || tvSpotlightBody == null) {
+            return;
+        }
+        if (MODE_OVERALL.equals(selectedMode)) {
+            tvSpotlightLabel.setText("SEASON BOARD");
+            tvSpotlightTitle.setText("Overall Crown");
+            tvSpotlightBody.setText("Fastest full-run clears own the crown. Finish missions and climb above the seeded test board.");
+            return;
+        }
+
+        tvSpotlightLabel.setText("MISSION BOARD");
+        tvSpotlightTitle.setText(boardTitleFor(selectedBoardId));
+        tvSpotlightBody.setText("This board tracks the fastest relic sweep for the selected location. Sharp clears should land near the top.");
+    }
+
+    private String boardTitleFor(String boardId) {
+        if (LeaderboardRepository.BOARD_MISSION_FORT_SANTIAGO.equals(boardId)) return "Fort Santiago";
+        if (LeaderboardRepository.BOARD_MISSION_BALUARTE_DE_SAN_DIEGO.equals(boardId)) return "Baluarte de San Diego";
+        if (LeaderboardRepository.BOARD_MISSION_CASA_MANILA.equals(boardId)) return "Casa Manila";
+        if (LeaderboardRepository.BOARD_MISSION_MUSEO_INTRAMUROS.equals(boardId)) return "Museo de Intramuros";
+        if (LeaderboardRepository.BOARD_MISSION_CENTRO_DE_TURISMO.equals(boardId)) return "Centro de Turismo";
+        if (LeaderboardRepository.BOARD_MISSION_SAN_AGUSTIN_CHURCH.equals(boardId)) return "San Agustin Church";
+        if (LeaderboardRepository.BOARD_MISSION_MANILA_CATHEDRAL.equals(boardId)) return "Manila Cathedral";
+        return "Hall of Explorers";
     }
 
     private void loadCurrentBoard() {
@@ -236,12 +300,17 @@ public final class HallOfExplorersActivity extends AppCompatActivity {
     }
 
     private String detailForCurrentMode(LeaderboardEntry entry) {
+        if (entry.getDetailOverride() != null && !entry.getDetailOverride().trim().isEmpty()) {
+            return entry.getDetailOverride();
+        }
         if (MODE_MISSIONS.equals(selectedMode)) {
             return ExplorerRankingAdapter.formatMissionDate(entry.getMissionCompletedAt());
         }
         if (entry.isAllIntramurosComplete()) {
-            return "Completed all 5 Intramuros missions";
+            return "Completed all " + LeaderboardRepository.PUBLIC_INTRAMUROS_MISSION_COUNT + " Intramuros missions";
         }
-        return entry.getIntramurosMissionCount() + " of 5 missions complete";
+        return entry.getIntramurosMissionCount() + " of "
+                + LeaderboardRepository.PUBLIC_INTRAMUROS_MISSION_COUNT
+                + " missions complete";
     }
 }

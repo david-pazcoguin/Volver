@@ -34,7 +34,7 @@ import java.util.Set;
  */
 public class MissionCompletionHelper {
 
-    private static final int TOTAL_LANDMARKS = 6;
+    private static final int TOTAL_LANDMARKS = 8;
 
     /**
      * Whitelist of valid mission IDs. Must stay in sync with the list in
@@ -48,6 +48,8 @@ public class MissionCompletionHelper {
                     "casa_manila",
                     "museo_intramuros",
                     "centro_turismo",
+                    "san_agustin_church",
+                    "manila_cathedral",
                     "lpu")));
 
     public interface CompletionCallback {
@@ -58,7 +60,7 @@ public class MissionCompletionHelper {
     public interface ProgressCallback {
         /**
          * @param completedIds  Set of mission IDs the user has finished.
-         * @param allComplete   True when all 6 missions are done.
+         * @param allComplete   True when all 8 missions are done.
          */
         void onResult(Set<String> completedIds, boolean allComplete);
         void onError(String message);

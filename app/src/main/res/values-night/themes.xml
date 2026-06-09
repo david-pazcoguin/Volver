@@ -15,4 +15,12 @@
         <item name="android:windowIsTranslucent">false</item>
         <item name="android:windowAnimationStyle">@null</item>
     </style>
+
+    <style name="Widget.ARApp.LeaderboardChip" parent="Widget.MaterialComponents.Chip.Choice">
+        <item name="checkedIconVisible">false</item>
+        <item name="chipBackgroundColor">@color/leaderboard_chip_bg</item>
+        <item name="android:textColor">@color/leaderboard_chip_text</item>
+        <item name="chipStrokeColor">@color/bg_separator</item>
+        <item name="chipStrokeWidth">1dp</item>
+    </style>
 </resources>

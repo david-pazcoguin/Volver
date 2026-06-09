@@ -19,6 +19,8 @@ public final class LeaderboardEntry {
     private final String missionId;
     private final Timestamp missionCompletedAt;
     private final Timestamp sortCompletedAt;
+    private final boolean synthetic;
+    private final String detailOverride;
 
     public LeaderboardEntry(String uid,
                             String displayNamePublic,
@@ -31,6 +33,24 @@ public final class LeaderboardEntry {
                             String missionId,
                             Timestamp missionCompletedAt,
                             Timestamp sortCompletedAt) {
+        this(uid, displayNamePublic, avatarInitial, visibilityMode, intramurosMissionCount,
+                allIntramurosComplete, souvenirMinted, rankPosition, missionId,
+                missionCompletedAt, sortCompletedAt, false, null);
+    }
+
+    public LeaderboardEntry(String uid,
+                            String displayNamePublic,
+                            String avatarInitial,
+                            String visibilityMode,
+                            int intramurosMissionCount,
+                            boolean allIntramurosComplete,
+                            boolean souvenirMinted,
+                            int rankPosition,
+                            String missionId,
+                            Timestamp missionCompletedAt,
+                            Timestamp sortCompletedAt,
+                            boolean synthetic,
+                            String detailOverride) {
         this.uid = uid;
         this.displayNamePublic = displayNamePublic;
         this.avatarInitial = avatarInitial;
@@ -42,6 +62,8 @@ public final class LeaderboardEntry {
         this.missionId = missionId;
         this.missionCompletedAt = missionCompletedAt;
         this.sortCompletedAt = sortCompletedAt;
+        this.synthetic = synthetic;
+        this.detailOverride = detailOverride;
     }
 
     public static LeaderboardEntry from(DocumentSnapshot doc) {
@@ -116,5 +138,13 @@ public final class LeaderboardEntry {
 
     public Timestamp getSortCompletedAt() {
         return sortCompletedAt;
+    }
+
+    public boolean isSynthetic() {
+        return synthetic;
+    }
+
+    public String getDetailOverride() {
+        return detailOverride;
     }
 }

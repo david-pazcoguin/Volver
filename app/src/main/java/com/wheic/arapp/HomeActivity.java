@@ -25,6 +25,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.android.material.bottomnavigation.BottomNavigationView;
+import com.google.android.material.chip.Chip;
+import com.google.android.material.chip.ChipGroup;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -37,6 +39,7 @@ import java.util.List;
 import java.util.Set;
 
 public class HomeActivity extends AppCompatActivity {
+    public static final String EXTRA_START_TAB = "extra_start_tab";
 
     // ── Missions tab ────────────────────────────────────
     List<ARHelper> arHelpers;
@@ -89,6 +92,29 @@ public class HomeActivity extends AppCompatActivity {
     private List<CollectibleItem> collectibleItems;
     private TextView tvCollectiblesTotal;
     private com.google.android.material.button.MaterialButton btnTryInAR;
+    private View layoutLeaderboard;
+    private Chip chipOverall;
+    private Chip chipMissionRankings;
+    private ChipGroup chipGroupMissionBoards;
+    private TextView tvCachedBanner;
+    private ProgressBar progressHall;
+    private RecyclerView recyclerRankings;
+    private LinearLayout layoutEmpty;
+    private TextView tvEmptyTitle;
+    private TextView tvEmptyBody;
+    private LinearLayout layoutError;
+    private TextView tvRetry;
+    private LinearLayout layoutCurrentUserCard;
+    private TextView tvCurrentUserRank;
+    private TextView tvCurrentUserAvatar;
+    private TextView tvCurrentUserName;
+    private TextView tvCurrentUserDetail;
+    private TextView tvCurrentUserSouvenir;
+    private LinearLayout layoutHiddenNotice;
+    private TextView btnManageVisibility;
+    private TextView tvSpotlightLabel;
+    private TextView tvSpotlightTitle;
+    private TextView tvSpotlightBody;
 
     // ── Nav ─────────────────────────────────────────────
     private BottomNavigationView bottomNav;
@@ -100,9 +126,16 @@ public class HomeActivity extends AppCompatActivity {
     private static final String BYPASS_STATE_RESET = "reset";
     private static final String STATE_SELECTED_TAB = "selected_tab";
     private static final long   CHEST_REVEAL_DELAY_MS = 1500L;
+    private static final String LEADERBOARD_MODE_OVERALL = "overall";
+    private static final String LEADERBOARD_MODE_MISSIONS = "missions";
 
     private String username;
     private int selectedTabId = R.id.nav_home;
+    private String currentUid = "";
+    private LeaderboardRepository leaderboardRepository;
+    private ExplorerRankingAdapter leaderboardAdapter;
+    private String leaderboardSelectedMode = LEADERBOARD_MODE_OVERALL;
+    private String leaderboardSelectedBoardId = LeaderboardRepository.BOARD_OVERALL_INTRAMUROS;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -133,6 +166,10 @@ public class HomeActivity extends AppCompatActivity {
 
         SharedPreferences sh = SecurePrefs.get(this);
         username = sh.getString("username", "");
+        currentUid = FirebaseAuth.getInstance().getCurrentUser() != null
+                ? FirebaseAuth.getInstance().getCurrentUser().getUid()
+                : "";
+        leaderboardRepository = new LeaderboardRepository();
 
         // v1 used to wipe partial collectible counts. Partial relic runs are now
         // intentional progress, so keep any existing values and only mark the
@@ -176,6 +213,29 @@ public class HomeActivity extends AppCompatActivity {
         recyclerCollectibles = findViewById(R.id.recyclerCollectibles);
         tvCollectiblesTotal  = findViewById(R.id.tvCollectiblesTotal);
         btnTryInAR           = findViewById(R.id.btnTryInAR);
+        layoutLeaderboard    = findViewById(R.id.layoutLeaderboard);
+        chipOverall          = findViewById(R.id.chipOverall);
+        chipMissionRankings  = findViewById(R.id.chipMissionRankings);
+        chipGroupMissionBoards = findViewById(R.id.chipGroupMissionBoards);
+        tvCachedBanner       = findViewById(R.id.tvCachedBanner);
+        progressHall         = findViewById(R.id.progressHall);
+        recyclerRankings     = findViewById(R.id.recyclerRankings);
+        layoutEmpty          = findViewById(R.id.layoutEmpty);
+        tvEmptyTitle         = findViewById(R.id.tvEmptyTitle);
+        tvEmptyBody          = findViewById(R.id.tvEmptyBody);
+        layoutError          = findViewById(R.id.layoutError);
+        tvRetry              = findViewById(R.id.tvRetry);
+        layoutCurrentUserCard = findViewById(R.id.layoutCurrentUserCard);
+        tvCurrentUserRank    = findViewById(R.id.tvCurrentUserRank);
+        tvCurrentUserAvatar  = findViewById(R.id.tvCurrentUserAvatar);
+        tvCurrentUserName    = findViewById(R.id.tvCurrentUserName);
+        tvCurrentUserDetail  = findViewById(R.id.tvCurrentUserDetail);
+        tvCurrentUserSouvenir = findViewById(R.id.tvCurrentUserSouvenir);
+        layoutHiddenNotice   = findViewById(R.id.layoutHiddenNotice);
+        btnManageVisibility  = findViewById(R.id.btnManageVisibility);
+        tvSpotlightLabel     = findViewById(R.id.tvSpotlightLabel);
+        tvSpotlightTitle     = findViewById(R.id.tvSpotlightTitle);
+        tvSpotlightBody      = findViewById(R.id.tvSpotlightBody);
         bottomNav            = findViewById(R.id.bottomNav);
         ImageView imgVolverLogo = findViewById(R.id.imgVolverLogo);
 
@@ -187,8 +247,7 @@ public class HomeActivity extends AppCompatActivity {
             cardFeaturedMission.setOnClickListener(v -> bottomNav.setSelectedItemId(R.id.nav_missions));
         }
         if (cardHallOfExplorers != null) {
-            cardHallOfExplorers.setOnClickListener(v ->
-                    startActivity(new Intent(this, HallOfExplorersActivity.class)));
+            cardHallOfExplorers.setOnClickListener(v -> bottomNav.setSelectedItemId(R.id.nav_leaderboard));
         }
         View btnHeroExplore = findViewById(R.id.btnHeroExplore);
         if (btnHeroExplore != null) {
@@ -231,10 +290,23 @@ public class HomeActivity extends AppCompatActivity {
         buildMissionList();
         setupRecyclerView();
         buildCollectiblesList();
+        setupLeaderboard();
         if (savedInstanceState != null) {
             selectedTabId = savedInstanceState.getInt(STATE_SELECTED_TAB, R.id.nav_home);
+        } else {
+            applyStartTabFromIntent(getIntent());
         }
         setupBottomNav();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        applyStartTabFromIntent(intent);
+        if (bottomNav != null) {
+            bottomNav.setSelectedItemId(selectedTabId);
+        }
     }
 
     @Override
@@ -249,6 +321,9 @@ public class HomeActivity extends AppCompatActivity {
         loadGreeting();
         loadMissionProgress();
         refreshCollectibleCounts();
+        if (selectedTabId == R.id.nav_leaderboard) {
+            loadCurrentLeaderboardBoard();
+        }
         uiHandler.removeCallbacks(carouselRunnable);
         uiHandler.removeCallbacks(factRunnable);
         uiHandler.postDelayed(carouselRunnable, CAROUSEL_INTERVAL_MS);
@@ -283,6 +358,7 @@ public class HomeActivity extends AppCompatActivity {
             layoutHome.setVisibility(View.VISIBLE);
             layoutMissions.setVisibility(View.GONE);
             layoutCollectibles.setVisibility(View.GONE);
+            if (layoutLeaderboard != null) layoutLeaderboard.setVisibility(View.GONE);
             showRandomFact();
             return true;
         } else if (id == R.id.nav_missions) {
@@ -290,16 +366,34 @@ public class HomeActivity extends AppCompatActivity {
             layoutHome.setVisibility(View.GONE);
             layoutMissions.setVisibility(View.VISIBLE);
             layoutCollectibles.setVisibility(View.GONE);
+            if (layoutLeaderboard != null) layoutLeaderboard.setVisibility(View.GONE);
             return true;
         } else if (id == R.id.nav_collectibles) {
             selectedTabId = id;
             layoutHome.setVisibility(View.GONE);
             layoutMissions.setVisibility(View.GONE);
             layoutCollectibles.setVisibility(View.VISIBLE);
+            if (layoutLeaderboard != null) layoutLeaderboard.setVisibility(View.GONE);
             refreshCollectibleCounts();
+            return true;
+        } else if (id == R.id.nav_leaderboard) {
+            selectedTabId = id;
+            layoutHome.setVisibility(View.GONE);
+            layoutMissions.setVisibility(View.GONE);
+            layoutCollectibles.setVisibility(View.GONE);
+            if (layoutLeaderboard != null) layoutLeaderboard.setVisibility(View.VISIBLE);
+            loadCurrentLeaderboardBoard();
             return true;
         }
         return false;
+    }
+
+    private void applyStartTabFromIntent(Intent intent) {
+        if (intent == null) return;
+        int requestedTab = intent.getIntExtra(EXTRA_START_TAB, selectedTabId);
+        if (requestedTab != 0) {
+            selectedTabId = requestedTab;
+        }
     }
 
     // ───────────────────────────────────────────────────────────────
@@ -333,7 +427,7 @@ public class HomeActivity extends AppCompatActivity {
         uiHandler.postDelayed(factRunnable, FACT_INTERVAL_MS);
     }
 
-    /** Advances the featured-mission banner through all 6 locations with a crossfade. */
+    /** Advances the featured-mission banner through all mission locations with a crossfade. */
     private void advanceCarousel() {
         if (arHelpers == null || arHelpers.isEmpty() || cardFeaturedMission == null) return;
         carouselIndex = (carouselIndex + 1) % arHelpers.size();
@@ -374,7 +468,7 @@ public class HomeActivity extends AppCompatActivity {
             tvStatMissions.setText(completedCount + "/" + total);
         }
         if (tvStatRelics != null) {
-            tvStatRelics.setText(getTotalRelicCount() + "/60");
+            tvStatRelics.setText(getTotalRelicCount() + "/" + getMaxRelicCount());
         }
         boolean nftClaimed = SecurePrefs.get(this).getBoolean(PREF_NFT_CLAIMED, false);
         if (tvStatNFT != null) {
@@ -459,6 +553,8 @@ public class HomeActivity extends AppCompatActivity {
             case "casa_manila":        return R.drawable.casa_manila;
             case "museo_intramuros":   return R.drawable.museo_intramuros;
             case "centro_turismo":     return R.drawable.centro_turismo;
+            case "san_agustin_church": return R.drawable.san_agustin_church;
+            case "manila_cathedral":   return R.drawable.manila_cathedral;
             case "lpu":                return R.drawable.lpu;
             default:                   return R.drawable.fort_santiago;
         }
@@ -475,35 +571,35 @@ public class HomeActivity extends AppCompatActivity {
                 "Intramuros Coin",
                 "An 8-reales (peso) silver coin minted during the Spanish Colonial period. " +
                 "The currency carried by merchants and Ilustrados through the gates of Intramuros.",
-                R.drawable.render_coin, 0, 12));
+                R.drawable.render_coin, 0, 16));
 
         collectibleItems.add(new CollectibleItem(
                 "peineta",
                 "Peineta",
                 "An ornate Spanish hair comb worn by Filipina women during the colonial era. " +
                 "A symbol of elegance, identity, and the blending of cultures.",
-                R.drawable.render_peineta, 0, 12));
+                R.drawable.render_peineta, 0, 16));
 
         collectibleItems.add(new CollectibleItem(
                 "salakot_elite",
                 "Salakot",
                 "A ceremonial salakot adorned with fine gold engravings, worn by the principalia " +
                 "during official colonial gatherings and religious processions.",
-                R.drawable.render_salakot, 0, 12));
+                R.drawable.render_salakot, 0, 16));
 
         collectibleItems.add(new CollectibleItem(
                 "farol_de_aceite",
                 "Farol de Aceite",
                 "An oil lantern that lit the cobblestone streets of Intramuros for centuries. " +
                 "Its warm glow guided merchants, soldiers, and friars through the Walled City.",
-                R.drawable.render_farol, 0, 12));
+                R.drawable.render_farol, 0, 16));
 
         collectibleItems.add(new CollectibleItem(
                 "pocket_watch",
                 "Antique Pocket Watch",
                 "A tarnished brass pocket watch with Roman numerals and a matching chain. " +
                 "The signature accessory of an educated Ilustrado gentleman.",
-                R.drawable.render_pocket_watch, 0, 12));
+                R.drawable.render_pocket_watch, 0, 16));
 
         collectiblesAdapter = new CollectiblesAdapter(collectibleItems);
         recyclerCollectibles.setHasFixedSize(false);
@@ -524,7 +620,7 @@ public class HomeActivity extends AppCompatActivity {
         }
         collectiblesAdapter.notifyDataSetChanged();
 
-        int maxTotal = collectibleItems.size() * 12;
+        int maxTotal = getMaxRelicCount();
         if (tvCollectiblesTotal != null)
             tvCollectiblesTotal.setText(total + " / " + maxTotal + " collected");
     }
@@ -532,6 +628,254 @@ public class HomeActivity extends AppCompatActivity {
     // ──────────────────────────────────────────────────────────────
     // Greeting
     // ──────────────────────────────────────────────────────────────
+
+    private void setupLeaderboard() {
+        if (recyclerRankings == null) return;
+
+        recyclerRankings.setLayoutManager(new LinearLayoutManager(this));
+        leaderboardAdapter = new ExplorerRankingAdapter(this, currentUid, this::detailForCurrentLeaderboardMode);
+        recyclerRankings.setAdapter(leaderboardAdapter);
+
+        if (chipOverall != null) {
+            chipOverall.setOnClickListener(v -> switchLeaderboardMode(LEADERBOARD_MODE_OVERALL));
+        }
+        if (chipMissionRankings != null) {
+            chipMissionRankings.setOnClickListener(v -> switchLeaderboardMode(LEADERBOARD_MODE_MISSIONS));
+        }
+        if (tvRetry != null) {
+            tvRetry.setOnClickListener(v -> loadCurrentLeaderboardBoard());
+        }
+        if (btnManageVisibility != null) {
+            btnManageVisibility.setOnClickListener(v ->
+                    startActivity(new Intent(this, SettingActivity.class)));
+        }
+
+        bindLeaderboardMissionChips();
+        switchLeaderboardMode(LEADERBOARD_MODE_OVERALL);
+    }
+
+    private void bindLeaderboardMissionChips() {
+        setLeaderboardMissionChip(R.id.chipFortSantiago, LeaderboardRepository.BOARD_MISSION_FORT_SANTIAGO);
+        setLeaderboardMissionChip(R.id.chipBaluarte, LeaderboardRepository.BOARD_MISSION_BALUARTE_DE_SAN_DIEGO);
+        setLeaderboardMissionChip(R.id.chipCasaManila, LeaderboardRepository.BOARD_MISSION_CASA_MANILA);
+        setLeaderboardMissionChip(R.id.chipMuseo, LeaderboardRepository.BOARD_MISSION_MUSEO_INTRAMUROS);
+        setLeaderboardMissionChip(R.id.chipCentro, LeaderboardRepository.BOARD_MISSION_CENTRO_DE_TURISMO);
+        setLeaderboardMissionChip(R.id.chipSanAgustin, LeaderboardRepository.BOARD_MISSION_SAN_AGUSTIN_CHURCH);
+        setLeaderboardMissionChip(R.id.chipManilaCathedral, LeaderboardRepository.BOARD_MISSION_MANILA_CATHEDRAL);
+    }
+
+    private void setLeaderboardMissionChip(int chipId, String boardId) {
+        Chip chip = findViewById(chipId);
+        if (chip == null) return;
+        chip.setOnClickListener(v -> {
+            leaderboardSelectedBoardId = boardId;
+            chip.setChecked(true);
+            updateLeaderboardSpotlight();
+            loadCurrentLeaderboardBoard();
+        });
+    }
+
+    private void switchLeaderboardMode(String mode) {
+        leaderboardSelectedMode = mode;
+        boolean missionsMode = LEADERBOARD_MODE_MISSIONS.equals(mode);
+        if (chipOverall != null) {
+            chipOverall.setChecked(!missionsMode);
+        }
+        if (chipMissionRankings != null) {
+            chipMissionRankings.setChecked(missionsMode);
+        }
+        if (chipGroupMissionBoards != null) {
+            chipGroupMissionBoards.setVisibility(missionsMode ? View.VISIBLE : View.GONE);
+        }
+
+        if (!missionsMode) {
+            leaderboardSelectedBoardId = LeaderboardRepository.BOARD_OVERALL_INTRAMUROS;
+        } else if (LeaderboardRepository.BOARD_OVERALL_INTRAMUROS.equals(leaderboardSelectedBoardId)) {
+            leaderboardSelectedBoardId = LeaderboardRepository.BOARD_MISSION_FORT_SANTIAGO;
+            Chip firstChip = findViewById(R.id.chipFortSantiago);
+            if (firstChip != null) {
+                firstChip.setChecked(true);
+            }
+        }
+
+        updateLeaderboardSpotlight();
+        if (selectedTabId == R.id.nav_leaderboard) {
+            loadCurrentLeaderboardBoard();
+        }
+    }
+
+    private void updateLeaderboardSpotlight() {
+        if (tvSpotlightLabel == null || tvSpotlightTitle == null || tvSpotlightBody == null) {
+            return;
+        }
+
+        if (LEADERBOARD_MODE_OVERALL.equals(leaderboardSelectedMode)) {
+            tvSpotlightLabel.setText("SEASON BOARD");
+            tvSpotlightTitle.setText("Overall Crown");
+            tvSpotlightBody.setText("Fastest full-run clears own the crown. Finish missions and climb above the seeded test board.");
+            return;
+        }
+
+        tvSpotlightLabel.setText("MISSION BOARD");
+        tvSpotlightTitle.setText(boardTitleForLeaderboard(leaderboardSelectedBoardId));
+        tvSpotlightBody.setText("This board tracks the fastest relic sweep for the selected location. Sharp clears should land near the top.");
+    }
+
+    private String boardTitleForLeaderboard(String boardId) {
+        if (LeaderboardRepository.BOARD_MISSION_FORT_SANTIAGO.equals(boardId)) return "Fort Santiago";
+        if (LeaderboardRepository.BOARD_MISSION_BALUARTE_DE_SAN_DIEGO.equals(boardId)) return "Baluarte de San Diego";
+        if (LeaderboardRepository.BOARD_MISSION_CASA_MANILA.equals(boardId)) return "Casa Manila";
+        if (LeaderboardRepository.BOARD_MISSION_MUSEO_INTRAMUROS.equals(boardId)) return "Museo de Intramuros";
+        if (LeaderboardRepository.BOARD_MISSION_CENTRO_DE_TURISMO.equals(boardId)) return "Centro de Turismo";
+        if (LeaderboardRepository.BOARD_MISSION_SAN_AGUSTIN_CHURCH.equals(boardId)) return "San Agustin Church";
+        if (LeaderboardRepository.BOARD_MISSION_MANILA_CATHEDRAL.equals(boardId)) return "Manila Cathedral";
+        return "Hall of Explorers";
+    }
+
+    private void loadCurrentLeaderboardBoard() {
+        if (leaderboardRepository == null || leaderboardAdapter == null) {
+            return;
+        }
+
+        setLeaderboardLoading(true);
+        leaderboardRepository.loadBoard(leaderboardSelectedBoardId, new LeaderboardRepository.LoadCallback() {
+            @Override
+            public void onSuccess(LeaderboardLoadResult result) {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                setLeaderboardLoading(false);
+                showLeaderboardData(result);
+            }
+
+            @Override
+            public void onError(String message) {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                setLeaderboardLoading(false);
+                showLeaderboardError();
+            }
+        });
+    }
+
+    private void setLeaderboardLoading(boolean loading) {
+        if (progressHall != null) {
+            progressHall.setVisibility(loading ? View.VISIBLE : View.GONE);
+        }
+        if (loading) {
+            if (recyclerRankings != null) recyclerRankings.setVisibility(View.GONE);
+            if (layoutEmpty != null) layoutEmpty.setVisibility(View.GONE);
+            if (layoutError != null) layoutError.setVisibility(View.GONE);
+            if (layoutCurrentUserCard != null) layoutCurrentUserCard.setVisibility(View.GONE);
+            if (layoutHiddenNotice != null) layoutHiddenNotice.setVisibility(View.GONE);
+            if (tvCachedBanner != null) tvCachedBanner.setVisibility(View.GONE);
+        }
+    }
+
+    private void showLeaderboardData(LeaderboardLoadResult result) {
+        if (leaderboardAdapter == null) return;
+
+        leaderboardAdapter.submit(result.getTopEntries());
+        if (recyclerRankings != null) {
+            recyclerRankings.setVisibility(result.getTopEntries().isEmpty() ? View.GONE : View.VISIBLE);
+        }
+        if (layoutError != null) {
+            layoutError.setVisibility(View.GONE);
+        }
+        if (tvCachedBanner != null) {
+            tvCachedBanner.setVisibility(result.isFromCache() ? View.VISIBLE : View.GONE);
+        }
+
+        if (LeaderboardRepository.VISIBILITY_HIDDEN.equals(result.getVisibilityMode())) {
+            if (layoutHiddenNotice != null) layoutHiddenNotice.setVisibility(View.VISIBLE);
+            if (layoutCurrentUserCard != null) layoutCurrentUserCard.setVisibility(View.GONE);
+        } else {
+            if (layoutHiddenNotice != null) layoutHiddenNotice.setVisibility(View.GONE);
+            bindCurrentUserLeaderboardCard(result);
+        }
+
+        if (result.getTopEntries().isEmpty()) {
+            if (layoutEmpty != null) layoutEmpty.setVisibility(View.VISIBLE);
+            if (result.getCurrentUserEntry() == null
+                    && !LeaderboardRepository.VISIBILITY_HIDDEN.equals(result.getVisibilityMode())) {
+                if (tvEmptyTitle != null) tvEmptyTitle.setText("Complete your first mission");
+                if (tvEmptyBody != null) {
+                    tvEmptyBody.setText("Finish an Intramuros mission to appear in the Hall of Explorers.");
+                }
+            } else {
+                if (tvEmptyTitle != null) tvEmptyTitle.setText("No explorers yet");
+                if (tvEmptyBody != null) {
+                    tvEmptyBody.setText("No verified completions have been recorded for this ranking yet.");
+                }
+            }
+        } else if (layoutEmpty != null) {
+            layoutEmpty.setVisibility(View.GONE);
+        }
+    }
+
+    private void bindCurrentUserLeaderboardCard(LeaderboardLoadResult result) {
+        if (layoutCurrentUserCard == null) return;
+
+        LeaderboardEntry currentEntry = result.getCurrentUserEntry();
+        if (currentEntry == null) {
+            layoutCurrentUserCard.setVisibility(View.GONE);
+            return;
+        }
+
+        boolean inTopTen = false;
+        for (LeaderboardEntry entry : result.getTopEntries()) {
+            if (entry.getUid().equals(currentEntry.getUid())) {
+                inTopTen = true;
+                break;
+            }
+        }
+        if (inTopTen) {
+            layoutCurrentUserCard.setVisibility(View.GONE);
+            return;
+        }
+
+        layoutCurrentUserCard.setVisibility(View.VISIBLE);
+        if (tvCurrentUserRank != null) {
+            tvCurrentUserRank.setText("#" + currentEntry.getRankPosition());
+        }
+        if (tvCurrentUserAvatar != null) {
+            tvCurrentUserAvatar.setText(currentEntry.getAvatarInitial());
+        }
+        if (tvCurrentUserName != null) {
+            tvCurrentUserName.setText(currentEntry.getDisplayNamePublic());
+        }
+        if (tvCurrentUserDetail != null) {
+            tvCurrentUserDetail.setText(detailForCurrentLeaderboardMode(currentEntry));
+        }
+        if (tvCurrentUserSouvenir != null) {
+            tvCurrentUserSouvenir.setVisibility(currentEntry.isSouvenirMinted() ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    private void showLeaderboardError() {
+        if (recyclerRankings != null) recyclerRankings.setVisibility(View.GONE);
+        if (layoutEmpty != null) layoutEmpty.setVisibility(View.GONE);
+        if (layoutCurrentUserCard != null) layoutCurrentUserCard.setVisibility(View.GONE);
+        if (layoutHiddenNotice != null) layoutHiddenNotice.setVisibility(View.GONE);
+        if (tvCachedBanner != null) tvCachedBanner.setVisibility(View.GONE);
+        if (layoutError != null) layoutError.setVisibility(View.VISIBLE);
+    }
+
+    private String detailForCurrentLeaderboardMode(LeaderboardEntry entry) {
+        if (entry.getDetailOverride() != null && !entry.getDetailOverride().trim().isEmpty()) {
+            return entry.getDetailOverride();
+        }
+        if (LEADERBOARD_MODE_MISSIONS.equals(leaderboardSelectedMode)) {
+            return ExplorerRankingAdapter.formatMissionDate(entry.getMissionCompletedAt());
+        }
+        if (entry.isAllIntramurosComplete()) {
+            return "Completed all " + LeaderboardRepository.PUBLIC_INTRAMUROS_MISSION_COUNT + " Intramuros missions";
+        }
+        return entry.getIntramurosMissionCount() + " of "
+                + LeaderboardRepository.PUBLIC_INTRAMUROS_MISSION_COUNT
+                + " missions complete";
+    }
 
     private void loadGreeting() {
         if (tvFullName == null) return;
@@ -574,8 +918,17 @@ public class HomeActivity extends AppCompatActivity {
 
     private void debugCompleteAllMissions() {
         if (!BuildConfig.DEBUG) return;
-        Toast.makeText(this, "Debug: completing all 6 missions…", Toast.LENGTH_SHORT).show();
-        String[] ids = {"fort_santiago", "baluarte_san_diego", "casa_manila", "museo_intramuros", "centro_turismo", "lpu"};
+        Toast.makeText(this, "Debug: completing all 8 missions…", Toast.LENGTH_SHORT).show();
+        String[] ids = {
+                "fort_santiago",
+                "baluarte_san_diego",
+                "casa_manila",
+                "museo_intramuros",
+                "centro_turismo",
+                "san_agustin_church",
+                "manila_cathedral",
+                "lpu"
+        };
         int[] remaining = {ids.length};
         for (String id : ids) {
             MissionCompletionHelper.completeMission(this, id,
@@ -583,7 +936,7 @@ public class HomeActivity extends AppCompatActivity {
                         @Override public void onSuccess() {
                             if (--remaining[0] == 0) runOnUiThread(() -> {
                                 Toast.makeText(HomeActivity.this,
-                                        "All 6 missions complete!", Toast.LENGTH_LONG).show();
+                                        "All 8 missions complete!", Toast.LENGTH_LONG).show();
                                 loadMissionProgress();
                             });
                         }
@@ -633,9 +986,9 @@ public class HomeActivity extends AppCompatActivity {
                 }));
         arHelpers.add(new ARHelper("Baluarte de San Diego", "", 14.585491, 120.975702,
                 "baluarte_san_diego",
-                new double[]{14.585520, 14.585565},
-                new double[]{120.975730, 120.975683},
-                "farol_de_aceite"));
+                repeatRelicCoordinates(14.585520, 14.585565),
+                repeatRelicCoordinates(120.975730, 120.975683),
+                buildTwoOfEachRelicIds()));
         arHelpers.add(new ARHelper("Casa Manila", "", 14.589630881841018, 120.97515722599451,
                 "casa_manila",
                 // 5 relic stages × 2 relics each, in order. The user must collect
@@ -668,14 +1021,24 @@ public class HomeActivity extends AppCompatActivity {
                 }));
         arHelpers.add(new ARHelper("Museo de Intramuros", "", 14.589853, 120.973438,
                 "museo_intramuros",
-                new double[]{14.589880, 14.589925},
-                new double[]{120.973410, 120.973457},
-                "salakot_elite"));
+                repeatRelicCoordinates(14.589880, 14.589925),
+                repeatRelicCoordinates(120.973410, 120.973457),
+                buildTwoOfEachRelicIds()));
         arHelpers.add(new ARHelper("Centro de Turismo", "", 14.590135, 120.973367,
                 "centro_turismo",
-                new double[]{14.590160, 14.590115},
-                new double[]{120.973395, 120.973442},
-                "pocket_watch"));
+                repeatRelicCoordinates(14.590160, 14.590115),
+                repeatRelicCoordinates(120.973395, 120.973442),
+                buildTwoOfEachRelicIds()));
+        arHelpers.add(new ARHelper("San Agustin Church", "", 14.589179727259076, 120.97518225933517,
+                "san_agustin_church",
+                repeatRelicCoordinates(14.589154727259076, 14.589211727259076),
+                repeatRelicCoordinates(120.97514625933517, 120.97521825933517),
+                buildTwoOfEachRelicIds()));
+        arHelpers.add(new ARHelper("Manila Cathedral", "", 14.5917563125116, 120.97339841269124,
+                "manila_cathedral",
+                repeatRelicCoordinates(14.5917313125116, 14.5917833125116),
+                repeatRelicCoordinates(120.97336541269124, 120.97343241269124),
+                buildTwoOfEachRelicIds()));
         arHelpers.add(new ARHelper("Lyceum of the Philippines University", "", 14.591600276085643, 120.97778918301911,
                 "lpu",
                 new double[]{
@@ -837,6 +1200,35 @@ public class HomeActivity extends AppCompatActivity {
         if (cardNFTClaim != null) cardNFTClaim.setVisibility(View.GONE);
         updateTreasureChest(allComplete);
         updateHomeProgressUI(completedIds, completedCount, total, allComplete);
+    }
+
+    private int getMaxRelicCount() {
+        if (collectibleItems == null) return 0;
+        int total = 0;
+        for (CollectibleItem item : collectibleItems) {
+            total += item.getMaxCount();
+        }
+        return total;
+    }
+
+    private double[] repeatRelicCoordinates(double first, double second) {
+        return new double[]{
+                first, second,
+                first, second,
+                first, second,
+                first, second,
+                first, second
+        };
+    }
+
+    private String[] buildTwoOfEachRelicIds() {
+        return new String[]{
+                "intramuros_coin", "intramuros_coin",
+                "peineta",         "peineta",
+                "salakot_elite",   "salakot_elite",
+                "farol_de_aceite", "farol_de_aceite",
+                "pocket_watch",    "pocket_watch"
+        };
     }
 
     // ──────────────────────────────────────────────────────────────
