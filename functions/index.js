@@ -5,7 +5,7 @@
 //
 // Path A flow (current):
 //   1. Client calls mintSouvenir({ uid, walletAddress }).
-//   2. CF verifies auth, 5 missions complete, wallet matches stored profile.
+//   2. CF verifies auth, 8 missions complete, wallet matches stored profile.
 //   3. CF uses owner key to call adminMintTo(walletAddress) on Polygon.
 //   4. Owner wallet pays gas; user pays nothing.
 //   5. Returns tx hash + tokenId.
@@ -25,7 +25,7 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
-const REQUIRED_MISSIONS = 5;
+const REQUIRED_MISSIONS = 8;
 
 function getPolygonConfig() {
   // Prefer env vars for Gen 2, but keep Runtime Config fallback until migrated.

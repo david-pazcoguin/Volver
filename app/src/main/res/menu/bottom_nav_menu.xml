@@ -16,5 +16,10 @@
         android:icon="@drawable/ic_collectibles"
         android:title="Collectibles" />
 
+    <item
+        android:id="@+id/nav_leaderboard"
+        android:icon="@drawable/ic_leaderboard"
+        android:title="Leaderboard" />
+
 
 </menu>

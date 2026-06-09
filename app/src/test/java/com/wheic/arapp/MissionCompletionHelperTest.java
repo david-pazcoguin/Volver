@@ -9,13 +9,16 @@ import org.junit.Test;
 public class MissionCompletionHelperTest {
 
     @Test
-    public void allowlist_containsAllFiveLandmarks() {
-        assertEquals(5, MissionCompletionHelper.ALLOWED_MISSION_IDS.size());
+    public void allowlist_containsAllMissionLocations() {
+        assertEquals(8, MissionCompletionHelper.ALLOWED_MISSION_IDS.size());
         assertTrue(MissionCompletionHelper.ALLOWED_MISSION_IDS.contains("fort_santiago"));
         assertTrue(MissionCompletionHelper.ALLOWED_MISSION_IDS.contains("baluarte_san_diego"));
         assertTrue(MissionCompletionHelper.ALLOWED_MISSION_IDS.contains("casa_manila"));
         assertTrue(MissionCompletionHelper.ALLOWED_MISSION_IDS.contains("museo_intramuros"));
         assertTrue(MissionCompletionHelper.ALLOWED_MISSION_IDS.contains("centro_turismo"));
+        assertTrue(MissionCompletionHelper.ALLOWED_MISSION_IDS.contains("san_agustin_church"));
+        assertTrue(MissionCompletionHelper.ALLOWED_MISSION_IDS.contains("manila_cathedral"));
+        assertTrue(MissionCompletionHelper.ALLOWED_MISSION_IDS.contains("lpu"));
     }
 
     @Test

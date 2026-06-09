@@ -87,15 +87,74 @@
             android:orientation="vertical"
             android:padding="16dp">
 
+            <LinearLayout
+                android:id="@+id/cardLeaderboardSpotlight"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_leaderboard_spotlight"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="18dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="III"
+                    android:textColor="@color/gold_hero"
+                    android:textSize="34sp"
+                    android:textStyle="bold" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="14dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvSpotlightLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="@font/montserrat_bold"
+                        android:letterSpacing="0.08"
+                        android:text="LEADERBOARD"
+                        android:textColor="@color/gold_bright"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvSpotlightTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:fontFamily="@font/montserrat_bold"
+                        android:text="Overall Crown"
+                        android:textColor="@color/white"
+                        android:textSize="22sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvSpotlightBody"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:fontFamily="@font/cabin"
+                        android:text="Fastest clears rise to the top. Switch boards to compare each mission's best runs."
+                        android:textColor="@color/gold_hero"
+                        android:textSize="12sp" />
+                </LinearLayout>
+            </LinearLayout>
+
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/chipGroupModes"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
                 app:singleSelection="true">
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/chipOverall"
-                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    style="@style/Widget.ARApp.LeaderboardChip"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:checked="true"
@@ -103,7 +162,7 @@
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/chipMissionRankings"
-                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    style="@style/Widget.ARApp.LeaderboardChip"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Mission Rankings" />
@@ -119,7 +178,7 @@
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/chipFortSantiago"
-                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    style="@style/Widget.ARApp.LeaderboardChip"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:checked="true"
@@ -127,38 +186,52 @@
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/chipBaluarte"
-                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    style="@style/Widget.ARApp.LeaderboardChip"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Baluarte" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/chipCasaManila"
-                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    style="@style/Widget.ARApp.LeaderboardChip"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Casa Manila" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/chipMuseo"
-                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    style="@style/Widget.ARApp.LeaderboardChip"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Museo" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/chipCentro"
-                    style="@style/Widget.MaterialComponents.Chip.Choice"
+                    style="@style/Widget.ARApp.LeaderboardChip"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Centro" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipSanAgustin"
+                    style="@style/Widget.ARApp.LeaderboardChip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="San Agustin" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chipManilaCathedral"
+                    style="@style/Widget.ARApp.LeaderboardChip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Cathedral" />
             </com.google.android.material.chip.ChipGroup>
 
             <TextView
                 android:id="@+id/tvCachedBanner"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="14dp"
                 android:background="@drawable/bg_stat_card"
                 android:fontFamily="@font/cabin"
                 android:padding="12dp"
@@ -277,7 +350,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
                         android:fontFamily="@font/cabin"
-                        android:text="3 of 5 missions complete"
+                        android:text="3 of 7 missions complete"
                         android:textColor="@color/text_muted"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -389,5 +462,15 @@
 
         </LinearLayout>
     </ScrollView>
+
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottomNavLeaderboard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/bg_card"
+        app:itemIconTint="@color/nav_icon_tint"
+        app:itemTextColor="@color/nav_icon_tint"
+        app:labelVisibilityMode="labeled"
+        app:menu="@menu/bottom_nav_menu" />
 
 </LinearLayout>

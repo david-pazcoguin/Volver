@@ -1390,7 +1390,7 @@ public class ARActivity extends AppCompatActivity {
      * fire-and-forget behavior of the legacy plane-tap flow.
      *
      * @param onSuccess receives {@code true} when this mission completed the
-     *                  full set of 5, {@code false} otherwise.
+     *                  full mission set, {@code false} otherwise.
      */
     private void onMissionModelPlaced(java.util.function.Consumer<Boolean> onSuccess,
             java.util.function.Consumer<String> onError) {

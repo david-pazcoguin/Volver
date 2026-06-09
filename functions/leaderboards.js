@@ -18,6 +18,8 @@ const PUBLIC_MISSIONS = [
   { missionId: "casa_manila", boardId: "mission_casa_manila", title: "Casa Manila" },
   { missionId: "museo_intramuros", boardId: "mission_museo_intramuros", title: "Museo de Intramuros" },
   { missionId: "centro_turismo", boardId: "mission_centro_de_turismo", title: "Centro de Turismo" },
+  { missionId: "san_agustin_church", boardId: "mission_san_agustin_church", title: "San Agustin Church" },
+  { missionId: "manila_cathedral", boardId: "mission_manila_cathedral", title: "Manila Cathedral" },
 ];
 
 const MISSION_MAP = new Map(PUBLIC_MISSIONS.map((mission) => [mission.missionId, mission]));
