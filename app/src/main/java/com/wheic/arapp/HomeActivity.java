@@ -1034,10 +1034,23 @@ public class HomeActivity extends AppCompatActivity {
                 repeatRelicCoordinates(14.589154727259076, 14.589211727259076),
                 repeatRelicCoordinates(120.97514625933517, 120.97521825933517),
                 buildTwoOfEachRelicIds()));
-        arHelpers.add(new ARHelper("Manila Cathedral", "", 14.5917563125116, 120.97339841269124,
+        // Original Manila Cathedral mission center: 14.591741718049287, 120.97339129769252
+        arHelpers.add(new ARHelper("Manila Cathedral", "", 14.59209490430254, 120.97310566471427,
                 "manila_cathedral",
-                repeatRelicCoordinates(14.5917313125116, 14.5917833125116),
-                repeatRelicCoordinates(120.97336541269124, 120.97343241269124),
+                new double[]{
+                        14.592069914536689, 14.59201695647418,
+                        14.591906501045642, 14.592179613339944,
+                        14.592304804830045, 14.591920558675058,
+                        14.592229491394393, 14.592038247382144,
+                        14.591827765614427, 14.592020141431538
+                },
+                new double[]{
+                        120.9733483842398, 120.97326708119454,
+                        120.97314981718696, 120.9728793282095,
+                        120.97305219975573, 120.9729347169659,
+                        120.97301657075246, 120.97321886654446,
+                        120.9731650769119, 120.97338257412174
+                },
                 buildTwoOfEachRelicIds()));
         arHelpers.add(new ARHelper("Lyceum of the Philippines University", "", 14.591600276085643, 120.97778918301911,
                 "lpu",

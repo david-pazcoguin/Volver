@@ -129,6 +129,10 @@ public class ARActivity extends AppCompatActivity {
     // GPS positions for each relic (one entry per relic slot)
     private double[] relicLatitudes;
     private double[] relicLongitudes;
+    // Stable AR spawn positions. Each relic keeps its original GPS trigger point,
+    // but anchors within this small radius to avoid depending on one exact spot.
+    private double[] relicSpawnLatitudes;
+    private double[] relicSpawnLongitudes;
     // Optional: parallel array of relic IDs (one per relic slot). When non-null,
     // each slot spawns with its own GLB model and credits that relic on tap.
     // When null, every slot uses the default coin model and the mission's
@@ -281,6 +285,9 @@ public class ARActivity extends AppCompatActivity {
     // user-visible "walk closer" threshold and is large enough that urban-canyon
     // GPS drift (±5-10 m) never prevents a relic from appearing in range.
     private static final float RELIC_SPAWN_RADIUS_M = 12.0f;
+    private static final double RELIC_SPAWN_OFFSET_RADIUS_M = 5.0;
+    private static final double RELIC_TERRAIN_HEIGHT_M = 0.8;
+    private static final double METERS_PER_DEGREE_LATITUDE = 111_320.0;
     // Distance (metres) within which the COLLECT button is shown.
     // Keeps the button hidden until the user is genuinely close.
     private static final float RELIC_COLLECT_BUTTON_M = 5.0f;
@@ -362,6 +369,7 @@ public class ARActivity extends AppCompatActivity {
         missionId = extras.getString("MissionId", "unknown");
         missionName = extras.getString("MissionName", "Mission");
         collectibleId = extras.getString("CollectibleId", missionId);
+        buildStableRelicSpawnCoordinates();
         restoreSavedRelicProgress();
 
         // Validate coordinates
@@ -1131,8 +1139,8 @@ public class ARActivity extends AppCompatActivity {
         double aimLng = targetLongitude;
         if (isTargetReached) {
             if (slot >= 0 && relicLatitudes != null && slot < relicLatitudes.length) {
-                aimLat = relicLatitudes[slot];
-                aimLng = relicLongitudes[slot];
+                aimLat = spawnLatitudeForSlot(slot);
+                aimLng = spawnLongitudeForSlot(slot);
             }
         }
 
@@ -1275,8 +1283,8 @@ public class ARActivity extends AppCompatActivity {
             // Quaternion is 4 individual floats (identity = 0,0,0,1).
             // Callback is invoked on the AR GL thread — safe for Sceneform node ops.
             earth.resolveAnchorOnTerrainAsync(
-                    relicLatitudes[coinIdx], relicLongitudes[coinIdx],
-                    1.6,  // 1.6 m above terrain ≈ eye/chest level; Google Maps provides ground truth
+                    spawnLatitudeForSlot(coinIdx), spawnLongitudeForSlot(coinIdx),
+                    RELIC_TERRAIN_HEIGHT_M,
                     0f, 0f, 0f, 1f,
                     (anchor, state) -> {
                         if (state == Anchor.TerrainAnchorState.SUCCESS) {
@@ -1588,7 +1596,7 @@ public class ARActivity extends AppCompatActivity {
         if (index < coinMapMarkers.size() && coinMapMarkers.get(index) != null)
             return;
         Marker m = new Marker(minimap);
-        m.setPosition(new GeoPoint(relicLatitudes[index], relicLongitudes[index]));
+        m.setPosition(new GeoPoint(spawnLatitudeForSlot(index), spawnLongitudeForSlot(index)));
         m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER);
         m.setIcon(createDotDrawable(Color.parseColor("#E53935"), 18));
         m.setTitle("Relic " + (index + 1));
@@ -1672,6 +1680,77 @@ public class ARActivity extends AppCompatActivity {
         return -1; // all done
     }
 
+    private void buildStableRelicSpawnCoordinates() {
+        if (relicLatitudes == null || relicLongitudes == null || relicLatitudes.length == 0) {
+            relicSpawnLatitudes = null;
+            relicSpawnLongitudes = null;
+            return;
+        }
+
+        relicSpawnLatitudes = new double[relicLatitudes.length];
+        relicSpawnLongitudes = new double[relicLatitudes.length];
+
+        for (int slot = 0; slot < relicLatitudes.length; slot++) {
+            double originalLat = relicLatitudes[slot];
+            double originalLng = slot < relicLongitudes.length ? relicLongitudes[slot] : targetLongitude;
+            relicSpawnLatitudes[slot] = originalLat;
+            relicSpawnLongitudes[slot] = originalLng;
+
+            if (slot >= relicLongitudes.length || !isUsableCoordinate(originalLat, originalLng)) {
+                continue;
+            }
+
+            double[] spawnPoint = stableSpawnPointNear(originalLat, originalLng, slot);
+            relicSpawnLatitudes[slot] = spawnPoint[0];
+            relicSpawnLongitudes[slot] = spawnPoint[1];
+        }
+    }
+
+    private boolean isUsableCoordinate(double latitude, double longitude) {
+        return !Double.isNaN(latitude) && !Double.isInfinite(latitude)
+                && !Double.isNaN(longitude) && !Double.isInfinite(longitude);
+    }
+
+    private double[] stableSpawnPointNear(double latitude, double longitude, int slot) {
+        long seed = Objects.hash(
+                missionId != null ? missionId : "",
+                missionName != null ? missionName : "",
+                slot,
+                Double.doubleToLongBits(latitude),
+                Double.doubleToLongBits(longitude));
+        Random random = new Random(seed);
+        double angleRad = random.nextDouble() * Math.PI * 2.0;
+        double radiusM = RELIC_SPAWN_OFFSET_RADIUS_M * (0.65 + (random.nextDouble() * 0.35));
+
+        double latOffset = (Math.cos(angleRad) * radiusM) / METERS_PER_DEGREE_LATITUDE;
+        double lngMetersPerDegree = METERS_PER_DEGREE_LATITUDE * Math.cos(Math.toRadians(latitude));
+        if (Math.abs(lngMetersPerDegree) < 1.0) {
+            return new double[] { latitude, longitude };
+        }
+        double lngOffset = (Math.sin(angleRad) * radiusM) / lngMetersPerDegree;
+        return new double[] { latitude + latOffset, longitude + lngOffset };
+    }
+
+    private double spawnLatitudeForSlot(int slot) {
+        if (relicSpawnLatitudes != null && slot >= 0 && slot < relicSpawnLatitudes.length) {
+            return relicSpawnLatitudes[slot];
+        }
+        if (relicLatitudes != null && slot >= 0 && slot < relicLatitudes.length) {
+            return relicLatitudes[slot];
+        }
+        return targetLatitude;
+    }
+
+    private double spawnLongitudeForSlot(int slot) {
+        if (relicSpawnLongitudes != null && slot >= 0 && slot < relicSpawnLongitudes.length) {
+            return relicSpawnLongitudes[slot];
+        }
+        if (relicLongitudes != null && slot >= 0 && slot < relicLongitudes.length) {
+            return relicLongitudes[slot];
+        }
+        return targetLongitude;
+    }
+
     private void restoreSavedRelicProgress() {
         if (relicLatitudes == null || coinSlotCollected == null
                 || coinSlotCollected.length != relicLatitudes.length) {
@@ -1737,7 +1816,7 @@ public class ARActivity extends AppCompatActivity {
         } else {
             float[] d = new float[1];
             Location.distanceBetween(lastUserLat, lastUserLng,
-                    relicLatitudes[slot], relicLongitudes[slot], d);
+                    spawnLatitudeForSlot(slot), spawnLongitudeForSlot(slot), d);
             distMeters = d[0];
         }
         int meters = Math.round(distMeters);
@@ -2062,8 +2141,8 @@ public class ARActivity extends AppCompatActivity {
         Log.d(TAG, "preResolveNextSlotAnchor: firing for slot=" + slot);
         try {
             earth.resolveAnchorOnTerrainAsync(
-                    relicLatitudes[slot], relicLongitudes[slot],
-                    1.6, 0f, 0f, 0f, 1f,
+                    spawnLatitudeForSlot(slot), spawnLongitudeForSlot(slot),
+                    RELIC_TERRAIN_HEIGHT_M, 0f, 0f, 0f, 1f,
                     (anchor, state) -> {
                         if (state == Anchor.TerrainAnchorState.SUCCESS) {
                             preResolvedAnchors.put(slot, anchor);
@@ -2266,7 +2345,7 @@ public class ARActivity extends AppCompatActivity {
             // GPS bearing + distance from user to the configured coord.
             float[] geo = new float[2];
             Location.distanceBetween(lastUserLat, lastUserLng,
-                    relicLatitudes[coinIdx], relicLongitudes[coinIdx], geo);
+                    spawnLatitudeForSlot(coinIdx), spawnLongitudeForSlot(coinIdx), geo);
             float gpsDistance = geo[0];                  // metres
             float gpsBearingDeg = geo[1];                // 0=N, +clockwise, range -180..180
 
