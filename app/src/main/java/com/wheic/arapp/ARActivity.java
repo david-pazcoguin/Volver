@@ -113,7 +113,7 @@ public class ARActivity extends AppCompatActivity {
     private LocationCallback locationCallback;
     private static final int LOCATION_PERM_CODE = 1001;
     private static final float ACTIVATION_RADIUS_METERS = 30.0f;
-    private static final float MAX_ACTIVATION_ACCURACY_METERS = 25.0f;
+    private static final float MAX_ACTIVATION_ACCURACY_METERS = 18.0f;
     private static final int REQUIRED_CONSECUTIVE_ACTIVATION_FIXES = 2;
     private static final long ACTIVATION_CONFIRMATION_WINDOW_MS = 12_000L;
     private static final long LOCATION_CHECK_INTERVAL = 10_000L; // when searching for target
@@ -231,6 +231,7 @@ public class ARActivity extends AppCompatActivity {
     private MapView minimap;
     private View minimapContainer;
     private View btnMapCompassToggle;
+    private View btnFinishDialogPreview;
     private TextView tvMapCompassIcon;
     private Marker userMarker;
     private Marker targetMarker;
@@ -286,17 +287,23 @@ public class ARActivity extends AppCompatActivity {
     // GPS drift (±5-10 m) never prevents a relic from appearing in range.
     private static final float RELIC_SPAWN_RADIUS_M = 12.0f;
     private static final double RELIC_SPAWN_OFFSET_RADIUS_M = 5.0;
-    private static final double RELIC_TERRAIN_HEIGHT_M = 0.8;
+    private static final double RELIC_TERRAIN_HEIGHT_M = 0.75;
+    private static final float FALLBACK_RELIC_BELOW_CAMERA_M = 0.75f;
+    private static final double MAX_TERRAIN_ANCHOR_HORIZONTAL_ACCURACY_M = 8.0;
+    private static final long GEOSPATIAL_STABILIZATION_WAIT_MS = 6_000L;
     private static final double METERS_PER_DEGREE_LATITUDE = 111_320.0;
+    private static final boolean COMPASS_ONLY_MISSION_UI = true;
     // Distance (metres) within which the COLLECT button is shown.
     // Keeps the button hidden until the user is genuinely close.
     private static final float RELIC_COLLECT_BUTTON_M = 5.0f;
-    private static final float MAX_RELIC_GATING_ACCURACY_METERS = 25.0f;
+    private static final float MAX_RELIC_GATING_ACCURACY_METERS = 18.0f;
+    private static final float MAX_NAVIGATION_FIX_ACCURACY_METERS = 18.0f;
+    private static final float MAX_GEOSPATIAL_NAVIGATION_ACCURACY_METERS = 8.0f;
     private static final long GEOSPATIAL_HEADING_MAX_AGE_MS = 1_500L;
     // Distance at which a staged relic is despawned again (hysteresis to avoid
     // flicker).
     private static final float RELIC_DESPAWN_RADIUS_M = 20.0f;
-    private static final long MAX_LOCATION_FIX_AGE_MS = 8_000L;
+    private static final long MAX_LOCATION_FIX_AGE_MS = 5_000L;
     // ── Periodic location check ──────────────────────────────────────
     private final float[] distanceResults = new float[1];
     private final Handler locationHandler = new Handler(Looper.getMainLooper());
@@ -420,6 +427,9 @@ public class ARActivity extends AppCompatActivity {
         if (compassOverlay != null) {
             // Tapping the overlay itself also closes it
             compassOverlay.setOnClickListener(v -> {
+                if (COMPASS_ONLY_MISSION_UI && isTargetReached) {
+                    return;
+                }
                 compassOverlay.setVisibility(View.GONE);
                 if (btnCompass != null)
                     btnCompass.setSelected(false);
@@ -463,9 +473,15 @@ public class ARActivity extends AppCompatActivity {
         minimapContainer = findViewById(R.id.minimapContainer);
         minimap = findViewById(R.id.minimap);
         btnMapCompassToggle = findViewById(R.id.btnMapCompassToggle);
+        btnFinishDialogPreview = findViewById(R.id.btnFinishDialogPreview);
         tvMapCompassIcon = findViewById(R.id.tvMapCompassIcon);
-        if (btnMapCompassToggle != null) {
+        if (btnMapCompassToggle != null && !COMPASS_ONLY_MISSION_UI) {
             btnMapCompassToggle.setOnClickListener(v -> toggleMapCompass());
+        } else if (btnMapCompassToggle != null) {
+            btnMapCompassToggle.setVisibility(View.GONE);
+        }
+        if (btnFinishDialogPreview != null) {
+            btnFinishDialogPreview.setOnClickListener(v -> showStyledMissionCompleteDialogPreview());
         }
 
         arCam = (ArFragment) getSupportFragmentManager().findFragmentById(R.id.arCameraArea);
@@ -488,28 +504,28 @@ public class ARActivity extends AppCompatActivity {
                 Location location = result.getLastLocation();
                 if (location == null) {
                     Log.e(TAG, "onLocationResult: null location");
+                    if (!isTargetReached) {
+                        updateSearchingGpsStatus("Searching for GPS...");
+                    }
                     return;
                 }
                 Log.e(TAG, "onLocationResult: " + location.getLatitude() + "," + location.getLongitude());
+                if (!isLocationFresh(location)) {
+                    if (!isTargetReached) {
+                        updateSearchingGpsStatus("Searching for fresh GPS...");
+                    }
+                    return;
+                }
+                if (!isReliableNavigationLocation(location)) {
+                    if (!isTargetReached) {
+                        updateImprovingGpsStatus(location.hasAccuracy() ? location.getAccuracy() : Float.NaN);
+                    }
+                    return;
+                }
 
                 updateUserFixFromLocation(location);
-
-                Location.distanceBetween(
-                        location.getLatitude(), location.getLongitude(),
-                        targetLatitude, targetLongitude, distanceResults);
-                float distance = distanceResults[0];
-
-                if (!isTargetReached) {
-                    // Directly update distance UI — never depends on NavManager or network
-                    updateDistanceUI(distance);
-
-                    if (navManager != null) {
-                        navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
-                    }
-                    maybeActivateTarget(distance, lastUserAccuracyMeters, "locationCallback");
-                }
-                updateMinimapUser();
-                updateRelicHud();
+                applyNavigationFix(location.getLatitude(), location.getLongitude(),
+                        lastUserAccuracyMeters, "locationCallback");
             }
         };
 
@@ -634,9 +650,6 @@ public class ARActivity extends AppCompatActivity {
         // Lighting is managed by ENVIRONMENTAL_HDR — no manual override needed.
 
         if (isTargetReached) {
-            // Upcoming-slot anchors are safe to pre-resolve now because they
-            // remain detached until their slot becomes active.
-            preResolveUpcomingSlotAnchors();
             // Recover any permanently-lost anchors BEFORE trying to spawn so the
             // cleared slot is immediately eligible for re-spawn in the same frame.
             checkAndRespawnLostAnchor();
@@ -727,22 +740,27 @@ public class ARActivity extends AppCompatActivity {
                     Log.e(TAG, "getCurrentLocation result: " + (location != null
                             ? location.getLatitude() + "," + location.getLongitude()
                             : "null"));
-                    if (location != null) {
-                        updateUserFixFromLocation(location);
+                    if (location == null) {
                         if (!isTargetReached) {
-                            Location.distanceBetween(
-                                    location.getLatitude(), location.getLongitude(),
-                                    targetLatitude, targetLongitude, distanceResults);
-                            float distance = distanceResults[0];
-                            updateDistanceUI(distance);
-                            if (navManager != null) {
-                                navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
-                            }
-                            maybeActivateTarget(distance, lastUserAccuracyMeters, "getCurrentLocation");
+                            updateSearchingGpsStatus("Searching for GPS...");
                         }
-                        updateMinimapUser();
-                        updateRelicHud();
+                        return;
                     }
+                    if (!isLocationFresh(location)) {
+                        if (!isTargetReached) {
+                            updateSearchingGpsStatus("Searching for fresh GPS...");
+                        }
+                        return;
+                    }
+                    if (!isReliableNavigationLocation(location)) {
+                        if (!isTargetReached) {
+                            updateImprovingGpsStatus(location.hasAccuracy() ? location.getAccuracy() : Float.NaN);
+                        }
+                        return;
+                    }
+                    updateUserFixFromLocation(location);
+                    applyNavigationFix(location.getLatitude(), location.getLongitude(),
+                            lastUserAccuracyMeters, "getCurrentLocation");
                 })
                 .addOnFailureListener(this, e -> Log.e(TAG, "getCurrentLocation failed: " + e.getMessage()));
 
@@ -752,6 +770,7 @@ public class ARActivity extends AppCompatActivity {
         LocationRequest request = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000)
                 .setMinUpdateIntervalMillis(1000)
                 .setMaxUpdateAgeMillis(5_000)
+                .setWaitForAccurateLocation(true)
                 .build();
         fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper());
     }
@@ -773,7 +792,7 @@ public class ARActivity extends AppCompatActivity {
 
             if (earth != null && earth.getTrackingState() == TrackingState.TRACKING) {
                 GeospatialPose cameraPose = earth.getCameraGeospatialPose();
-                if (cameraPose.getHorizontalAccuracy() < 10f) {
+                if (cameraPose.getHorizontalAccuracy() <= MAX_GEOSPATIAL_NAVIGATION_ACCURACY_METERS) {
                     // Use the precise geospatial fix as the authoritative user
                     // position so the compass + minimap + HUD agree with where
                     // the AR relic is actually anchored. Falling back to fused
@@ -789,27 +808,12 @@ public class ARActivity extends AppCompatActivity {
                         geospatialHeadingElapsedMs = 0L;
                     }
 
-                    Location.distanceBetween(
-                            cameraPose.getLatitude(), cameraPose.getLongitude(),
-                            targetLatitude, targetLongitude, distanceResults);
-                    float distance = distanceResults[0];
-
-                    if (navManager != null) {
-                        navManager.onLocationUpdate(cameraPose.getLatitude(), cameraPose.getLongitude());
-                    }
-
-                    if (!isTargetReached)
-                        updateDistanceUI(distance);
-                    updateMinimapUser();
-                    updateRelicHud();
-                    updateCompassArrow();
-
-                    maybeActivateTarget(distance, (float) cameraPose.getHorizontalAccuracy(), "geospatial");
+                    applyNavigationFix(cameraPose.getLatitude(), cameraPose.getLongitude(),
+                            (float) cameraPose.getHorizontalAccuracy(), "geospatial");
                     return;
                 }
-                updateHint("Improving GPS accuracy...");
+                updateImprovingGpsStatus((float) cameraPose.getHorizontalAccuracy());
                 clearGeospatialHeading();
-                return;
             }
             // Geospatial is available but not yet tracking — fall through to fused location
         }
@@ -820,42 +824,37 @@ public class ARActivity extends AppCompatActivity {
                 Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
             return;
 
-        fusedLocationClient.getLastLocation().addOnSuccessListener(this, location -> {
-            if (location == null) {
-                Log.e(TAG, "getLastLocation returned null \u2014 waiting for fresh fix");
-                if (tvDirectionDistance != null && !isTargetReached) {
-                    tvDirectionDistance.setText("Searching for GPS\u2026");
-                }
-                return;
-            }
+        if (hasReliableNavigationFix()) {
+            applyNavigationFix(lastUserLat, lastUserLng, lastUserAccuracyMeters, "cachedReliableFix");
+            return;
+        }
 
-            if (!isLocationFresh(location)) {
-                Log.d(TAG, "getLastLocation: ignoring stale fix ageMs=" + getLocationAgeMs(location));
-                if (tvDirectionDistance != null && !isTargetReached) {
-                    tvDirectionDistance.setText("Searching for GPS\u2026");
-                }
-                return;
-            }
+        fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                .addOnSuccessListener(this, location -> {
+                    if (location == null) {
+                        Log.e(TAG, "getLastLocation returned null \u2014 waiting for fresh fix");
+                        updateSearchingGpsStatus("Searching for GPS...");
+                        return;
+                    }
 
-            updateUserFixFromLocation(location);
+                    if (!isLocationFresh(location)) {
+                        Log.d(TAG, "getLastLocation: ignoring stale fix ageMs=" + getLocationAgeMs(location));
+                        updateSearchingGpsStatus("Searching for fresh GPS...");
+                        return;
+                    }
+                    if (!isReliableNavigationLocation(location)) {
+                        updateImprovingGpsStatus(location.hasAccuracy() ? location.getAccuracy() : Float.NaN);
+                        return;
+                    }
 
-            Location.distanceBetween(
-                    location.getLatitude(), location.getLongitude(),
-                    targetLatitude, targetLongitude, distanceResults);
-            float distance = distanceResults[0];
-
-            if (!isTargetReached)
-                updateDistanceUI(distance);
-
-            if (navManager != null) {
-                navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
-            }
-
-            updateMinimapUser();
-            updateRelicHud();
-
-            maybeActivateTarget(distance, lastUserAccuracyMeters, "getLastLocation");
-        });
+                    updateUserFixFromLocation(location);
+                    applyNavigationFix(location.getLatitude(), location.getLongitude(),
+                            lastUserAccuracyMeters, "getCurrentLocationFallback");
+                })
+                .addOnFailureListener(this, e -> {
+                    Log.e(TAG, "getCurrentLocation fallback failed: " + e.getMessage());
+                    updateSearchingGpsStatus("Searching for GPS...");
+                });
     }
 
     /**
@@ -882,17 +881,20 @@ public class ARActivity extends AppCompatActivity {
         geospatialWaitStartMs = 0;
 
         // Show minimap so player can see coin location (reset any previous compass toggle)
-        isCompassToggled = false;
-        if (minimapContainer != null)
-            minimapContainer.setVisibility(View.VISIBLE);
-        if (compassOverlay != null)
-            compassOverlay.setVisibility(View.GONE);
-        if (btnMapCompassToggle != null) {
-            btnMapCompassToggle.setVisibility(View.VISIBLE);
-            if (tvMapCompassIcon != null)
-                tvMapCompassIcon.setText("🧭");
+        if (COMPASS_ONLY_MISSION_UI) {
+            showCompassOnlyMissionUi(false);
+        } else {
+            isCompassToggled = false;
+            if (minimapContainer != null)
+                minimapContainer.setVisibility(View.VISIBLE);
+            if (compassOverlay != null)
+                compassOverlay.setVisibility(View.GONE);
+            if (btnMapCompassToggle != null) {
+                btnMapCompassToggle.setVisibility(View.VISIBLE);
+                if (tvMapCompassIcon != null)
+                    tvMapCompassIcon.setText("🧭");
+            }
         }
-
         updateHint("Find and tap the floating coin to complete the mission!");
 
         Toast.makeText(this, "You reached the mission! Find the floating coin!",
@@ -953,8 +955,33 @@ public class ARActivity extends AppCompatActivity {
         lastUserFixElapsedRealtimeMs = SystemClock.elapsedRealtime();
     }
 
+    private boolean isAccurateNavigationFix(float accuracyMeters) {
+        return !Float.isNaN(accuracyMeters) && accuracyMeters <= MAX_NAVIGATION_FIX_ACCURACY_METERS;
+    }
+
     private boolean isLocationFresh(@NonNull Location location) {
         return getLocationAgeMs(location) <= MAX_LOCATION_FIX_AGE_MS;
+    }
+
+    private boolean isReliableNavigationLocation(@NonNull Location location) {
+        if (!isLocationFresh(location)) {
+            return false;
+        }
+        if (!location.hasAccuracy()) {
+            return false;
+        }
+        return isAccurateNavigationFix(location.getAccuracy());
+    }
+
+    private boolean hasReliableNavigationFix() {
+        if (Double.isNaN(lastUserLat) || Double.isNaN(lastUserLng)) {
+            return false;
+        }
+        if (!isAccurateNavigationFix(lastUserAccuracyMeters)) {
+            return false;
+        }
+        return lastUserFixElapsedRealtimeMs > 0L
+                && SystemClock.elapsedRealtime() - lastUserFixElapsedRealtimeMs <= MAX_LOCATION_FIX_AGE_MS;
     }
 
     private long getLocationAgeMs(@NonNull Location location) {
@@ -979,6 +1006,46 @@ public class ARActivity extends AppCompatActivity {
         }
         return lastUserFixElapsedRealtimeMs > 0L
                 && SystemClock.elapsedRealtime() - lastUserFixElapsedRealtimeMs <= MAX_LOCATION_FIX_AGE_MS;
+    }
+
+    private void updateSearchingGpsStatus(String status) {
+        if (isTargetReached) {
+            return;
+        }
+        updateNavigationStatus(status);
+        if (tvDirectionDistance != null) {
+            tvDirectionDistance.setText("Searching for GPS...");
+        }
+    }
+
+    private void updateImprovingGpsStatus(float accuracyMeters) {
+        if (isTargetReached) {
+            return;
+        }
+        String status = Float.isNaN(accuracyMeters)
+                ? "Improving GPS accuracy..."
+                : String.format(Locale.US, "Improving GPS accuracy... (±%.0f m)", accuracyMeters);
+        updateNavigationStatus(status);
+        if (tvDirectionDistance != null) {
+            tvDirectionDistance.setText("Improving GPS...");
+        }
+    }
+
+    private void applyNavigationFix(double latitude, double longitude, float accuracyMeters, String source) {
+        Location.distanceBetween(latitude, longitude, targetLatitude, targetLongitude, distanceResults);
+        float distance = distanceResults[0];
+
+        if (!isTargetReached) {
+            updateDistanceUI(distance);
+            if (navManager != null) {
+                navManager.onLocationUpdate(latitude, longitude);
+            }
+            maybeActivateTarget(distance, accuracyMeters, source);
+        }
+
+        updateMinimapUser();
+        updateRelicHud();
+        updateCompassArrow();
     }
 
     private boolean isWithinReliableRelicSpawnWindow(int slot) {
@@ -1018,6 +1085,24 @@ public class ARActivity extends AppCompatActivity {
             tvLocateLabel.setText(missionName);
         if (tvLocateDistance != null)
             tvLocateDistance.setText("\uD83D\uDCCD " + distText + " away");
+        hideNavigationHint();
+    }
+
+    private void updateNavigationStatus(String status) {
+        if (isTargetReached) {
+            return;
+        }
+        if (tvLocateLabel != null)
+            tvLocateLabel.setText(missionName);
+        if (tvLocateDistance != null)
+            tvLocateDistance.setText(status);
+        hideNavigationHint();
+    }
+
+    private void hideNavigationHint() {
+        if (!isTargetReached && tvCharacterHint != null) {
+            tvCharacterHint.setVisibility(View.GONE);
+        }
     }
 
     private void handleDirectionUpdate(NavigationDirectionManager.DirectionStep step) {
@@ -1260,6 +1345,44 @@ public class ARActivity extends AppCompatActivity {
         return earth != null && earth.getTrackingState() == TrackingState.TRACKING;
     }
 
+    private boolean hasStableGeospatialPose() {
+        if (!isGeospatialAvailable()) return false;
+        try {
+            Session session = arCam.getArSceneView().getSession();
+            Earth earth = session != null ? session.getEarth() : null;
+            return earth != null
+                    && earth.getCameraGeospatialPose().getHorizontalAccuracy()
+                    <= MAX_TERRAIN_ANCHOR_HORIZONTAL_ACCURACY_M;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Freezes a resolved terrain pose into the current AR session. Terrain
+     * anchors continue adjusting as Earth localization improves, which makes a
+     * visible relic glide even while the phone is still.
+     */
+    private Anchor stabilizeTerrainAnchor(Anchor terrainAnchor) {
+        if (terrainAnchor == null || arCam == null || arCam.getArSceneView() == null) {
+            return terrainAnchor;
+        }
+        try {
+            Session session = arCam.getArSceneView().getSession();
+            Frame frame = arCam.getArSceneView().getArFrame();
+            if (session == null || frame == null
+                    || frame.getCamera().getTrackingState() != TrackingState.TRACKING) {
+                return terrainAnchor;
+            }
+            Anchor stableAnchor = session.createAnchor(terrainAnchor.getPose());
+            terrainAnchor.detach();
+            return stableAnchor;
+        } catch (Exception e) {
+            Log.w(TAG, "stabilizeTerrainAnchor: using terrain anchor: " + e.getMessage());
+            return terrainAnchor;
+        }
+    }
+
 
 
     /**
@@ -1288,8 +1411,15 @@ public class ARActivity extends AppCompatActivity {
                     0f, 0f, 0f, 1f,
                     (anchor, state) -> {
                         if (state == Anchor.TerrainAnchorState.SUCCESS) {
+                            if (!hasStableGeospatialPose()) {
+                                Log.d(TAG, "Terrain anchor resolved before pose stabilized; retrying slot "
+                                        + coinIdx);
+                                try { anchor.detach(); } catch (Exception ignored) {}
+                                terrainAnchorPending.put(coinIdx, false);
+                                return;
+                            }
                             Log.d(TAG, "Terrain anchor SUCCESS for slot " + coinIdx);
-                            spawnRelicNode(coinIdx, anchor, renderable, relicId);
+                            spawnRelicNode(coinIdx, stabilizeTerrainAnchor(anchor), renderable, relicId);
                         } else {
                             // No fallback. Clear the pending flag so the next
                             // frame retries the terrain-anchor request — the only
@@ -1337,6 +1467,7 @@ public class ARActivity extends AppCompatActivity {
         }
         try {
             AnchorNode anchorNode = new AnchorNode(anchor);
+            anchorNode.setSmoothed(false);
             anchorNode.setParent(arCam.getArSceneView().getScene());
 
             Node coinNode = new Node();
@@ -1344,14 +1475,18 @@ public class ARActivity extends AppCompatActivity {
             coinNode.setRenderable(coinRenderable);
             float relicScale = scaleForRelic(relicIdForThisCoin);
             coinNode.setLocalScale(new Vector3(relicScale, relicScale, relicScale));
+            float visualYOffset = visualYOffsetForRelic(relicIdForThisCoin);
+            coinNode.setLocalPosition(new Vector3(0f, visualYOffset, 0f));
             coinNode.setOnTapListener(null);
             final int capturedIdx = coinIdx;
             final String capturedRelicId = relicIdForThisCoin;
 
             coinAnchorNodes.set(coinIdx, anchorNode);
             coinNodes.set(coinIdx, coinNode);
+            geospatialWaitStartMs = 0L;
             Log.e(TAG, "spawnRelicNode: spawned slot " + coinIdx
                     + " relic=" + relicIdForThisCoin
+                    + " yOffset=" + visualYOffset
                     + " geospatial=" + isGeospatialAvailable());
 
             if (relicIds != null) {
@@ -1517,6 +1652,29 @@ public class ARActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Small per-model visual corrections. The anchor height controls the shared
+     * floating level; these only compensate for different GLB pivot/origin points.
+     */
+    private float visualYOffsetForRelic(String relicId) {
+        if (relicId == null)
+            return 0f;
+        switch (relicId) {
+            case "intramuros_coin":
+                return 0f;
+            case "peineta":
+                return 0.22f;
+            case "salakot_elite":
+                return 0.30f;
+            case "farol_de_aceite":
+                return 0.18f;
+            case "pocket_watch":
+                return 0.12f;
+            default:
+                return 0f;
+        }
+    }
+
     /** Maps a relic id to its raw GLB resource. Returns null for unknown ids. */
     private Integer resourceForRelic(String relicId) {
         if (relicId == null)
@@ -1611,6 +1769,10 @@ public class ARActivity extends AppCompatActivity {
 
     /** Swaps the minimap and compass overlay in the bottom-right slot. */
     private void toggleMapCompass() {
+        if (COMPASS_ONLY_MISSION_UI) {
+            showCompassOnlyMissionUi(false);
+            return;
+        }
         if (minimapContainer == null || compassOverlay == null)
             return;
         // Toggle the user's preference rather than reading current visibility —
@@ -1637,6 +1799,22 @@ public class ARActivity extends AppCompatActivity {
                 btnMapCompassToggle.bringToFront();
             if (tvMapCompassIcon != null)
                 tvMapCompassIcon.setText("🧭");
+        }
+    }
+
+    private void showCompassOnlyMissionUi(boolean hideForCollect) {
+        isCompassToggled = true;
+        if (minimapContainer != null)
+            minimapContainer.setVisibility(View.GONE);
+        if (btnMapCompassToggle != null)
+            btnMapCompassToggle.setVisibility(View.GONE);
+        if (compassOverlay != null) {
+            compassOverlay.setVisibility(hideForCollect ? View.GONE : View.VISIBLE);
+            if (!hideForCollect) {
+                setCompassMarginBottom(64);
+                compassOverlay.bringToFront();
+                updateCompassArrow();
+            }
         }
     }
 
@@ -1786,13 +1964,17 @@ public class ARActivity extends AppCompatActivity {
             runOnUiThread(() -> {
                 if (collectButtonContainer != null)
                     collectButtonContainer.setVisibility(View.GONE);
-                // Respect the user's map/compass toggle when all relics done.
-                if (minimapContainer != null)
-                    minimapContainer.setVisibility(isCompassToggled ? View.GONE : View.VISIBLE);
-                if (compassOverlay != null)
-                    compassOverlay.setVisibility(isCompassToggled ? View.VISIBLE : View.GONE);
-                if (btnMapCompassToggle != null)
-                    btnMapCompassToggle.setVisibility(View.VISIBLE);
+                if (COMPASS_ONLY_MISSION_UI) {
+                    showCompassOnlyMissionUi(false);
+                } else {
+                    // Respect the user's map/compass toggle when all relics done.
+                    if (minimapContainer != null)
+                        minimapContainer.setVisibility(isCompassToggled ? View.GONE : View.VISIBLE);
+                    if (compassOverlay != null)
+                        compassOverlay.setVisibility(isCompassToggled ? View.VISIBLE : View.GONE);
+                    if (btnMapCompassToggle != null)
+                        btnMapCompassToggle.setVisibility(View.VISIBLE);
+                }
             });
             return;
         }
@@ -1843,18 +2025,27 @@ public class ARActivity extends AppCompatActivity {
             }
             if (withinCollectRange) {
                 // Button is showing — hide both map/compass to keep the layout clean.
-                if (minimapContainer != null)
-                    minimapContainer.setVisibility(View.GONE);
-                if (compassOverlay != null)
-                    compassOverlay.setVisibility(View.GONE);
+                if (COMPASS_ONLY_MISSION_UI) {
+                    showCompassOnlyMissionUi(true);
+                } else {
+                    if (minimapContainer != null)
+                        minimapContainer.setVisibility(View.GONE);
+                    if (compassOverlay != null)
+                        compassOverlay.setVisibility(View.GONE);
+                }
             } else {
-                if (minimapContainer != null)
-                    minimapContainer.setVisibility(isCompassToggled ? View.GONE : View.VISIBLE);
-                if (compassOverlay != null)
-                    compassOverlay.setVisibility(isCompassToggled ? View.VISIBLE : View.GONE);
+                if (COMPASS_ONLY_MISSION_UI) {
+                    showCompassOnlyMissionUi(false);
+                } else {
+                    if (minimapContainer != null)
+                        minimapContainer.setVisibility(isCompassToggled ? View.GONE : View.VISIBLE);
+                    if (compassOverlay != null)
+                        compassOverlay.setVisibility(isCompassToggled ? View.VISIBLE : View.GONE);
+                }
             }
             if (btnMapCompassToggle != null)
-                btnMapCompassToggle.setVisibility(withinCollectRange ? View.GONE : View.VISIBLE);
+                btnMapCompassToggle.setVisibility(COMPASS_ONLY_MISSION_UI ? View.GONE
+                        : (withinCollectRange ? View.GONE : View.VISIBLE));
         });
     }
 
@@ -2245,8 +2436,10 @@ public class ARActivity extends AppCompatActivity {
         // ── Spawn-radius gate (applies to ALL devices) ────────────────────────────
         // The relic only spawns once the user is within RELIC_SPAWN_RADIUS_M of
         // the configured GPS coordinate. Beyond that the HUD shows "walk closer".
-        if (!isWithinReliableRelicSpawnWindow(coinIdx))
+        if (!isWithinReliableRelicSpawnWindow(coinIdx)) {
+            geospatialWaitStartMs = 0L;
             return;
+        }
 
         // ── Routing ───────────────────────────────────────────────────────────────
         // Strategy: place the relic AS CLOSE TO the configured GPS coordinate as
@@ -2301,35 +2494,49 @@ public class ARActivity extends AppCompatActivity {
 
         // ── Anchor: prefer pre-resolved terrain anchor → live terrain anchor → directional spawn ──
         // Pre-resolved (exact lat/lng) — fastest and most accurate.
-        Anchor preResolved = preResolvedAnchors.remove(coinIdx);
-        if (preResolved != null) {
+        Anchor preResolved = preResolvedAnchors.get(coinIdx);
+        if (preResolved != null && hasStableGeospatialPose()) {
+            preResolvedAnchors.remove(coinIdx);
             nextSlotPreWarmPending.remove(coinIdx);
             preResolvedRenderables.remove(coinIdx);
             preResolvedRelicIds.remove(coinIdx);
             if (preResolved.getTrackingState() != TrackingState.STOPPED) {
                 Log.d(TAG, "tryAutoSpawnCoins: using pre-resolved anchor for slot=" + coinIdx);
-                spawnRelicNode(coinIdx, preResolved, coinRenderable, relicIdForThisCoin);
+                spawnRelicNode(coinIdx, stabilizeTerrainAnchor(preResolved),
+                        coinRenderable, relicIdForThisCoin);
                 return;
             }
             try { preResolved.detach(); } catch (Exception ignored) {}
         }
 
-        // Live terrain anchor only when Earth is TRACKING with usable accuracy.
-        boolean geoReady = false;
-        if (isDeviceGeospatialCompatible() && isGeospatialAvailable()) {
-            try {
-                Session s2 = arCam.getArSceneView().getSession();
-                Earth e2 = s2 != null ? s2.getEarth() : null;
-                if (e2 != null && e2.getCameraGeospatialPose().getHorizontalAccuracy() <= 5.0) {
-                    geoReady = true;
-                }
-            } catch (Exception ignored) {}
-        }
-        if (geoReady) {
+        // Prefer a terrain anchor once Earth localization is stable enough.
+        if (hasStableGeospatialPose()) {
+            geospatialWaitStartMs = 0L;
             terrainAnchorPending.put(coinIdx, true);
             requestTerrainAnchorForSlot(coinIdx, coinRenderable, relicIdForThisCoin);
             return; // spawnRelicNode() fires from the terrain anchor callback
         }
+
+        // Give ARCore a short window to improve Earth localization before
+        // falling back to a camera-relative anchor.
+        long now = SystemClock.elapsedRealtime();
+        if (geospatialWaitStartMs == 0L) {
+            geospatialWaitStartMs = now;
+            return;
+        }
+        if (now - geospatialWaitStartMs < GEOSPATIAL_STABILIZATION_WAIT_MS) {
+            return;
+        }
+
+        // A terrain result resolved under weak localization must not remain
+        // alive after we choose the local fallback.
+        Anchor stalePreResolved = preResolvedAnchors.remove(coinIdx);
+        if (stalePreResolved != null) {
+            try { stalePreResolved.detach(); } catch (Exception ignored) {}
+        }
+        nextSlotPreWarmPending.remove(coinIdx);
+        preResolvedRenderables.remove(coinIdx);
+        preResolvedRelicIds.remove(coinIdx);
 
         // Fallback: project the configured GPS coord from the user's current GPS
         // using device heading, anchor it in the AR session at the resulting
@@ -2379,7 +2586,8 @@ public class ARActivity extends AppCompatActivity {
             float dx = (float) (Math.sin(relRad) * dist);
             float dz = (float) (-Math.cos(relRad) * dist);
             // -1.3 m below the camera ≈ ground level (eye height ~1.6 m).
-            Pose spawnPose = flatPose.compose(Pose.makeTranslation(dx, -1.3f, dz));
+            Pose spawnPose = flatPose.compose(
+                    Pose.makeTranslation(dx, -FALLBACK_RELIC_BELOW_CAMERA_M, dz));
             Anchor anchor = sess.createAnchor(spawnPose);
 
             Log.e(TAG, "tryAutoSpawnCoins: directional spawn slot=" + coinIdx
@@ -2529,7 +2737,7 @@ public class ARActivity extends AppCompatActivity {
             if (allComplete) {
                 showNFTUnlockedDialog();
             } else {
-                showMissionCompleteDialog(offline);
+                showStyledMissionCompleteDialog(offline);
             }
         }), errorMessage -> runOnUiThread(() -> {
             if (isFinishing() || isDestroyed())
@@ -2562,6 +2770,74 @@ public class ARActivity extends AppCompatActivity {
                 .show();
     }
 
+    private void showMissionCompleteDialogPreview() {
+        int totalRelics = relicLatitudes != null && relicLatitudes.length > 0 ? relicLatitudes.length : 1;
+        String body = String.format(Locale.US,
+                "You collected the Intramuros Coin at %s!\n\nCoin value: \u20b1%.2f%s",
+                missionName, totalRelics * COIN_VALUE,
+                !NetworkUtils.isConnected(this)
+                        ? "\n\nYou're offline - your progress will sync automatically."
+                        : "");
+        new AlertDialog.Builder(this)
+                .setTitle("Congratulations!")
+                .setMessage(body)
+                .setPositiveButton("Return to Home", (d, w) -> finish())
+                .setCancelable(false)
+                .show();
+    }
+
+    private void showStyledMissionCompleteDialogPreview() {
+        showStyledMissionCompleteDialog(!NetworkUtils.isConnected(this));
+    }
+
+    private void showStyledMissionCompleteDialog(boolean offline) {
+        if (isFinishing() || isDestroyed())
+            return;
+
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCancelable(false);
+        dialog.setCanceledOnTouchOutside(false);
+        dialog.setContentView(R.layout.dialog_mission_complete);
+
+        TextView tvMission = dialog.findViewById(R.id.tvCompleteMission);
+        TextView tvOffline = dialog.findViewById(R.id.tvCompleteOffline);
+
+        int totalRelics = relicLatitudes != null && relicLatitudes.length > 0 ? relicLatitudes.length : 1;
+        if (tvMission != null) {
+            tvMission.setText(String.format(Locale.US,
+                    "%s\n%d relic%s recovered",
+                    missionName,
+                    totalRelics,
+                    totalRelics == 1 ? "" : "s"));
+        }
+        if (tvOffline != null) {
+            tvOffline.setVisibility(offline ? View.VISIBLE : View.GONE);
+        }
+
+        View btnReturnHome = dialog.findViewById(R.id.cardViewCompleteHome);
+        if (btnReturnHome != null) {
+            btnReturnHome.setOnClickListener(v -> {
+                dialog.dismiss();
+                finish();
+            });
+        }
+
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(android.graphics.Color.TRANSPARENT));
+            int dialogWidth = (int) Math.min(
+                    getResources().getDisplayMetrics().widthPixels * 0.9f,
+                    getResources().getDisplayMetrics().density * 420f);
+            window.setLayout(dialogWidth, LinearLayout.LayoutParams.WRAP_CONTENT);
+            WindowManager.LayoutParams wlp = window.getAttributes();
+            wlp.gravity = Gravity.CENTER;
+            window.setAttributes(wlp);
+        }
+
+        dialog.show();
+    }
+
     /** Retries the server-side completion write after a previous failure. */
     private void retryMissionCompletion() {
         updateHint("Saving your progress...");
@@ -2574,7 +2850,7 @@ public class ARActivity extends AppCompatActivity {
             if (allComplete) {
                 showNFTUnlockedDialog();
             } else {
-                showMissionCompleteDialog(offline);
+                showStyledMissionCompleteDialog(offline);
             }
         }), errorMessage -> runOnUiThread(() -> {
             if (isFinishing() || isDestroyed())
