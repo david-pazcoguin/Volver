@@ -285,7 +285,7 @@ public class ARActivity extends AppCompatActivity {
     // Distance at which a staged relic spawns into the scene. 12 m matches the
     // user-visible "walk closer" threshold and is large enough that urban-canyon
     // GPS drift (±5-10 m) never prevents a relic from appearing in range.
-    private static final float RELIC_SPAWN_RADIUS_M = 12.0f;
+    private static final float RELIC_SPAWN_RADIUS_M = 15.0f;
     private static final double RELIC_SPAWN_OFFSET_RADIUS_M = 5.0;
     private static final double RELIC_TERRAIN_HEIGHT_M = 0.75;
     private static final float FALLBACK_RELIC_BELOW_CAMERA_M = 0.75f;
@@ -295,7 +295,7 @@ public class ARActivity extends AppCompatActivity {
     private static final boolean COMPASS_ONLY_MISSION_UI = true;
     // Distance (metres) within which the COLLECT button is shown.
     // Keeps the button hidden until the user is genuinely close.
-    private static final float RELIC_COLLECT_BUTTON_M = 5.0f;
+    private static final float RELIC_COLLECT_BUTTON_M = 3.0f;
     private static final float MAX_RELIC_GATING_ACCURACY_METERS = 18.0f;
     private static final float MAX_NAVIGATION_FIX_ACCURACY_METERS = 18.0f;
     private static final float MAX_GEOSPATIAL_NAVIGATION_ACCURACY_METERS = 8.0f;
@@ -650,6 +650,7 @@ public class ARActivity extends AppCompatActivity {
         // Lighting is managed by ENVIRONMENTAL_HDR — no manual override needed.
 
         if (isTargetReached) {
+            preResolveActiveAndNextSlotAnchors();
             // Recover any permanently-lost anchors BEFORE trying to spawn so the
             // cleared slot is immediately eligible for re-spawn in the same frame.
             checkAndRespawnLostAnchor();
@@ -2277,6 +2278,29 @@ public class ARActivity extends AppCompatActivity {
         terrainAnchorPending.put(slot, true);
         requestTerrainAnchorForSlot(slot, renderable, relicId);
         Log.d(TAG, "preWarmCurrentSlotTerrainAnchor: fired for slot=" + slot);
+    }
+
+    /**
+     * Keeps the currently active relic and the next relic warming in the
+     * background so entering the spawn zone and collecting the current relic
+     * both have less AR setup work left to do.
+     */
+    private void preResolveActiveAndNextSlotAnchors() {
+        if (!isGeospatialAvailable()) return;
+        if (relicLatitudes == null) return;
+
+        int current = currentRelicSlot();
+        if (current < 0) return;
+
+        preResolveNextSlotAnchor(current);
+
+        int next = current + 1;
+        if (next < relicLatitudes.length
+                && (coinSlotCollected == null
+                || next >= coinSlotCollected.length
+                || !coinSlotCollected[next])) {
+            preResolveNextSlotAnchor(next);
+        }
     }
 
     /**
