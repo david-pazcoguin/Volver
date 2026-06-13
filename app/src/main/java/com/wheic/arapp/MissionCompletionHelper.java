@@ -68,6 +68,11 @@ public class MissionCompletionHelper {
         void onError(String message);
     }
 
+    public interface ResetCallback {
+        void onSuccess();
+        void onError(String message);
+    }
+
     // ──────────────────────────────────────────────────────────────
     // Mission tracking
     // ──────────────────────────────────────────────────────────────
@@ -93,44 +98,84 @@ public class MissionCompletionHelper {
                 .collection(FirebaseConfig.COLLECTION_MISSIONS)
                 .document(missionId);
 
+        if (MissionBypassState.BYPASS_STATE_RESET.equals(MissionBypassState.getState(context))) {
+            writeCompletion(context, missionRef, missionId, callback);
+            return;
+        }
+
         // Read from the local cache first so the check works offline. The rules
         // forbid update-on-missions, so we must only write if the doc doesn't
         // already exist. Firestore's offline queue takes care of the rest.
         missionRef.get(Source.CACHE)
-                .addOnSuccessListener(snap -> maybeWriteCompletion(missionRef, snap, missionId, callback))
+                .addOnSuccessListener(snap -> maybeWriteCompletion(context, missionRef, snap, missionId, callback))
                 .addOnFailureListener(cacheMiss ->
                         missionRef.get(Source.SERVER)
-                                .addOnSuccessListener(snap -> maybeWriteCompletion(missionRef, snap, missionId, callback))
+                                .addOnSuccessListener(snap -> maybeWriteCompletion(context, missionRef, snap, missionId, callback))
                                 .addOnFailureListener(e -> {
                                     com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
                                     // Could not confirm existence. Attempt a blind write — rules will
                                     // reject the second one if it ever lands as an update.
-                                    writeCompletion(missionRef, missionId, callback);
+                                    writeCompletion(context, missionRef, missionId, callback);
                                 }));
     }
 
-    private static void maybeWriteCompletion(DocumentReference ref,
+    /** Recreates a mission-complete document without trusting the local cache. */
+    public static void completeMissionIgnoringCache(Context context, String missionId,
+                                                    CompletionCallback callback) {
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) {
+            callback.onError("Please sign in first.");
+            return;
+        }
+
+        if (missionId == null || !ALLOWED_MISSION_IDS.contains(missionId)) {
+            callback.onError("Unknown mission.");
+            return;
+        }
+
+        FirebaseFirestore db = FirebaseConfig.getFirestore();
+        DocumentReference missionRef = db
+                .collection(FirebaseConfig.COLLECTION_USERS)
+                .document(user.getUid())
+                .collection(FirebaseConfig.COLLECTION_MISSIONS)
+                .document(missionId);
+        writeCompletion(context, missionRef, missionId, callback);
+    }
+
+    private static void maybeWriteCompletion(Context context,
+                                             DocumentReference ref,
                                              DocumentSnapshot existing,
                                              String missionId,
                                              CompletionCallback callback) {
         if (existing != null && existing.exists()
                 && Boolean.TRUE.equals(existing.getBoolean(FirebaseConfig.FIELD_COMPLETED))) {
+            recordResetProgressIfNeeded(context, missionId);
             callback.onSuccess();
             return;
         }
-        writeCompletion(ref, missionId, callback);
+        writeCompletion(context, ref, missionId, callback);
     }
 
-    private static void writeCompletion(DocumentReference ref,
+    private static void writeCompletion(Context context,
+                                        DocumentReference ref,
                                         String missionId,
                                         CompletionCallback callback) {
         Map<String, Object> missionData = buildMissionCompletionData(missionId, Timestamp.now());
         ref.set(missionData)
-                .addOnSuccessListener(unused -> callback.onSuccess())
+                .addOnSuccessListener(unused -> {
+                    recordResetProgressIfNeeded(context, missionId);
+                    callback.onSuccess();
+                })
                 .addOnFailureListener(e -> {
                     com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
                     callback.onError("Network error");
                 });
+    }
+
+    private static void recordResetProgressIfNeeded(Context context, String missionId) {
+        if (MissionBypassState.BYPASS_STATE_RESET.equals(MissionBypassState.getState(context))) {
+            MissionBypassState.addResetCompletedMission(context, missionId);
+        }
     }
 
     /** Fetch which missions the user has already finished. */
@@ -195,6 +240,32 @@ public class MissionCompletionHelper {
                     // The mission docs are already enough for the app to treat progress
                     // as complete, so don't turn a profile-flag sync issue into a UI error.
                     callback.onResult(completed, true);
+                });
+    }
+
+    /** Deletes the user's active mission-complete records so testing can restart from 0/8. */
+    public static void resetMissionProgress(Context context, ResetCallback callback) {
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) {
+            callback.onError("Please sign in first.");
+            return;
+        }
+
+        if (!NetworkUtils.isConnected(context)) {
+            callback.onError("Reset requires an internet connection.");
+            return;
+        }
+
+        FirebaseConfig.getFunctions()
+                .getHttpsCallable("resetMissionProgress")
+                .call()
+                .addOnSuccessListener(result -> callback.onSuccess())
+                .addOnFailureListener(e -> {
+                    com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
+                    String message = e != null && e.getMessage() != null
+                            ? e.getMessage()
+                            : "Couldn't reset mission progress.";
+                    callback.onError(message);
                 });
     }
 

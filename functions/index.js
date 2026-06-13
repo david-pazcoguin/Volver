@@ -182,6 +182,37 @@ exports.mintSouvenir = onCall(async (request) => {
   }
 });
 
+exports.resetMissionProgress = onCall(async (request) => {
+  const auth = request.auth;
+  if (!auth || !auth.uid) {
+    throw new HttpsError("unauthenticated", "Authentication is required.");
+  }
+
+  const db = admin.firestore();
+  const uid = auth.uid;
+  const userRef = db.collection("users").doc(uid);
+  const missionsSnap = await userRef.collection("missions").get();
+
+  const batch = db.batch();
+  missionsSnap.forEach((doc) => batch.delete(doc.ref));
+  batch.set(userRef, {
+    allComplete: false,
+  }, { merge: true });
+  await batch.commit();
+
+  await syncUserPublicEntries(db, uid);
+
+  logger.info("resetMissionProgress completed", {
+    uid,
+    deletedMissionCount: missionsSnap.size,
+  });
+
+  return {
+    success: true,
+    deletedMissionCount: missionsSnap.size,
+  };
+});
+
 exports.syncHallOfExplorersOnMissionComplete = onDocumentCreated("users/{uid}/missions/{missionId}", async (event) => {
     const missionId = event.params.missionId;
     if (!MISSION_MAP.has(missionId)) {
