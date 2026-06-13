@@ -1096,7 +1096,8 @@ public class HomeActivity extends AppCompatActivity {
     // ──────────────────────────────────────────────────────────────
 
     private void loadMissionProgress() {
-        if (username.isEmpty()) return;
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) return;
         MissionCompletionHelper.getMissionProgress(this,
                 new MissionCompletionHelper.ProgressCallback() {
                     @Override public void onResult(Set<String> completedIds, boolean allComplete) {
@@ -1173,6 +1174,12 @@ public class HomeActivity extends AppCompatActivity {
             return new MissionProgressState(buildVisibleMissionIds(), true);
         }
         if (BYPASS_STATE_RESET.equals(bypassState)) {
+            // The reset bypass is only meant to help testing. As soon as real
+            // mission progress exists again, stop forcing the UI back to 0/8.
+            if (completedIds != null && (!completedIds.isEmpty() || allComplete)) {
+                sh.edit().remove(PREF_MISSION_BYPASS_STATE).apply();
+                return new MissionProgressState(completedIds, allComplete);
+            }
             return new MissionProgressState(new java.util.HashSet<>(), false);
         }
         if (completedIds == null) {

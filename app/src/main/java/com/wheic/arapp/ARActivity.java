@@ -231,7 +231,6 @@ public class ARActivity extends AppCompatActivity {
     private MapView minimap;
     private View minimapContainer;
     private View btnMapCompassToggle;
-    private View btnFinishDialogPreview;
     private TextView tvMapCompassIcon;
     private Marker userMarker;
     private Marker targetMarker;
@@ -473,15 +472,11 @@ public class ARActivity extends AppCompatActivity {
         minimapContainer = findViewById(R.id.minimapContainer);
         minimap = findViewById(R.id.minimap);
         btnMapCompassToggle = findViewById(R.id.btnMapCompassToggle);
-        btnFinishDialogPreview = findViewById(R.id.btnFinishDialogPreview);
         tvMapCompassIcon = findViewById(R.id.tvMapCompassIcon);
         if (btnMapCompassToggle != null && !COMPASS_ONLY_MISSION_UI) {
             btnMapCompassToggle.setOnClickListener(v -> toggleMapCompass());
         } else if (btnMapCompassToggle != null) {
             btnMapCompassToggle.setVisibility(View.GONE);
-        }
-        if (btnFinishDialogPreview != null) {
-            btnFinishDialogPreview.setOnClickListener(v -> showStyledMissionCompleteDialogPreview());
         }
 
         arCam = (ArFragment) getSupportFragmentManager().findFragmentById(R.id.arCameraArea);
@@ -2792,26 +2787,6 @@ public class ARActivity extends AppCompatActivity {
                 .setPositiveButton("Return to Home", (d, w) -> finish())
                 .setCancelable(false)
                 .show();
-    }
-
-    private void showMissionCompleteDialogPreview() {
-        int totalRelics = relicLatitudes != null && relicLatitudes.length > 0 ? relicLatitudes.length : 1;
-        String body = String.format(Locale.US,
-                "You collected the Intramuros Coin at %s!\n\nCoin value: \u20b1%.2f%s",
-                missionName, totalRelics * COIN_VALUE,
-                !NetworkUtils.isConnected(this)
-                        ? "\n\nYou're offline - your progress will sync automatically."
-                        : "");
-        new AlertDialog.Builder(this)
-                .setTitle("Congratulations!")
-                .setMessage(body)
-                .setPositiveButton("Return to Home", (d, w) -> finish())
-                .setCancelable(false)
-                .show();
-    }
-
-    private void showStyledMissionCompleteDialogPreview() {
-        showStyledMissionCompleteDialog(!NetworkUtils.isConnected(this));
     }
 
     private void showStyledMissionCompleteDialog(boolean offline) {
