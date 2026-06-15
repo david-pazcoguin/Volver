@@ -232,20 +232,13 @@ public class DemoARActivity extends AppCompatActivity {
     }
 
     private float scaleForRelic(String id) {
-        if (id == null) return 0.21f;
-        switch (id) {
-            case "intramuros_coin": return 0.21f;
-            case "peineta":         return 0.91f;
-            case "salakot_elite":   return 0.455f;
-            case "farol_de_aceite": return 0.56f;
-            case "pocket_watch":    return 2.24f;
-            default: return 0.21f;
-        }
+        return RelicModelProfile.fullScaleFor(id);
     }
 
     /** Levitation height in metres above the anchor plane. */
     private float levitateForRelic(String id) {
-        return 0f;
+        float scale = scaleForRelic(id);
+        return RelicModelProfile.yOffsetForScale(id, scale);
     }
 
     private Quaternion rotationForRelic(String id) {
