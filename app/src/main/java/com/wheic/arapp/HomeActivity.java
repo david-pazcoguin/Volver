@@ -916,8 +916,7 @@ public class HomeActivity extends AppCompatActivity {
     private void debugCompleteAllMissions() {
         if (!BuildConfig.DEBUG) return;
         Toast.makeText(this, "Debug: completing all 8 missions…", Toast.LENGTH_SHORT).show();
-        MissionBypassState.setState(this, MissionBypassState.BYPASS_STATE_COMPLETE);
-        syncAllMissionCompletions(true, false);
+        setMissionBypassOnBackend(true);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -1005,7 +1004,7 @@ public class HomeActivity extends AppCompatActivity {
                 repeatRelicCoordinates(120.97514625933517, 120.97521825933517),
                 buildTwoOfEachRelicIds()));
         // Original Manila Cathedral mission center: 14.591741718049287, 120.97339129769252
-        arHelpers.add(new ARHelper("Manila Cathedral", "", 14.59209490430254, 120.97310566471427,
+        arHelpers.add(new ARHelper("Manila Cathedral", "", 14.592216802173693, 120.97306956118595,
                 "manila_cathedral",
                 new double[]{
                         14.592069914536689, 14.59201695647418,
@@ -1098,93 +1097,55 @@ public class HomeActivity extends AppCompatActivity {
         String currentState = MissionBypassState.getState(this);
         boolean completeNext = !MissionBypassState.BYPASS_STATE_COMPLETE.equals(currentState);
         if (completeNext) {
-            enableMissionBypass(MissionBypassState.BYPASS_STATE_RESET.equals(currentState));
+            enableMissionBypass();
         } else {
             resetMissionBypass();
         }
     }
 
-    private void enableMissionBypass(boolean recreateServerProgress) {
-        SharedPreferences.Editor editor = SecurePrefs.get(this).edit();
-        editor.putBoolean(PREF_NFT_CLAIMED, false);
-        editor.putBoolean(PREF_CHEST_DISMISS, false);
-        applyCollectibleBypass(editor, true);
-        editor.apply();
-
-        MissionBypassState.clearResetCompletedMissions(this);
-        MissionBypassState.setState(this, MissionBypassState.BYPASS_STATE_COMPLETE);
-        refreshCollectibleCounts();
-        loadMissionProgress();
-        Toast.makeText(this, "Bypass enabled: syncing all missions.", Toast.LENGTH_SHORT).show();
-        syncAllMissionCompletions(false, recreateServerProgress);
+    private void enableMissionBypass() {
+        Toast.makeText(this, "Bypass enabled: syncing all missions to the backend.", Toast.LENGTH_SHORT).show();
+        setMissionBypassOnBackend(true);
     }
 
     private void resetMissionBypass() {
-        SharedPreferences.Editor editor = SecurePrefs.get(this).edit();
-        editor.putBoolean(PREF_NFT_CLAIMED, false);
-        editor.putBoolean(PREF_CHEST_DISMISS, false);
-        applyCollectibleBypass(editor, false);
-        editor.apply();
-
-        MissionBypassState.clearResetCompletedMissions(this);
-        MissionBypassState.setState(this, MissionBypassState.BYPASS_STATE_RESET);
-        refreshCollectibleCounts();
-        loadMissionProgress();
-        Toast.makeText(this,
-                "Bypass reset: mission progress cleared for testing.",
-                Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Resetting mission progress on the backend.", Toast.LENGTH_SHORT).show();
+        setMissionBypassOnBackend(false);
     }
 
-    private void syncAllMissionCompletions(boolean debugMessage, boolean recreateServerProgress) {
-        Set<String> ids = buildVisibleMissionIds();
-        if (ids.isEmpty()) {
-            loadMissionProgress();
-            return;
-        }
+    private void setMissionBypassOnBackend(boolean completed) {
+        MissionCompletionHelper.setMissionBypassState(
+                this, completed, new MissionCompletionHelper.ResetCallback() {
+            @Override public void onSuccess() {
+                runOnUiThread(() -> {
+                    SharedPreferences.Editor editor = SecurePrefs.get(HomeActivity.this).edit();
+                    editor.putBoolean(PREF_NFT_CLAIMED, false);
+                    editor.putBoolean(PREF_CHEST_DISMISS, false);
+                    applyCollectibleBypass(editor, completed);
+                    editor.apply();
 
-        int[] remaining = { ids.size() };
-        int[] failures = { 0 };
-        for (String id : ids) {
-            MissionCompletionHelper.CompletionCallback callback =
-                    new MissionCompletionHelper.CompletionCallback() {
-                        @Override public void onSuccess() {
-                            if (--remaining[0] == 0) {
-                                runOnUiThread(() -> {
-                                    if (debugMessage) {
-                                        Toast.makeText(HomeActivity.this,
-                                                failures[0] == 0
-                                                        ? "All 8 missions complete!"
-                                                        : "Some mission writes failed.",
-                                                Toast.LENGTH_LONG).show();
-                                    }
-                                    loadMissionProgress();
-                                });
-                            }
-                        }
-
-                        @Override public void onError(String message) {
-                            failures[0]++;
-                            runOnUiThread(() -> Toast.makeText(HomeActivity.this,
-                                    "Mission sync failed for " + id + ": " + message,
-                                    Toast.LENGTH_SHORT).show());
-                            if (--remaining[0] == 0) {
-                                runOnUiThread(() -> {
-                                    if (debugMessage) {
-                                        Toast.makeText(HomeActivity.this,
-                                                "Some mission writes failed.",
-                                                Toast.LENGTH_LONG).show();
-                                    }
-                                    loadMissionProgress();
-                                });
-                            }
-                        }
-                    };
-            if (recreateServerProgress) {
-                MissionCompletionHelper.completeMissionIgnoringCache(this, id, callback);
-            } else {
-                MissionCompletionHelper.completeMission(this, id, callback);
+                    MissionBypassState.clearResetCompletedMissions(HomeActivity.this);
+                    MissionBypassState.setState(
+                            HomeActivity.this,
+                            completed
+                                    ? MissionBypassState.BYPASS_STATE_COMPLETE
+                                    : MissionBypassState.BYPASS_STATE_RESET);
+                    refreshCollectibleCounts();
+                    loadMissionProgress();
+                    Toast.makeText(HomeActivity.this,
+                            completed
+                                    ? "All 8 missions synced to the backend."
+                                    : "Mission progress cleared on the backend.",
+                            Toast.LENGTH_SHORT).show();
+                });
             }
-        }
+
+            @Override public void onError(String message) {
+                runOnUiThread(() -> Toast.makeText(HomeActivity.this,
+                        message != null ? message : "Couldn't update mission bypass.",
+                        Toast.LENGTH_LONG).show());
+            }
+        });
     }
 
     private void applyCollectibleBypass(SharedPreferences.Editor editor, boolean completed) {

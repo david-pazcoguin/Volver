@@ -26,6 +26,16 @@ if (!admin.apps.length) {
 }
 
 const REQUIRED_MISSIONS = 8;
+const REQUIRED_MISSION_IDS = [
+  "fort_santiago",
+  "baluarte_san_diego",
+  "casa_manila",
+  "museo_intramuros",
+  "centro_turismo",
+  "san_agustin_church",
+  "manila_cathedral",
+  "lpu",
+];
 
 function getPolygonConfig() {
   // Prefer env vars for Gen 2, but keep Runtime Config fallback until migrated.
@@ -182,7 +192,7 @@ exports.mintSouvenir = onCall(async (request) => {
   }
 });
 
-exports.resetMissionProgress = onCall(async (request) => {
+exports.resetMissionProgress = onCall({ invoker: "public" }, async (request) => {
   const auth = request.auth;
   if (!auth || !auth.uid) {
     throw new HttpsError("unauthenticated", "Authentication is required.");
@@ -210,6 +220,54 @@ exports.resetMissionProgress = onCall(async (request) => {
   return {
     success: true,
     deletedMissionCount: missionsSnap.size,
+  };
+});
+
+exports.setMissionBypassState = onCall(async (request) => {
+  const auth = request.auth;
+  if (!auth || !auth.uid) {
+    throw new HttpsError("unauthenticated", "Authentication is required.");
+  }
+
+  const completed = request.data && request.data.completed;
+  if (typeof completed !== "boolean") {
+    throw new HttpsError("invalid-argument", "completed must be a boolean.");
+  }
+
+  const db = admin.firestore();
+  const uid = auth.uid;
+  const userRef = db.collection("users").doc(uid);
+  const batch = db.batch();
+
+  if (completed) {
+    const completedAt = admin.firestore.Timestamp.now();
+    REQUIRED_MISSION_IDS.forEach((missionId) => {
+      batch.set(userRef.collection("missions").doc(missionId), {
+        missionId,
+        completed: true,
+        completedAt,
+      });
+    });
+    batch.set(userRef, { allComplete: true }, { merge: true });
+  } else {
+    const missionsSnap = await userRef.collection("missions").get();
+    missionsSnap.forEach((doc) => batch.delete(doc.ref));
+    batch.set(userRef, { allComplete: false }, { merge: true });
+  }
+
+  await batch.commit();
+  await syncUserPublicEntries(db, uid);
+
+  logger.info("setMissionBypassState completed", {
+    uid,
+    completed,
+    missionCount: completed ? REQUIRED_MISSION_IDS.length : 0,
+  });
+
+  return {
+    success: true,
+    completed,
+    missionCount: completed ? REQUIRED_MISSION_IDS.length : 0,
   };
 });
 

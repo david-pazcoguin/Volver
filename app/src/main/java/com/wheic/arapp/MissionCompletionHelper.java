@@ -9,6 +9,7 @@ import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.FirebaseFirestoreException;
 import com.google.firebase.firestore.Query;
 import com.google.firebase.firestore.QuerySnapshot;
 import com.google.firebase.firestore.Source;
@@ -168,7 +169,7 @@ public class MissionCompletionHelper {
                 })
                 .addOnFailureListener(e -> {
                     com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
-                    callback.onError("Network error");
+                    callback.onError(getFirestoreErrorMessage(context, e));
                 });
     }
 
@@ -245,6 +246,15 @@ public class MissionCompletionHelper {
 
     /** Deletes the user's active mission-complete records so testing can restart from 0/8. */
     public static void resetMissionProgress(Context context, ResetCallback callback) {
+        setMissionBypassState(context, false, callback);
+    }
+
+    /**
+     * Atomically sets all hidden-bypass mission state through the Admin SDK.
+     * This avoids partial completion when individual client writes are rejected.
+     */
+    public static void setMissionBypassState(Context context, boolean completed,
+                                             ResetCallback callback) {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user == null) {
             callback.onError("Please sign in first.");
@@ -252,21 +262,42 @@ public class MissionCompletionHelper {
         }
 
         if (!NetworkUtils.isConnected(context)) {
-            callback.onError("Reset requires an internet connection.");
+            callback.onError("Mission bypass requires an internet connection.");
             return;
         }
 
+        Map<String, Object> data = new HashMap<>();
+        data.put("completed", completed);
         FirebaseConfig.getFunctions()
-                .getHttpsCallable("resetMissionProgress")
-                .call()
+                .getHttpsCallable("setMissionBypassState")
+                .call(data)
                 .addOnSuccessListener(result -> callback.onSuccess())
                 .addOnFailureListener(e -> {
                     com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
                     String message = e != null && e.getMessage() != null
                             ? e.getMessage()
-                            : "Couldn't reset mission progress.";
+                            : "Couldn't update mission bypass.";
                     callback.onError(message);
                 });
+    }
+
+    private static String getFirestoreErrorMessage(Context context, Exception error) {
+        if (context != null && !NetworkUtils.isConnected(context)) {
+            return "No internet connection.";
+        }
+        if (error instanceof FirebaseFirestoreException) {
+            FirebaseFirestoreException firestoreError = (FirebaseFirestoreException) error;
+            if (firestoreError.getCode() == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                return "Mission is not allowed by the deployed Firestore rules.";
+            }
+            if (firestoreError.getCode() == FirebaseFirestoreException.Code.ALREADY_EXISTS) {
+                return "Mission is already completed.";
+            }
+            return "Firestore error: " + firestoreError.getCode().name();
+        }
+        return error != null && error.getMessage() != null
+                ? error.getMessage()
+                : "Mission sync failed.";
     }
 
     static Map<String, Object> buildMissionCompletionData(String missionId, Timestamp completedAt) {
