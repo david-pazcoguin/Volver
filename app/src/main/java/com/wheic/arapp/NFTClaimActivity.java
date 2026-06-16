@@ -34,6 +34,7 @@ import java.util.Map;
 public class NFTClaimActivity extends AppCompatActivity {
 
     private static final long DEBOUNCE_MILLIS = 2000;
+    private static final boolean NFT_SCREENSHOT_PROTECTION_ENABLED = true;
 
     private TextView    tvWalletAddress, tvMintStatus;
     private Button      btnMintNFT;
@@ -47,9 +48,7 @@ public class NFTClaimActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // Prevent screenshots (wallet address and transaction data visible)
-        getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE,
-                WindowManager.LayoutParams.FLAG_SECURE);
+        applyScreenshotProtection();
         setContentView(R.layout.nft_claim_activity);
 
         walletManager = WalletManager.getInstance(this);
@@ -101,6 +100,15 @@ public class NFTClaimActivity extends AppCompatActivity {
     // ──────────────────────────────────────────────────────────────
     // Minting logic — Cloud Function sponsored mint (gasless to user)
     // ──────────────────────────────────────────────────────────────
+
+    private void applyScreenshotProtection() {
+        if (NFT_SCREENSHOT_PROTECTION_ENABLED) {
+            getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE,
+                    WindowManager.LayoutParams.FLAG_SECURE);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        }
+    }
 
     private void startMinting() {
         long now = System.currentTimeMillis();
