@@ -304,8 +304,8 @@ public class ARActivity extends AppCompatActivity {
     // below a standing camera) while still accepting the actual floor (1.0–1.5 m
     // below) at every typical phone-holding height.
     private static final float GROUND_PLANE_MIN_CAMERA_DROP_M = 0.7f;
-    private static final float IMMEDIATE_SPAWN_DISTANCE_M = 2.0f;
-    private static final float ESTIMATED_CAMERA_HEIGHT_M = 1.4f;
+    private static final float IMMEDIATE_SPAWN_DISTANCE_M = 1.0f;
+    private static final float ESTIMATED_CAMERA_HEIGHT_M = 1.6f;
     // Distance at which a staged relic is despawned again (hysteresis to avoid
     // flicker).
     private static final float RELIC_DESPAWN_RADIUS_M = 20.0f;
@@ -2650,35 +2650,20 @@ public class ARActivity extends AppCompatActivity {
         }
 
         // ── 3. Terrain anchors unavailable or repeatedly failed ────────────────────
-        // Wait for ARCore to detect a REAL floor plane (GROUND_PLANE_MIN_CAMERA_DROP_M
-        // filters out car-body panels and raised surfaces). Prompting the user to
-        // tilt the camera toward the ground both helps ARCore find the plane quickly
-        // and ensures the relic anchors to the actual floor, not a nearby object.
-        // After FLOOR_PLANE_WAIT_MS we fall back to camera-pose height so the user
-        // is never stuck indefinitely.  In either case the relic is marked
-        // floorAnchored=true so no post-spawn function can move it again.
+        // Spawn immediately. Use a floor-plane hit if ARCore already has one
+        // (GROUND_PLANE_MIN_CAMERA_DROP_M = 0.7 m filters out car-body panels),
+        // otherwise fall through to camera-pose height estimate. In either case
+        // the relic is permanently pinned: floorAnchored=true stops every
+        // post-spawn path from ever touching the anchor again.
         clearTerrainAnchorRequest(coinIdx);
         Anchor spawnAnchor = createTrackedGroundAnchor(frame);
         if (spawnAnchor == null) {
-            if (floorPlaneWaitStartMs == 0L) {
-                floorPlaneWaitStartMs = System.currentTimeMillis();
-            }
-            long waited = System.currentTimeMillis() - floorPlaneWaitStartMs;
-            if (waited < FLOOR_PLANE_WAIT_MS) {
-                updateHint("Tilt camera toward the ground to place the relic...");
-                return;
-            }
-            // Waited long enough — use estimated floor height as last resort.
-            floorPlaneWaitStartMs = 0L;
             spawnAnchor = createImmediateRelicAnchor(frame);
-        } else {
-            floorPlaneWaitStartMs = 0L;
         }
         if (spawnAnchor == null) {
             updateHint("Hold steady while AR places the relic.");
             return;
         }
-        // Always true: the relic is placed once and never moved by any post-spawn logic.
         Log.i(TAG, "tryAutoSpawnCoins: floor/camera fallback slot=" + coinIdx);
         spawnRelicNode(coinIdx, spawnAnchor, coinRenderable, relicIdForThisCoin, true);
     }

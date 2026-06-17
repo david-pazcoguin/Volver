@@ -1,7 +1,7 @@
 package com.wheic.arapp;
 
 final class RelicModelProfile {
-    static final float BOTTOM_CLEARANCE_M = 0.6f;
+    static final float BOTTOM_CLEARANCE_M = 0.7f;
     static final float FULL_SIZE_DISTANCE_M = 4.0f;
 
     private RelicModelProfile() {
@@ -36,15 +36,15 @@ final class RelicModelProfile {
         // the intended full-size real-world maximum dimension in metres.
         switch (relicId) {
             case "intramuros_coin":
-                return new Profile(-1.0f, 2.0f, 0.38f);
+                return new Profile(-1.0f, 2.0f, 0.76f);
             case "peineta":
-                return new Profile(-0.17314158f, 0.29916975f, 0.32f);
+                return new Profile(-0.17314158f, 0.29916975f, 0.64f);
             case "salakot_elite":
-                return new Profile(-0.2837139f, 1.12600005f, 0.52f);
+                return new Profile(-0.2837139f, 1.12600005f, 1.05f);
             case "farol_de_aceite":
-                return new Profile(-0.11f, 1.0625551f, 0.68f);
+                return new Profile(-0.11f, 1.0625551f, 1.35f);
             case "pocket_watch":
-                return new Profile(-0.013f, 0.144f, 0.38f);
+                return new Profile(-0.013f, 0.144f, 0.76f);
             default:
                 return profileFor("intramuros_coin");
         }
