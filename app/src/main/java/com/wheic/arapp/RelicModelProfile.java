@@ -3,32 +3,21 @@ package com.wheic.arapp;
 final class RelicModelProfile {
     static final float BOTTOM_CLEARANCE_M = 0.6f;
     static final float FULL_SIZE_DISTANCE_M = 4.0f;
-    static final float MIN_DISTANCE_SCALE = 0.40f;
 
     private RelicModelProfile() {
     }
 
-    static Transform transformFor(String relicId, float distanceMeters) {
+    static Transform transformFor(String relicId) {
         Profile profile = profileFor(relicId);
         float fullScale = fullScaleFor(profile);
-        float distanceScale = distanceScaleFor(distanceMeters);
-        float visualScale = fullScale * distanceScale;
         return new Transform(
-                visualScale,
-                yOffsetForScale(profile, visualScale),
                 fullScale,
-                distanceScale,
+                yOffsetForScale(profile, fullScale),
+                fullScale,
+                1.0f,
                 profile.rawMinY,
                 profile.rawMaxDimension,
                 profile.targetMaxDimensionM);
-    }
-
-    static float fullScaleFor(String relicId) {
-        return fullScaleFor(profileFor(relicId));
-    }
-
-    static float yOffsetForScale(String relicId, float scale) {
-        return yOffsetForScale(profileFor(relicId), scale);
     }
 
     private static float fullScaleFor(Profile profile) {
@@ -37,21 +26,6 @@ final class RelicModelProfile {
 
     private static float yOffsetForScale(Profile profile, float scale) {
         return BOTTOM_CLEARANCE_M - (profile.rawMinY * scale);
-    }
-
-    private static float distanceScaleFor(float distanceMeters) {
-        if (Float.isNaN(distanceMeters) || Float.isInfinite(distanceMeters)
-                || distanceMeters <= FULL_SIZE_DISTANCE_M) {
-            return 1.0f;
-        }
-        float scaleRangeM = 15.0f - FULL_SIZE_DISTANCE_M;
-        float t = (distanceMeters - FULL_SIZE_DISTANCE_M) / scaleRangeM;
-        t = clamp(t, 0.0f, 1.0f);
-        return 1.0f - ((1.0f - MIN_DISTANCE_SCALE) * t);
-    }
-
-    private static float clamp(float value, float min, float max) {
-        return Math.max(min, Math.min(max, value));
     }
 
     private static Profile profileFor(String relicId) {

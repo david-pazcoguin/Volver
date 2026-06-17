@@ -145,16 +145,15 @@ public class DemoARActivity extends AppCompatActivity {
                 TransformableNode node = new TransformableNode(arFragment.getTransformationSystem());
                 node.setParent(anchorNode);
                 node.setRenderable(renderable);
-                float s = scaleForRelic(relicId);
-                // Set minScale = s so ScaleController renders at exactly s when ratio=0
-                // (unselected). This avoids calling node.select() which shows the ring circle.
-                // User can still tap the model to select it and pinch-resize between s and s*4.
+                RelicModelProfile.Transform relicTransform = RelicModelProfile.transformFor(relicId);
+                float s = relicTransform.visualScale;
+                // Start demo at the same shared profile size used by mission mode.
                 node.getScaleController().setMinScale(s);
                 node.getScaleController().setMaxScale(s * 4.0f);
                 node.setLocalScale(new Vector3(s, s, s));
-                // Per-relic orientation and levitation
+                // Per-relic orientation and ground clearance
                 node.setLocalRotation(rotationForRelic(relicId));
-                node.setLocalPosition(new Vector3(0, levitateForRelic(relicId), 0));
+                node.setLocalPosition(new Vector3(0f, relicTransform.localYOffset, 0f));
 
                 hasPlaced = true;
                 tvHint.setText("Tap the model to spin it \u2022 pinch to resize \u2022 tap \u201cSwitch\u201d to try another");
@@ -229,16 +228,6 @@ public class DemoARActivity extends AppCompatActivity {
             case "pocket_watch":    return R.raw.pocket_watch;
             default: return null;
         }
-    }
-
-    private float scaleForRelic(String id) {
-        return RelicModelProfile.fullScaleFor(id);
-    }
-
-    /** Levitation height in metres above the anchor plane. */
-    private float levitateForRelic(String id) {
-        float scale = scaleForRelic(id);
-        return RelicModelProfile.yOffsetForScale(id, scale);
     }
 
     private Quaternion rotationForRelic(String id) {
