@@ -295,6 +295,13 @@ public class ARActivity extends AppCompatActivity {
     // Distance (metres) within which the COLLECT button is shown.
     // Keeps the button hidden until the user is genuinely close.
     private static final float RELIC_COLLECT_BUTTON_M = RelicModelProfile.FULL_SIZE_DISTANCE_M;
+    // If the user is already within this distance of the relic GPS coordinate when
+    // it is time to spawn, skip the terrain/GPS anchor and use a camera-pose anchor
+    // (1 m in front) instead.  A GPS anchor here would put the relic directly under
+    // the user's feet, making it invisible until they walked away and back.
+    // 6 m gives enough margin for urban-canyon GPS drift (±5 m) while keeping
+    // normal "approaching from the outside" spawns on the GPS path.
+    private static final float RELIC_AT_LOCATION_M = 6.0f;
     private static final float MAX_RELIC_GATING_ACCURACY_METERS = 18.0f;
     private static final float MAX_NAVIGATION_FIX_ACCURACY_METERS = 18.0f;
     private static final float MAX_GEOSPATIAL_NAVIGATION_ACCURACY_METERS = 8.0f;
@@ -304,7 +311,7 @@ public class ARActivity extends AppCompatActivity {
     // below a standing camera) while still accepting the actual floor (1.0–1.5 m
     // below) at every typical phone-holding height.
     private static final float GROUND_PLANE_MIN_CAMERA_DROP_M = 0.7f;
-    private static final float IMMEDIATE_SPAWN_DISTANCE_M = 1.0f;
+    private static final float IMMEDIATE_SPAWN_DISTANCE_M = 3.0f;
     private static final float ESTIMATED_CAMERA_HEIGHT_M = 1.6f;
     // Distance at which a staged relic is despawned again (hysteresis to avoid
     // flicker).
@@ -434,6 +441,7 @@ public class ARActivity extends AppCompatActivity {
         if (collectButtonContainer != null) {
             collectButtonContainer.setOnClickListener(v -> collectCurrentRelic());
         }
+
 
         if (btnCompass != null) {
             btnCompass.setOnClickListener(v -> toggleCompassOverlay());
@@ -1478,6 +1486,24 @@ public class ARActivity extends AppCompatActivity {
                                 return;
                             }
                             Log.d(TAG, "Terrain anchor SUCCESS for slot " + coinIdx);
+                            // If user walked up to the GPS coordinate while the async request
+                            // was in-flight, discard the GPS anchor and let the spawn loop
+                            // use camera-pose on the next frame so the relic appears in front.
+                            if (lastUserLat != 0 && relicLatitudes != null
+                                    && coinIdx < relicLatitudes.length) {
+                                float[] _cd = new float[1];
+                                Location.distanceBetween(lastUserLat, lastUserLng,
+                                        relicLatitudes[coinIdx], relicLongitudes[coinIdx], _cd);
+                                if (_cd[0] <= RELIC_AT_LOCATION_M) {
+                                    try { anchor.detach(); } catch (Exception ignored) {}
+                                    terrainAnchorFailureCounts.put(coinIdx,
+                                            MAX_TERRAIN_ANCHOR_FAILURES_BEFORE_PLANE_FALLBACK);
+                                    clearTerrainAnchorRequest(coinIdx);
+                                    Log.i(TAG, "Terrain anchor discarded: user at relic (d="
+                                            + _cd[0] + " m) → camera-pose next frame slot=" + coinIdx);
+                                    return;
+                                }
+                            }
                             // floorAnchored=true: terrain anchor is already at ground level so
                             // correctActiveRelicToGroundAnchor() must not move it to a camera-
                             // relative floor plane (which would destroy the GPS-correct position).
@@ -1694,19 +1720,7 @@ public class ARActivity extends AppCompatActivity {
                 });
     }
 
-    private void showNFTUnlockedDialog() {
-        if (isFinishing() || isDestroyed())
-            return;
-        new AlertDialog.Builder(this)
-                .setTitle("Volver Heritage Souvenir Complete!")
-                .setMessage(
-                        "You have completed the Volver mission list. Return to the home screen to claim your heritage NFT.")
-                .setPositiveButton("Go to Home", (d, w) -> finish())
-                .setNegativeButton("Stay in AR", null)
-                .show();
-    }
-
-    // ──────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────
     // ──────────────────────────────────────────────────────────────────
     // Coin model preload
     // ──────────────────────────────────────────────────────────────────
@@ -2616,6 +2630,30 @@ public class ARActivity extends AppCompatActivity {
         if (frame == null || frame.getCamera().getTrackingState() != TrackingState.TRACKING)
             return;
 
+        // ── 0. Standing-at-relic guard ────────────────────────────────────────────────
+        // If the user is already inside RELIC_AT_LOCATION_M of the GPS coordinate,
+        // a terrain anchor would place the relic directly beneath their feet.
+        // Force the camera-pose path by discarding any pre-resolved GPS anchor and
+        // marking the slot as "fallback only" (failure count ≥ threshold).
+        if (lastUserLat != 0 && relicLatitudes != null && coinIdx < relicLatitudes.length) {
+            float[] _d = new float[1];
+            Location.distanceBetween(lastUserLat, lastUserLng,
+                    relicLatitudes[coinIdx], relicLongitudes[coinIdx], _d);
+            if (_d[0] <= RELIC_AT_LOCATION_M) {
+                Anchor _stale = preResolvedAnchors.remove(coinIdx);
+                if (_stale != null) try { _stale.detach(); } catch (Exception ignored) {}
+                nextSlotPreWarmPending.remove(coinIdx);
+                preResolvedRenderables.remove(coinIdx);
+                preResolvedRelicIds.remove(coinIdx);
+                terrainAnchorFailureCounts.put(coinIdx, MAX_TERRAIN_ANCHOR_FAILURES_BEFORE_PLANE_FALLBACK);
+                clearTerrainAnchorRequest(coinIdx);
+                Log.i(TAG, "tryAutoSpawnCoins: user at relic location (d=" + _d[0]
+                        + " m) → camera-pose spawn slot=" + coinIdx);
+                // Fall through: section 1 finds no pre-resolved anchor, section 2 is
+                // gated by shouldUseGroundPlaneFallback → true, section 3 fires.
+            }
+        }
+
         // ── 1. Consume a pre-resolved terrain anchor (placed at the GPS coordinate) ──
         // preResolveActiveAndNextSlotAnchors() fires these in the background while the
         // user walks so the relic is ready the instant they enter the spawn zone.
@@ -2925,11 +2963,7 @@ public class ARActivity extends AppCompatActivity {
                 return;
             flushPendingCollectibleAwards();
             updateHint("Mission complete! Coin collected.");
-            if (allComplete) {
-                showNFTUnlockedDialog();
-            } else {
-                showStyledMissionCompleteDialog(offline);
-            }
+            showStyledMissionCompleteDialog(offline);
         }), errorMessage -> runOnUiThread(() -> {
             if (isFinishing() || isDestroyed())
                 return;
@@ -3018,11 +3052,7 @@ public class ARActivity extends AppCompatActivity {
                 return;
             flushPendingCollectibleAwards();
             updateHint("Mission complete! Progress synced.");
-            if (allComplete) {
-                showNFTUnlockedDialog();
-            } else {
-                showStyledMissionCompleteDialog(offline);
-            }
+            showStyledMissionCompleteDialog(offline);
         }), errorMessage -> runOnUiThread(() -> {
             if (isFinishing() || isDestroyed())
                 return;

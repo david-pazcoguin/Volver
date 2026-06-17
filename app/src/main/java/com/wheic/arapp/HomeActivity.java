@@ -958,28 +958,28 @@ public class HomeActivity extends AppCompatActivity {
                 repeatRelicCoordinates(14.585520, 14.585565),
                 repeatRelicCoordinates(120.975730, 120.975683),
                 buildTwoOfEachRelicIds()));
-        arHelpers.add(new ARHelper("Casa Manila", "", 14.589630881841018, 120.97515722599451,
+        arHelpers.add(new ARHelper("Casa Manila", "", 14.589567947089023, 120.97505877161824,
                 "casa_manila",
                 // 5 relic stages × 2 relics each, in order. The user must collect
                 // each relic pair before the next pair appears.
                 new double[]{
                     // Stage 1: Intramuros Coin
-                    14.589616244109674, 14.589658424566982,
+                    14.589646467643362, 14.589708115992844,
                     // Stage 2: Peineta
-                    14.589616244109674, 14.589658424566982,
+                    14.589800912949528, 14.589658148384853,
                     // Stage 3: Salakot Elite
-                    14.589616244109674, 14.589658424566982,
+                    14.58969254167486,  14.589490075435302,
                     // Stage 4: Farol de Aceite
-                    14.589616244109674, 14.589658424566982,
+                    14.589540043081717, 14.589713577458028,
                     // Stage 5: Antique Pocket Watch
-                    14.589616244109674, 14.589658424566982
+                    14.589652578040134, 14.589684375611148
                 },
                 new double[]{
-                    120.97522396558945, 120.97526755148382,
-                    120.97522396558945, 120.97526755148382,
-                    120.97522396558945, 120.97526755148382,
-                    120.97522396558945, 120.97526755148382,
-                    120.97522396558945, 120.97526755148382
+                    120.97497361148619, 120.97502323235054,
+                    120.97512381518362, 120.97524183238619,
+                    120.97528944159386, 120.97512247408933,
+                    120.97507084156832, 120.97527906840676,
+                    120.97526833957122, 120.97527370398899
                 },
                 new String[]{
                     "intramuros_coin", "intramuros_coin",
@@ -998,10 +998,27 @@ public class HomeActivity extends AppCompatActivity {
                 repeatRelicCoordinates(14.590160, 14.590115),
                 repeatRelicCoordinates(120.973395, 120.973442),
                 buildTwoOfEachRelicIds()));
-        arHelpers.add(new ARHelper("San Agustin Church", "", 14.589179727259076, 120.97518225933517,
+        arHelpers.add(new ARHelper("San Agustin Church", "", 14.58928832136685, 120.97514108295765,
                 "san_agustin_church",
-                repeatRelicCoordinates(14.589154727259076, 14.589211727259076),
-                repeatRelicCoordinates(120.97514625933517, 120.97521825933517),
+                new double[]{
+                    // Stage 1: Intramuros Coin
+                    14.58952626689821,   14.589469070980408,
+                    // Stage 2: Peineta
+                    14.589476870424624,  14.589384576983727,
+                    // Stage 3: Salakot Elite
+                    14.589471670795168,  14.589343629881355,
+                    // Stage 4: Farol de Aceite
+                    14.58943917310836,   14.589384576983727,
+                    // Stage 5: Antique Pocket Watch
+                    14.589328030983218,  14.58923248770796
+                },
+                new double[]{
+                    120.9749638615895,  120.9748725227116,
+                    120.9750034865439,  120.97489737225928,
+                    120.97493968365124, 120.97493834043244,
+                    120.97504042506068, 120.97495580227677,
+                    120.97513848003256, 120.97505721529559
+                },
                 buildTwoOfEachRelicIds()));
         // Original Manila Cathedral mission center: 14.591741718049287, 120.97339129769252
         arHelpers.add(new ARHelper("Manila Cathedral", "", 14.592216802173693, 120.97306956118595,
