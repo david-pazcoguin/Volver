@@ -19,6 +19,7 @@
 -keep class org.bouncycastle.** { *; }
 -dontwarn org.bouncycastle.**
 -dontwarn org.web3j.**
+-dontwarn org.slf4j.impl.StaticLoggerBinder
 
 # ── ARCore / Sceneform ──────────────────────────────────────────────────
 -keep class com.google.ar.** { *; }

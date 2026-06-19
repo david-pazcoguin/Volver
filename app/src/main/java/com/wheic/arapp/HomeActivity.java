@@ -1069,7 +1069,6 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     private void setupRecyclerView() {
-        recyclerView.setHasFixedSize(true);
         recyclerView.setItemViewCacheSize(arHelpers.size());
         arAdapter = new ARAdapter(arHelpers, this);
         recyclerView.setLayoutManager(
