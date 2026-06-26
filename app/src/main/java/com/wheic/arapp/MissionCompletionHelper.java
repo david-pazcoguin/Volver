@@ -3,12 +3,15 @@ package com.wheic.arapp;
 import android.content.Context;
 import android.widget.Toast;
 
+import com.google.firebase.Timestamp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.DocumentSnapshot;
-import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.FirebaseFirestoreException;
+import com.google.firebase.firestore.Query;
+import com.google.firebase.firestore.QuerySnapshot;
 import com.google.firebase.firestore.Source;
 
 import java.util.Arrays;
@@ -66,6 +69,11 @@ public class MissionCompletionHelper {
         void onError(String message);
     }
 
+    public interface ResetCallback {
+        void onSuccess();
+        void onError(String message);
+    }
+
     // ──────────────────────────────────────────────────────────────
     // Mission tracking
     // ──────────────────────────────────────────────────────────────
@@ -91,47 +99,84 @@ public class MissionCompletionHelper {
                 .collection(FirebaseConfig.COLLECTION_MISSIONS)
                 .document(missionId);
 
+        if (MissionBypassState.BYPASS_STATE_RESET.equals(MissionBypassState.getState(context))) {
+            writeCompletion(context, missionRef, missionId, callback);
+            return;
+        }
+
         // Read from the local cache first so the check works offline. The rules
         // forbid update-on-missions, so we must only write if the doc doesn't
         // already exist. Firestore's offline queue takes care of the rest.
         missionRef.get(Source.CACHE)
-                .addOnSuccessListener(snap -> maybeWriteCompletion(missionRef, snap, missionId, callback))
+                .addOnSuccessListener(snap -> maybeWriteCompletion(context, missionRef, snap, missionId, callback))
                 .addOnFailureListener(cacheMiss ->
                         missionRef.get(Source.SERVER)
-                                .addOnSuccessListener(snap -> maybeWriteCompletion(missionRef, snap, missionId, callback))
+                                .addOnSuccessListener(snap -> maybeWriteCompletion(context, missionRef, snap, missionId, callback))
                                 .addOnFailureListener(e -> {
                                     com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
                                     // Could not confirm existence. Attempt a blind write — rules will
                                     // reject the second one if it ever lands as an update.
-                                    writeCompletion(missionRef, missionId, callback);
+                                    writeCompletion(context, missionRef, missionId, callback);
                                 }));
     }
 
-    private static void maybeWriteCompletion(DocumentReference ref,
+    /** Recreates a mission-complete document without trusting the local cache. */
+    public static void completeMissionIgnoringCache(Context context, String missionId,
+                                                    CompletionCallback callback) {
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) {
+            callback.onError("Please sign in first.");
+            return;
+        }
+
+        if (missionId == null || !ALLOWED_MISSION_IDS.contains(missionId)) {
+            callback.onError("Unknown mission.");
+            return;
+        }
+
+        FirebaseFirestore db = FirebaseConfig.getFirestore();
+        DocumentReference missionRef = db
+                .collection(FirebaseConfig.COLLECTION_USERS)
+                .document(user.getUid())
+                .collection(FirebaseConfig.COLLECTION_MISSIONS)
+                .document(missionId);
+        writeCompletion(context, missionRef, missionId, callback);
+    }
+
+    private static void maybeWriteCompletion(Context context,
+                                             DocumentReference ref,
                                              DocumentSnapshot existing,
                                              String missionId,
                                              CompletionCallback callback) {
         if (existing != null && existing.exists()
                 && Boolean.TRUE.equals(existing.getBoolean(FirebaseConfig.FIELD_COMPLETED))) {
+            recordResetProgressIfNeeded(context, missionId);
             callback.onSuccess();
             return;
         }
-        writeCompletion(ref, missionId, callback);
+        writeCompletion(context, ref, missionId, callback);
     }
 
-    private static void writeCompletion(DocumentReference ref,
+    private static void writeCompletion(Context context,
+                                        DocumentReference ref,
                                         String missionId,
                                         CompletionCallback callback) {
-        Map<String, Object> missionData = new HashMap<>();
-        missionData.put(FirebaseConfig.FIELD_COMPLETED, true);
-        missionData.put(FirebaseConfig.FIELD_COMPLETED_AT, FieldValue.serverTimestamp());
-        missionData.put(FirebaseConfig.FIELD_MISSION_ID, missionId);
+        Map<String, Object> missionData = buildMissionCompletionData(missionId, Timestamp.now());
         ref.set(missionData)
-                .addOnSuccessListener(unused -> callback.onSuccess())
+                .addOnSuccessListener(unused -> {
+                    recordResetProgressIfNeeded(context, missionId);
+                    callback.onSuccess();
+                })
                 .addOnFailureListener(e -> {
                     com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
-                    callback.onError("Network error");
+                    callback.onError(getFirestoreErrorMessage(context, e));
                 });
+    }
+
+    private static void recordResetProgressIfNeeded(Context context, String missionId) {
+        if (MissionBypassState.BYPASS_STATE_RESET.equals(MissionBypassState.getState(context))) {
+            MissionBypassState.addResetCompletedMission(context, missionId);
+        }
     }
 
     /** Fetch which missions the user has already finished. */
@@ -144,31 +189,139 @@ public class MissionCompletionHelper {
         }
 
         FirebaseFirestore db = FirebaseConfig.getFirestore();
-        db.collection(FirebaseConfig.COLLECTION_USERS)
+        Query missionQuery = db.collection(FirebaseConfig.COLLECTION_USERS)
                 .document(user.getUid())
                 .collection(FirebaseConfig.COLLECTION_MISSIONS)
                 .whereEqualTo(FirebaseConfig.FIELD_COMPLETED, true)
-                .limit(TOTAL_LANDMARKS)
-                .get()
-                .addOnSuccessListener(querySnapshot -> {
-                    Set<String> completed = new HashSet<>();
-                    querySnapshot.getDocuments().forEach(doc -> {
-                        String id = doc.getString(FirebaseConfig.FIELD_MISSION_ID);
-                        completed.add(id != null ? id : doc.getId());
-                    });
+                .limit(TOTAL_LANDMARKS);
 
-                    boolean allComplete = completed.size() == TOTAL_LANDMARKS;
-                    if (allComplete) {
-                        db.collection(FirebaseConfig.COLLECTION_USERS)
-                                .document(user.getUid())
-                                .update(FirebaseConfig.FIELD_ALL_COMPLETE, true)
-                                .addOnSuccessListener(unused -> callback.onResult(completed, true))
-                                .addOnFailureListener(e -> { com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e); callback.onError("Network error"); });
-                    } else {
-                        callback.onResult(completed, false);
+        missionQuery
+                .get(Source.CACHE)
+                .addOnSuccessListener(querySnapshot -> {
+                    if (querySnapshot != null && !querySnapshot.isEmpty()) {
+                        handleMissionProgressResult(db, user.getUid(), querySnapshot, callback);
+                        return;
                     }
+
+                    missionQuery.get(Source.SERVER)
+                            .addOnSuccessListener(serverSnapshot ->
+                                    handleMissionProgressResult(db, user.getUid(), serverSnapshot, callback))
+                            .addOnFailureListener(e -> {
+                                com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
+                                handleMissionProgressResult(db, user.getUid(), querySnapshot, callback);
+                            });
                 })
-                .addOnFailureListener(e -> { com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e); callback.onError("Network error"); });
+                .addOnFailureListener(cacheError ->
+                        missionQuery.get(Source.SERVER)
+                                .addOnSuccessListener(querySnapshot ->
+                                        handleMissionProgressResult(db, user.getUid(), querySnapshot, callback))
+                                .addOnFailureListener(e -> {
+                                    com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
+                                    callback.onError("Network error");
+                                }));
+    }
+
+    private static void handleMissionProgressResult(FirebaseFirestore db,
+                                                    String uid,
+                                                    QuerySnapshot querySnapshot,
+                                                    ProgressCallback callback) {
+        Set<String> completed = extractCompletedMissionIds(querySnapshot);
+        boolean allComplete = isAllLandmarksComplete(completed);
+        if (!allComplete) {
+            callback.onResult(completed, false);
+            return;
+        }
+
+        db.collection(FirebaseConfig.COLLECTION_USERS)
+                .document(uid)
+                .update(FirebaseConfig.FIELD_ALL_COMPLETE, true)
+                .addOnSuccessListener(unused -> callback.onResult(completed, true))
+                .addOnFailureListener(e -> {
+                    com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
+                    // The mission docs are already enough for the app to treat progress
+                    // as complete, so don't turn a profile-flag sync issue into a UI error.
+                    callback.onResult(completed, true);
+                });
+    }
+
+    /** Deletes the user's active mission-complete records so testing can restart from 0/8. */
+    public static void resetMissionProgress(Context context, ResetCallback callback) {
+        setMissionBypassState(context, false, callback);
+    }
+
+    /**
+     * Atomically sets all hidden-bypass mission state through the Admin SDK.
+     * This avoids partial completion when individual client writes are rejected.
+     */
+    public static void setMissionBypassState(Context context, boolean completed,
+                                             ResetCallback callback) {
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) {
+            callback.onError("Please sign in first.");
+            return;
+        }
+
+        if (!NetworkUtils.isConnected(context)) {
+            callback.onError("Mission bypass requires an internet connection.");
+            return;
+        }
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("completed", completed);
+        FirebaseConfig.getFunctions()
+                .getHttpsCallable("setMissionBypassState")
+                .call(data)
+                .addOnSuccessListener(result -> callback.onSuccess())
+                .addOnFailureListener(e -> {
+                    com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(e);
+                    String message = e != null && e.getMessage() != null
+                            ? e.getMessage()
+                            : "Couldn't update mission bypass.";
+                    callback.onError(message);
+                });
+    }
+
+    private static String getFirestoreErrorMessage(Context context, Exception error) {
+        if (context != null && !NetworkUtils.isConnected(context)) {
+            return "No internet connection.";
+        }
+        if (error instanceof FirebaseFirestoreException) {
+            FirebaseFirestoreException firestoreError = (FirebaseFirestoreException) error;
+            if (firestoreError.getCode() == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                return "Mission is not allowed by the deployed Firestore rules.";
+            }
+            if (firestoreError.getCode() == FirebaseFirestoreException.Code.ALREADY_EXISTS) {
+                return "Mission is already completed.";
+            }
+            return "Firestore error: " + firestoreError.getCode().name();
+        }
+        return error != null && error.getMessage() != null
+                ? error.getMessage()
+                : "Mission sync failed.";
+    }
+
+    static Map<String, Object> buildMissionCompletionData(String missionId, Timestamp completedAt) {
+        Map<String, Object> missionData = new HashMap<>();
+        missionData.put(FirebaseConfig.FIELD_COMPLETED, true);
+        missionData.put(FirebaseConfig.FIELD_COMPLETED_AT, completedAt);
+        missionData.put(FirebaseConfig.FIELD_MISSION_ID, missionId);
+        return missionData;
+    }
+
+    static Set<String> extractCompletedMissionIds(QuerySnapshot querySnapshot) {
+        Set<String> completed = new HashSet<>();
+        if (querySnapshot == null) {
+            return completed;
+        }
+        querySnapshot.getDocuments().forEach(doc -> {
+            String id = doc.getString(FirebaseConfig.FIELD_MISSION_ID);
+            completed.add(id != null ? id : doc.getId());
+        });
+        return completed;
+    }
+
+    static boolean isAllLandmarksComplete(Set<String> completed) {
+        return completed != null && completed.size() == TOTAL_LANDMARKS;
     }
 
     // ──────────────────────────────────────────────────────────────

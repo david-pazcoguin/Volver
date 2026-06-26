@@ -2,9 +2,16 @@ package com.wheic.arapp;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
+import com.google.firebase.Timestamp;
+
 import org.junit.Test;
+
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 public class MissionCompletionHelperTest {
 
@@ -27,5 +34,27 @@ public class MissionCompletionHelperTest {
         assertFalse(MissionCompletionHelper.ALLOWED_MISSION_IDS.contains("FORT_SANTIAGO"));
         assertFalse(MissionCompletionHelper.ALLOWED_MISSION_IDS.contains(""));
         assertFalse(MissionCompletionHelper.ALLOWED_MISSION_IDS.contains("unknown"));
+    }
+
+    @Test
+    public void buildMissionCompletionData_usesConcreteTimestamp() {
+        Timestamp completedAt = Timestamp.now();
+
+        Map<String, Object> payload =
+                MissionCompletionHelper.buildMissionCompletionData("casa_manila", completedAt);
+
+        assertEquals(Boolean.TRUE, payload.get(FirebaseConfig.FIELD_COMPLETED));
+        assertEquals("casa_manila", payload.get(FirebaseConfig.FIELD_MISSION_ID));
+        assertSame(completedAt, payload.get(FirebaseConfig.FIELD_COMPLETED_AT));
+    }
+
+    @Test
+    public void isAllLandmarksComplete_requiresAllEightMissions() {
+        Set<String> completed = new HashSet<>(MissionCompletionHelper.ALLOWED_MISSION_IDS);
+        assertTrue(MissionCompletionHelper.isAllLandmarksComplete(completed));
+
+        completed.remove("lpu");
+        assertFalse(MissionCompletionHelper.isAllLandmarksComplete(completed));
+        assertFalse(MissionCompletionHelper.isAllLandmarksComplete(null));
     }
 }
