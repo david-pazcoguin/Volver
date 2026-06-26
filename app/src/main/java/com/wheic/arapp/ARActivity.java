@@ -51,7 +51,9 @@ import com.google.ar.core.Earth;
 import com.google.ar.core.GeospatialPose;
 import com.google.ar.core.HitResult;
 import com.google.ar.core.Plane;
+import com.google.ar.core.Pose;
 import com.google.ar.core.Session;
+import com.google.ar.core.Trackable;
 import com.google.ar.core.TrackingState;
 import com.google.ar.sceneform.AnchorNode;
 import com.google.ar.sceneform.FrameTime;
@@ -82,7 +84,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
@@ -93,8 +94,6 @@ import android.graphics.Paint;
 import android.graphics.drawable.BitmapDrawable;
 
 import com.google.ar.core.Frame;
-import com.google.ar.core.Plane;
-import com.google.ar.core.Pose;
 import com.google.ar.sceneform.math.Quaternion;
 
 public class ARActivity extends AppCompatActivity {
@@ -113,7 +112,7 @@ public class ARActivity extends AppCompatActivity {
     private LocationCallback locationCallback;
     private static final int LOCATION_PERM_CODE = 1001;
     private static final float ACTIVATION_RADIUS_METERS = 30.0f;
-    private static final float MAX_ACTIVATION_ACCURACY_METERS = 25.0f;
+    private static final float MAX_ACTIVATION_ACCURACY_METERS = 18.0f;
     private static final int REQUIRED_CONSECUTIVE_ACTIVATION_FIXES = 2;
     private static final long ACTIVATION_CONFIRMATION_WINDOW_MS = 12_000L;
     private static final long LOCATION_CHECK_INTERVAL = 10_000L; // when searching for target
@@ -123,12 +122,17 @@ public class ARActivity extends AppCompatActivity {
     private double targetLongitude;
     private double targetAltitude;
     private boolean isTargetReached = false;
+    private boolean activityResumed = false;
     private int activationConfirmationCount = 0;
     private long lastActivationConfirmationElapsedMs = 0L;
 
     // GPS positions for each relic (one entry per relic slot)
     private double[] relicLatitudes;
     private double[] relicLongitudes;
+    // Stable AR spawn positions. These must match the configured relic GPS
+    // points exactly so a relic does not appear to move to a different floor tile.
+    private double[] relicSpawnLatitudes;
+    private double[] relicSpawnLongitudes;
     // Optional: parallel array of relic IDs (one per relic slot). When non-null,
     // each slot spawns with its own GLB model and credits that relic on tap.
     // When null, every slot uses the default coin model and the mission's
@@ -242,6 +246,7 @@ public class ARActivity extends AppCompatActivity {
     private final List<Marker> coinMapMarkers = new ArrayList<>();
     private final List<AnchorNode> coinAnchorNodes = new ArrayList<>();
     private final List<Node> coinNodes = new ArrayList<>();
+    private final Set<Integer> floorAnchoredRelicSlots = new HashSet<>();
     /**
      * Authoritative collection state per slot. Independent of
      * {@link #coinAnchorNodes} so we can reason about progress even if a
@@ -256,6 +261,8 @@ public class ARActivity extends AppCompatActivity {
     // don't fire duplicates while the async response is pending (or retry after
     // the slot is cleared by collection / anchor loss).
     private final java.util.Map<Integer, Boolean> terrainAnchorPending = new java.util.HashMap<>();
+    private final java.util.Map<Integer, Long> terrainAnchorRequestStartedMs = new java.util.HashMap<>();
+    private final java.util.Map<Integer, Integer> terrainAnchorFailureCounts = new java.util.HashMap<>();
     // Pre-resolved terrain anchors for UPCOMING slots (slot N+1 resolved while
     // the user is still hunting slot N). Keyed by slot index. Consumed by
     // tryAutoSpawnCoins() the instant the slot becomes active — zero latency.
@@ -267,29 +274,50 @@ public class ARActivity extends AppCompatActivity {
     // loop from blocking on a pre-warm it isn't expecting to consume immediately).
     private final java.util.Map<Integer, Boolean> nextSlotPreWarmPending = new java.util.HashMap<>();
     // Timestamp (ms) when we first saw geospatial not-yet-tracking for the
-    // current slot. After 15 s we show a "point camera toward buildings" hint.
-    // Bearing fallback has been removed — items always wait for geospatial.
+    // current slot. After the wait, placement may use a tracked floor plane.
     private long geospatialWaitStartMs = 0;
-    private static final float COIN_SCALE = 0.25f;
+    // Timestamp (ms) when we started waiting for a real floor plane in the
+    // camera-relative fallback. 0 = not waiting. After FLOOR_PLANE_WAIT_MS the
+    // spawn falls back to camera-pose height so the user is never stuck forever.
+    private long floorPlaneWaitStartMs = 0L;
+    private static final long FLOOR_PLANE_WAIT_MS = 8_000L;
     private static final float COIN_VALUE = 0.10f;
-    // Max distance (metres) from a relic at which the user can tap to collect it.
-    // Kept large because urban-canyon GPS drift in Intramuros can be 5-10 m even
-    // with a clean fix. The real proximity check is the spawn radius below — if
-    // the relic is visible in AR, the user is close enough to collect it.
-    private static final float RELIC_COLLECT_RADIUS_M = 25.0f;
-    // Distance at which a staged relic spawns into the scene. 12 m matches the
+    // Distance at which a staged relic spawns into the scene. 15 m matches the
     // user-visible "walk closer" threshold and is large enough that urban-canyon
     // GPS drift (±5-10 m) never prevents a relic from appearing in range.
-    private static final float RELIC_SPAWN_RADIUS_M = 12.0f;
+    private static final float RELIC_SPAWN_RADIUS_M = 15.0f;
+    private static final double RELIC_TERRAIN_HEIGHT_M = 0.0;
+    private static final double MAX_TERRAIN_ANCHOR_HORIZONTAL_ACCURACY_M = 8.0;
+    private static final long GEOSPATIAL_STABILIZATION_WAIT_MS = 6_000L;
+    private static final long TERRAIN_ANCHOR_REQUEST_TIMEOUT_MS = 10_000L;
+    private static final int MAX_TERRAIN_ANCHOR_FAILURES_BEFORE_PLANE_FALLBACK = 3;
+    private static final boolean COMPASS_ONLY_MISSION_UI = true;
     // Distance (metres) within which the COLLECT button is shown.
     // Keeps the button hidden until the user is genuinely close.
-    private static final float RELIC_COLLECT_BUTTON_M = 5.0f;
-    private static final float MAX_RELIC_GATING_ACCURACY_METERS = 25.0f;
+    private static final float RELIC_COLLECT_BUTTON_M = RelicModelProfile.FULL_SIZE_DISTANCE_M;
+    // If the user is already within this distance of the relic GPS coordinate when
+    // it is time to spawn, skip the terrain/GPS anchor and use a camera-pose anchor
+    // (1 m in front) instead.  A GPS anchor here would put the relic directly under
+    // the user's feet, making it invisible until they walked away and back.
+    // 6 m gives enough margin for urban-canyon GPS drift (±5 m) while keeping
+    // normal "approaching from the outside" spawns on the GPS path.
+    private static final float RELIC_AT_LOCATION_M = 6.0f;
+    private static final float MAX_RELIC_GATING_ACCURACY_METERS = 18.0f;
+    private static final float MAX_NAVIGATION_FIX_ACCURACY_METERS = 18.0f;
+    private static final float MAX_GEOSPATIAL_NAVIGATION_ACCURACY_METERS = 8.0f;
     private static final long GEOSPATIAL_HEADING_MAX_AGE_MS = 1_500L;
+    // Minimum distance the hit-point must be below the camera to count as a
+    // real ground plane. 0.7 m filters out car-body panels (typically 0.3–0.6 m
+    // below a standing camera) while still accepting the actual floor (1.0–1.5 m
+    // below) at every typical phone-holding height.
+    private static final float GROUND_PLANE_MIN_CAMERA_DROP_M = 0.7f;
+    private static final float IMMEDIATE_SPAWN_DISTANCE_M = 3.0f;
+    private static final float ESTIMATED_CAMERA_HEIGHT_M = 1.6f;
     // Distance at which a staged relic is despawned again (hysteresis to avoid
     // flicker).
     private static final float RELIC_DESPAWN_RADIUS_M = 20.0f;
-    private static final long MAX_LOCATION_FIX_AGE_MS = 8_000L;
+    private static final long MAX_LOCATION_FIX_AGE_MS = 5_000L;
+    private static final long MAX_RESOLVED_ANCHOR_FIX_AGE_MS = 10_000L;
     // ── Periodic location check ──────────────────────────────────────
     private final float[] distanceResults = new float[1];
     private final Handler locationHandler = new Handler(Looper.getMainLooper());
@@ -345,8 +373,15 @@ public class ARActivity extends AppCompatActivity {
         targetAltitude = extras.getDouble("Altitude", Double.NaN);
         double[] cl = extras.getDoubleArray("RelicLatitudes");
         double[] cn = extras.getDoubleArray("RelicLongitudes");
-        relicLatitudes = (cl != null && cl.length > 0) ? cl : new double[] { targetLatitude };
-        relicLongitudes = (cn != null && cn.length > 0) ? cn : new double[] { targetLongitude };
+        if (cl != null && cn != null && cl.length > 0 && cl.length == cn.length) {
+            relicLatitudes = cl;
+            relicLongitudes = cn;
+        } else {
+            Log.w(TAG, "Invalid relic coordinate arrays; using mission coordinate. latCount="
+                    + (cl == null ? 0 : cl.length) + " lngCount=" + (cn == null ? 0 : cn.length));
+            relicLatitudes = new double[] { targetLatitude };
+            relicLongitudes = new double[] { targetLongitude };
+        }
         coinSlotCollected = new boolean[relicLatitudes.length];
         String[] cri = extras.getStringArray("RelicIds");
         if (cri != null && cri.length == relicLatitudes.length) {
@@ -362,6 +397,7 @@ public class ARActivity extends AppCompatActivity {
         missionId = extras.getString("MissionId", "unknown");
         missionName = extras.getString("MissionName", "Mission");
         collectibleId = extras.getString("CollectibleId", missionId);
+        buildStableRelicSpawnCoordinates();
         restoreSavedRelicProgress();
 
         // Validate coordinates
@@ -406,12 +442,16 @@ public class ARActivity extends AppCompatActivity {
             collectButtonContainer.setOnClickListener(v -> collectCurrentRelic());
         }
 
+
         if (btnCompass != null) {
             btnCompass.setOnClickListener(v -> toggleCompassOverlay());
         }
         if (compassOverlay != null) {
             // Tapping the overlay itself also closes it
             compassOverlay.setOnClickListener(v -> {
+                if (COMPASS_ONLY_MISSION_UI && isTargetReached) {
+                    return;
+                }
                 compassOverlay.setVisibility(View.GONE);
                 if (btnCompass != null)
                     btnCompass.setSelected(false);
@@ -456,8 +496,10 @@ public class ARActivity extends AppCompatActivity {
         minimap = findViewById(R.id.minimap);
         btnMapCompassToggle = findViewById(R.id.btnMapCompassToggle);
         tvMapCompassIcon = findViewById(R.id.tvMapCompassIcon);
-        if (btnMapCompassToggle != null) {
+        if (btnMapCompassToggle != null && !COMPASS_ONLY_MISSION_UI) {
             btnMapCompassToggle.setOnClickListener(v -> toggleMapCompass());
+        } else if (btnMapCompassToggle != null) {
+            btnMapCompassToggle.setVisibility(View.GONE);
         }
 
         arCam = (ArFragment) getSupportFragmentManager().findFragmentById(R.id.arCameraArea);
@@ -480,28 +522,28 @@ public class ARActivity extends AppCompatActivity {
                 Location location = result.getLastLocation();
                 if (location == null) {
                     Log.e(TAG, "onLocationResult: null location");
+                    if (!isTargetReached) {
+                        updateSearchingGpsStatus("Searching for GPS...");
+                    }
                     return;
                 }
                 Log.e(TAG, "onLocationResult: " + location.getLatitude() + "," + location.getLongitude());
+                if (!isLocationFresh(location)) {
+                    if (!isTargetReached) {
+                        updateSearchingGpsStatus("Searching for fresh GPS...");
+                    }
+                    return;
+                }
+                if (!isReliableNavigationLocation(location)) {
+                    if (!isTargetReached) {
+                        updateImprovingGpsStatus(location.hasAccuracy() ? location.getAccuracy() : Float.NaN);
+                    }
+                    return;
+                }
 
                 updateUserFixFromLocation(location);
-
-                Location.distanceBetween(
-                        location.getLatitude(), location.getLongitude(),
-                        targetLatitude, targetLongitude, distanceResults);
-                float distance = distanceResults[0];
-
-                if (!isTargetReached) {
-                    // Directly update distance UI — never depends on NavManager or network
-                    updateDistanceUI(distance);
-
-                    if (navManager != null) {
-                        navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
-                    }
-                    maybeActivateTarget(distance, lastUserAccuracyMeters, "locationCallback");
-                }
-                updateMinimapUser();
-                updateRelicHud();
+                applyNavigationFix(location.getLatitude(), location.getLongitude(),
+                        lastUserAccuracyMeters, "locationCallback");
             }
         };
 
@@ -520,6 +562,7 @@ public class ARActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        activityResumed = true;
         // Re-attach scene listener (removed in onPause to prevent leak)
         if (arCam != null && arCam.getArSceneView() != null) {
             arCam.getArSceneView().getScene().addOnUpdateListener(sceneUpdateListener);
@@ -547,6 +590,7 @@ public class ARActivity extends AppCompatActivity {
 
     @Override
     protected void onPause() {
+        activityResumed = false;
         super.onPause();
         locationHandler.removeCallbacks(locationRunnable);
         stopLocationUpdates();
@@ -562,6 +606,20 @@ public class ARActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         locationHandler.removeCallbacks(locationRunnable);
+        for (Anchor anchor : preResolvedAnchors.values()) {
+            if (anchor != null) {
+                try { anchor.detach(); } catch (Exception ignored) {}
+            }
+        }
+        preResolvedAnchors.clear();
+        preResolvedRenderables.clear();
+        preResolvedRelicIds.clear();
+        floorAnchoredRelicSlots.clear();
+        floorPlaneWaitStartMs = 0L;
+        nextSlotPreWarmPending.clear();
+        terrainAnchorPending.clear();
+        terrainAnchorRequestStartedMs.clear();
+        terrainAnchorFailureCounts.clear();
         if (navManager != null)
             navManager.destroy();
         if (exitGameDialog != null && exitGameDialog.isShowing()) {
@@ -626,12 +684,14 @@ public class ARActivity extends AppCompatActivity {
         // Lighting is managed by ENVIRONMENTAL_HDR — no manual override needed.
 
         if (isTargetReached) {
-            // Upcoming-slot anchors are safe to pre-resolve now because they
-            // remain detached until their slot becomes active.
-            preResolveUpcomingSlotAnchors();
             // Recover any permanently-lost anchors BEFORE trying to spawn so the
             // cleared slot is immediately eligible for re-spawn in the same frame.
             checkAndRespawnLostAnchor();
+            // Pre-resolve terrain anchors for current + upcoming slots while the
+            // user is still walking so they are ready the instant the spawn zone
+            // is entered — zero latency, relic appears at its GPS coordinate.
+            preResolveActiveAndNextSlotAnchors();
+            preResolveUpcomingSlotAnchors();
             if (!coinsSpawned) {
                 tryAutoSpawnCoins();
             }
@@ -719,22 +779,27 @@ public class ARActivity extends AppCompatActivity {
                     Log.e(TAG, "getCurrentLocation result: " + (location != null
                             ? location.getLatitude() + "," + location.getLongitude()
                             : "null"));
-                    if (location != null) {
-                        updateUserFixFromLocation(location);
+                    if (location == null) {
                         if (!isTargetReached) {
-                            Location.distanceBetween(
-                                    location.getLatitude(), location.getLongitude(),
-                                    targetLatitude, targetLongitude, distanceResults);
-                            float distance = distanceResults[0];
-                            updateDistanceUI(distance);
-                            if (navManager != null) {
-                                navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
-                            }
-                            maybeActivateTarget(distance, lastUserAccuracyMeters, "getCurrentLocation");
+                            updateSearchingGpsStatus("Searching for GPS...");
                         }
-                        updateMinimapUser();
-                        updateRelicHud();
+                        return;
                     }
+                    if (!isLocationFresh(location)) {
+                        if (!isTargetReached) {
+                            updateSearchingGpsStatus("Searching for fresh GPS...");
+                        }
+                        return;
+                    }
+                    if (!isReliableNavigationLocation(location)) {
+                        if (!isTargetReached) {
+                            updateImprovingGpsStatus(location.hasAccuracy() ? location.getAccuracy() : Float.NaN);
+                        }
+                        return;
+                    }
+                    updateUserFixFromLocation(location);
+                    applyNavigationFix(location.getLatitude(), location.getLongitude(),
+                            lastUserAccuracyMeters, "getCurrentLocation");
                 })
                 .addOnFailureListener(this, e -> Log.e(TAG, "getCurrentLocation failed: " + e.getMessage()));
 
@@ -744,6 +809,7 @@ public class ARActivity extends AppCompatActivity {
         LocationRequest request = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000)
                 .setMinUpdateIntervalMillis(1000)
                 .setMaxUpdateAgeMillis(5_000)
+                .setWaitForAccurateLocation(true)
                 .build();
         fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper());
     }
@@ -765,7 +831,7 @@ public class ARActivity extends AppCompatActivity {
 
             if (earth != null && earth.getTrackingState() == TrackingState.TRACKING) {
                 GeospatialPose cameraPose = earth.getCameraGeospatialPose();
-                if (cameraPose.getHorizontalAccuracy() < 10f) {
+                if (cameraPose.getHorizontalAccuracy() <= MAX_GEOSPATIAL_NAVIGATION_ACCURACY_METERS) {
                     // Use the precise geospatial fix as the authoritative user
                     // position so the compass + minimap + HUD agree with where
                     // the AR relic is actually anchored. Falling back to fused
@@ -781,27 +847,12 @@ public class ARActivity extends AppCompatActivity {
                         geospatialHeadingElapsedMs = 0L;
                     }
 
-                    Location.distanceBetween(
-                            cameraPose.getLatitude(), cameraPose.getLongitude(),
-                            targetLatitude, targetLongitude, distanceResults);
-                    float distance = distanceResults[0];
-
-                    if (navManager != null) {
-                        navManager.onLocationUpdate(cameraPose.getLatitude(), cameraPose.getLongitude());
-                    }
-
-                    if (!isTargetReached)
-                        updateDistanceUI(distance);
-                    updateMinimapUser();
-                    updateRelicHud();
-                    updateCompassArrow();
-
-                    maybeActivateTarget(distance, (float) cameraPose.getHorizontalAccuracy(), "geospatial");
+                    applyNavigationFix(cameraPose.getLatitude(), cameraPose.getLongitude(),
+                            (float) cameraPose.getHorizontalAccuracy(), "geospatial");
                     return;
                 }
-                updateHint("Improving GPS accuracy...");
+                updateImprovingGpsStatus((float) cameraPose.getHorizontalAccuracy());
                 clearGeospatialHeading();
-                return;
             }
             // Geospatial is available but not yet tracking — fall through to fused location
         }
@@ -812,42 +863,37 @@ public class ARActivity extends AppCompatActivity {
                 Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
             return;
 
-        fusedLocationClient.getLastLocation().addOnSuccessListener(this, location -> {
-            if (location == null) {
-                Log.e(TAG, "getLastLocation returned null \u2014 waiting for fresh fix");
-                if (tvDirectionDistance != null && !isTargetReached) {
-                    tvDirectionDistance.setText("Searching for GPS\u2026");
-                }
-                return;
-            }
+        if (hasReliableNavigationFix()) {
+            applyNavigationFix(lastUserLat, lastUserLng, lastUserAccuracyMeters, "cachedReliableFix");
+            return;
+        }
 
-            if (!isLocationFresh(location)) {
-                Log.d(TAG, "getLastLocation: ignoring stale fix ageMs=" + getLocationAgeMs(location));
-                if (tvDirectionDistance != null && !isTargetReached) {
-                    tvDirectionDistance.setText("Searching for GPS\u2026");
-                }
-                return;
-            }
+        fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                .addOnSuccessListener(this, location -> {
+                    if (location == null) {
+                        Log.e(TAG, "getLastLocation returned null \u2014 waiting for fresh fix");
+                        updateSearchingGpsStatus("Searching for GPS...");
+                        return;
+                    }
 
-            updateUserFixFromLocation(location);
+                    if (!isLocationFresh(location)) {
+                        Log.d(TAG, "getLastLocation: ignoring stale fix ageMs=" + getLocationAgeMs(location));
+                        updateSearchingGpsStatus("Searching for fresh GPS...");
+                        return;
+                    }
+                    if (!isReliableNavigationLocation(location)) {
+                        updateImprovingGpsStatus(location.hasAccuracy() ? location.getAccuracy() : Float.NaN);
+                        return;
+                    }
 
-            Location.distanceBetween(
-                    location.getLatitude(), location.getLongitude(),
-                    targetLatitude, targetLongitude, distanceResults);
-            float distance = distanceResults[0];
-
-            if (!isTargetReached)
-                updateDistanceUI(distance);
-
-            if (navManager != null) {
-                navManager.onLocationUpdate(location.getLatitude(), location.getLongitude());
-            }
-
-            updateMinimapUser();
-            updateRelicHud();
-
-            maybeActivateTarget(distance, lastUserAccuracyMeters, "getLastLocation");
-        });
+                    updateUserFixFromLocation(location);
+                    applyNavigationFix(location.getLatitude(), location.getLongitude(),
+                            lastUserAccuracyMeters, "getCurrentLocationFallback");
+                })
+                .addOnFailureListener(this, e -> {
+                    Log.e(TAG, "getCurrentLocation fallback failed: " + e.getMessage());
+                    updateSearchingGpsStatus("Searching for GPS...");
+                });
     }
 
     /**
@@ -870,21 +916,25 @@ public class ARActivity extends AppCompatActivity {
         if (compassOverlay != null)
             compassOverlay.setVisibility(View.GONE);
 
-        // Reset geospatial wait state so each mission entry starts fresh.
+        // Reset geospatial + floor-plane wait state so each mission entry starts fresh.
         geospatialWaitStartMs = 0;
+        floorPlaneWaitStartMs = 0L;
 
         // Show minimap so player can see coin location (reset any previous compass toggle)
-        isCompassToggled = false;
-        if (minimapContainer != null)
-            minimapContainer.setVisibility(View.VISIBLE);
-        if (compassOverlay != null)
-            compassOverlay.setVisibility(View.GONE);
-        if (btnMapCompassToggle != null) {
-            btnMapCompassToggle.setVisibility(View.VISIBLE);
-            if (tvMapCompassIcon != null)
-                tvMapCompassIcon.setText("🧭");
+        if (COMPASS_ONLY_MISSION_UI) {
+            showCompassOnlyMissionUi(false);
+        } else {
+            isCompassToggled = false;
+            if (minimapContainer != null)
+                minimapContainer.setVisibility(View.VISIBLE);
+            if (compassOverlay != null)
+                compassOverlay.setVisibility(View.GONE);
+            if (btnMapCompassToggle != null) {
+                btnMapCompassToggle.setVisibility(View.VISIBLE);
+                if (tvMapCompassIcon != null)
+                    tvMapCompassIcon.setText("🧭");
+            }
         }
-
         updateHint("Find and tap the floating coin to complete the mission!");
 
         Toast.makeText(this, "You reached the mission! Find the floating coin!",
@@ -945,8 +995,33 @@ public class ARActivity extends AppCompatActivity {
         lastUserFixElapsedRealtimeMs = SystemClock.elapsedRealtime();
     }
 
+    private boolean isAccurateNavigationFix(float accuracyMeters) {
+        return !Float.isNaN(accuracyMeters) && accuracyMeters <= MAX_NAVIGATION_FIX_ACCURACY_METERS;
+    }
+
     private boolean isLocationFresh(@NonNull Location location) {
         return getLocationAgeMs(location) <= MAX_LOCATION_FIX_AGE_MS;
+    }
+
+    private boolean isReliableNavigationLocation(@NonNull Location location) {
+        if (!isLocationFresh(location)) {
+            return false;
+        }
+        if (!location.hasAccuracy()) {
+            return false;
+        }
+        return isAccurateNavigationFix(location.getAccuracy());
+    }
+
+    private boolean hasReliableNavigationFix() {
+        if (Double.isNaN(lastUserLat) || Double.isNaN(lastUserLng)) {
+            return false;
+        }
+        if (!isAccurateNavigationFix(lastUserAccuracyMeters)) {
+            return false;
+        }
+        return lastUserFixElapsedRealtimeMs > 0L
+                && SystemClock.elapsedRealtime() - lastUserFixElapsedRealtimeMs <= MAX_LOCATION_FIX_AGE_MS;
     }
 
     private long getLocationAgeMs(@NonNull Location location) {
@@ -963,6 +1038,10 @@ public class ARActivity extends AppCompatActivity {
     }
 
     private boolean hasReliableRelicGateFix() {
+        return hasReliableRelicGateFix(MAX_LOCATION_FIX_AGE_MS);
+    }
+
+    private boolean hasReliableRelicGateFix(long maxFixAgeMs) {
         if (Double.isNaN(lastUserLat) || Double.isNaN(lastUserLng)) {
             return false;
         }
@@ -970,20 +1049,65 @@ public class ARActivity extends AppCompatActivity {
             return false;
         }
         return lastUserFixElapsedRealtimeMs > 0L
-                && SystemClock.elapsedRealtime() - lastUserFixElapsedRealtimeMs <= MAX_LOCATION_FIX_AGE_MS;
+                && SystemClock.elapsedRealtime() - lastUserFixElapsedRealtimeMs <= maxFixAgeMs;
+    }
+
+    private void updateSearchingGpsStatus(String status) {
+        if (isTargetReached) {
+            return;
+        }
+        updateNavigationStatus(status);
+        if (tvDirectionDistance != null) {
+            tvDirectionDistance.setText("Searching for GPS...");
+        }
+    }
+
+    private void updateImprovingGpsStatus(float accuracyMeters) {
+        if (isTargetReached) {
+            return;
+        }
+        String status = Float.isNaN(accuracyMeters)
+                ? "Improving GPS accuracy..."
+                : String.format(Locale.US, "Improving GPS accuracy... (±%.0f m)", accuracyMeters);
+        updateNavigationStatus(status);
+        if (tvDirectionDistance != null) {
+            tvDirectionDistance.setText("Improving GPS...");
+        }
+    }
+
+    private void applyNavigationFix(double latitude, double longitude, float accuracyMeters, String source) {
+        Location.distanceBetween(latitude, longitude, targetLatitude, targetLongitude, distanceResults);
+        float distance = distanceResults[0];
+
+        if (!isTargetReached) {
+            updateDistanceUI(distance);
+            if (navManager != null) {
+                navManager.onLocationUpdate(latitude, longitude);
+            }
+            maybeActivateTarget(distance, accuracyMeters, source);
+        }
+
+        updateMinimapUser();
+        updateRelicHud();
+        updateCompassArrow();
     }
 
     private boolean isWithinReliableRelicSpawnWindow(int slot) {
+        return isWithinReliableRelicSpawnWindow(slot, MAX_LOCATION_FIX_AGE_MS);
+    }
+
+    private boolean isWithinReliableRelicSpawnWindow(int slot, long maxFixAgeMs) {
         if (!isTargetReached) {
             return false;
         }
-        if (slot < 0 || relicLatitudes == null || slot >= relicLatitudes.length) {
+        if (slot < 0 || relicLatitudes == null || relicLongitudes == null
+                || slot >= relicLatitudes.length || slot >= relicLongitudes.length) {
             return false;
         }
         if (slot != currentRelicSlot()) {
             return false;
         }
-        if (!hasReliableRelicGateFix()) {
+        if (!hasReliableRelicGateFix(maxFixAgeMs)) {
             return false;
         }
         Location.distanceBetween(lastUserLat, lastUserLng,
@@ -1010,6 +1134,24 @@ public class ARActivity extends AppCompatActivity {
             tvLocateLabel.setText(missionName);
         if (tvLocateDistance != null)
             tvLocateDistance.setText("\uD83D\uDCCD " + distText + " away");
+        hideNavigationHint();
+    }
+
+    private void updateNavigationStatus(String status) {
+        if (isTargetReached) {
+            return;
+        }
+        if (tvLocateLabel != null)
+            tvLocateLabel.setText(missionName);
+        if (tvLocateDistance != null)
+            tvLocateDistance.setText(status);
+        hideNavigationHint();
+    }
+
+    private void hideNavigationHint() {
+        if (!isTargetReached && tvCharacterHint != null) {
+            tvCharacterHint.setVisibility(View.GONE);
+        }
     }
 
     private void handleDirectionUpdate(NavigationDirectionManager.DirectionStep step) {
@@ -1092,9 +1234,8 @@ public class ARActivity extends AppCompatActivity {
         // During navigation phase aim at the mission centre; once the user has
         // arrived and relics are being hunted, aim at the current relic.
         // When the relic is actually spawned in the AR scene, prefer its real
-        // world position over the configured GPS — the relic may have been
-        // placed by the directional fallback and not exactly at the configured
-        // coord, so we point the compass at where it actually is.
+        // world position over the configured GPS — the relic may use a tracked
+        // floor fallback, so point at the anchor the player actually sees.
         int slot = isTargetReached ? currentRelicSlot() : -1;
         if (slot >= 0 && slot < coinAnchorNodes.size() && coinAnchorNodes.get(slot) != null
                 && arCam != null && arCam.getArSceneView() != null
@@ -1131,8 +1272,8 @@ public class ARActivity extends AppCompatActivity {
         double aimLng = targetLongitude;
         if (isTargetReached) {
             if (slot >= 0 && relicLatitudes != null && slot < relicLatitudes.length) {
-                aimLat = relicLatitudes[slot];
-                aimLng = relicLongitudes[slot];
+                aimLat = spawnLatitudeForSlot(slot);
+                aimLng = spawnLongitudeForSlot(slot);
             }
         }
 
@@ -1237,7 +1378,8 @@ public class ARActivity extends AppCompatActivity {
             geospatialConfigured = true;
             Log.d(TAG, "Geospatial + ENVIRONMENTAL_HDR enabled on " + android.os.Build.MODEL);
         } catch (Exception e) {
-            // Device may not support geospatial; fall back to bearing-based placement.
+            // Device may not support geospatial; the tracked-floor fallback
+            // still creates a real world-space AR anchor.
             Log.w(TAG, "Geospatial mode failed to enable: " + e.getMessage());
             geospatialConfigured = true;
         }
@@ -1252,49 +1394,162 @@ public class ARActivity extends AppCompatActivity {
         return earth != null && earth.getTrackingState() == TrackingState.TRACKING;
     }
 
+    private boolean hasStableGeospatialPose() {
+        if (!isGeospatialAvailable()) return false;
+        try {
+            Session session = arCam.getArSceneView().getSession();
+            Earth earth = session != null ? session.getEarth() : null;
+            return earth != null
+                    && earth.getCameraGeospatialPose().getHorizontalAccuracy()
+                    <= MAX_TERRAIN_ANCHOR_HORIZONTAL_ACCURACY_M;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Freezes a resolved terrain pose into the current AR session. Terrain
+     * anchors continue adjusting as Earth localization improves, which makes a
+     * visible relic glide even while the phone is still.
+     */
+    private Anchor stabilizeTerrainAnchor(Anchor terrainAnchor) {
+        if (terrainAnchor == null || arCam == null || arCam.getArSceneView() == null) {
+            return terrainAnchor;
+        }
+        try {
+            Session session = arCam.getArSceneView().getSession();
+            Frame frame = arCam.getArSceneView().getArFrame();
+            if (session == null || frame == null
+                    || frame.getCamera().getTrackingState() != TrackingState.TRACKING) {
+                return terrainAnchor;
+            }
+            Anchor stableAnchor = session.createAnchor(terrainAnchor.getPose());
+            terrainAnchor.detach();
+            return stableAnchor;
+        } catch (Exception e) {
+            Log.w(TAG, "stabilizeTerrainAnchor: using terrain anchor: " + e.getMessage());
+            return terrainAnchor;
+        }
+    }
+
 
 
     /**
      * Fires an async terrain-anchor request for the given slot.
      * Uses ARCore's resolveAnchorOnTerrainAsync which queries Google Maps elevation
-     * to place the item at EXACTLY the lat/lng and 1.5 m above ground — far more
+     * to place the item at EXACTLY the lat/lng on the mapped ground — far more
      * accurate than earth.createAnchor() where we must guess the WGS84 altitude.
      * On success, calls spawnRelicNode() directly from the callback.
-     * On failure, clears the pending flag so the next frame retries.
+     * On repeated failure or timeout, the spawn loop waits for a tracked floor
+     * plane and anchors the relic to that real-world surface.
      */
     private void requestTerrainAnchorForSlot(int coinIdx, ModelRenderable renderable, String relicId) {
         if (!isGeospatialAvailable()) {
-            terrainAnchorPending.put(coinIdx, false);
+            clearTerrainAnchorRequest(coinIdx);
             return;
         }
         Session session = arCam.getArSceneView().getSession();
+        if (session == null) {
+            recordTerrainAnchorFailure(coinIdx, "AR session unavailable");
+            return;
+        }
         Earth earth = session.getEarth();
+        if (earth == null) {
+            recordTerrainAnchorFailure(coinIdx, "Earth session unavailable");
+            return;
+        }
+        long requestStartedMs = SystemClock.elapsedRealtime();
+        terrainAnchorRequestStartedMs.put(coinIdx, requestStartedMs);
         Log.d(TAG, "requestTerrainAnchorForSlot: starting terrain anchor for slot " + coinIdx);
         try {
             // ARCore 1.31+ signature: (lat, lng, altAboveTerrain, qx, qy, qz, qw, BiConsumer)
             // Quaternion is 4 individual floats (identity = 0,0,0,1).
             // Callback is invoked on the AR GL thread — safe for Sceneform node ops.
             earth.resolveAnchorOnTerrainAsync(
-                    relicLatitudes[coinIdx], relicLongitudes[coinIdx],
-                    1.6,  // 1.6 m above terrain ≈ eye/chest level; Google Maps provides ground truth
+                    spawnLatitudeForSlot(coinIdx), spawnLongitudeForSlot(coinIdx),
+                    RELIC_TERRAIN_HEIGHT_M,
                     0f, 0f, 0f, 1f,
                     (anchor, state) -> {
-                        if (state == Anchor.TerrainAnchorState.SUCCESS) {
+                        if (!Objects.equals(terrainAnchorRequestStartedMs.get(coinIdx), requestStartedMs)) {
+                            if (anchor != null) {
+                                try { anchor.detach(); } catch (Exception ignored) {}
+                            }
+                            Log.d(TAG, "Ignoring stale terrain callback for slot " + coinIdx);
+                            return;
+                        }
+                        if (state == Anchor.TerrainAnchorState.SUCCESS && anchor != null) {
+                            if (!hasStableGeospatialPose()) {
+                                Log.d(TAG, "Terrain anchor resolved before pose stabilized; retrying slot "
+                                        + coinIdx);
+                                try { anchor.detach(); } catch (Exception ignored) {}
+                                recordTerrainAnchorFailure(coinIdx, "pose became unstable");
+                                return;
+                            }
                             Log.d(TAG, "Terrain anchor SUCCESS for slot " + coinIdx);
-                            spawnRelicNode(coinIdx, anchor, renderable, relicId);
+                            // If user walked up to the GPS coordinate while the async request
+                            // was in-flight, discard the GPS anchor and let the spawn loop
+                            // use camera-pose on the next frame so the relic appears in front.
+                            if (lastUserLat != 0 && relicLatitudes != null
+                                    && coinIdx < relicLatitudes.length) {
+                                float[] _cd = new float[1];
+                                Location.distanceBetween(lastUserLat, lastUserLng,
+                                        relicLatitudes[coinIdx], relicLongitudes[coinIdx], _cd);
+                                if (_cd[0] <= RELIC_AT_LOCATION_M) {
+                                    try { anchor.detach(); } catch (Exception ignored) {}
+                                    terrainAnchorFailureCounts.put(coinIdx,
+                                            MAX_TERRAIN_ANCHOR_FAILURES_BEFORE_PLANE_FALLBACK);
+                                    clearTerrainAnchorRequest(coinIdx);
+                                    Log.i(TAG, "Terrain anchor discarded: user at relic (d="
+                                            + _cd[0] + " m) → camera-pose next frame slot=" + coinIdx);
+                                    return;
+                                }
+                            }
+                            // floorAnchored=true: terrain anchor is already at ground level so
+                            // correctActiveRelicToGroundAnchor() must not move it to a camera-
+                            // relative floor plane (which would destroy the GPS-correct position).
+                            spawnRelicNode(coinIdx, stabilizeTerrainAnchor(anchor), renderable, relicId, true);
                         } else {
-                            // No fallback. Clear the pending flag so the next
-                            // frame retries the terrain-anchor request — the only
-                            // way to place the relic at the exact lat/lng.
                             Log.w(TAG, "Terrain anchor failed slot " + coinIdx + ": " + state
                                     + " — will retry next frame");
-                            terrainAnchorPending.put(coinIdx, false);
+                            recordTerrainAnchorFailure(coinIdx, String.valueOf(state));
                         }
                     });
         } catch (Exception e) {
-            Log.w(TAG, "requestTerrainAnchorForSlot: exception slot " + coinIdx + ": " + e.getMessage());
-            terrainAnchorPending.put(coinIdx, false);
+            recordTerrainAnchorFailure(coinIdx, "exception: " + e.getMessage());
         }
+    }
+
+    private void clearTerrainAnchorRequest(int slot) {
+        terrainAnchorPending.remove(slot);
+        terrainAnchorRequestStartedMs.remove(slot);
+    }
+
+    private void recordTerrainAnchorFailure(int slot, String reason) {
+        clearTerrainAnchorRequest(slot);
+        incrementTerrainAnchorFailure(slot, reason);
+    }
+
+    private void incrementTerrainAnchorFailure(int slot, String reason) {
+        int failures = terrainAnchorFailureCounts.getOrDefault(slot, 0) + 1;
+        terrainAnchorFailureCounts.put(slot, failures);
+        Log.w(TAG, "Terrain anchor failed slot " + slot + " (" + reason + "), attempt "
+                + failures + "/" + MAX_TERRAIN_ANCHOR_FAILURES_BEFORE_PLANE_FALLBACK);
+    }
+
+    private void expireStaleTerrainAnchorRequest(int slot) {
+        if (!Boolean.TRUE.equals(terrainAnchorPending.get(slot))) {
+            return;
+        }
+        Long startedMs = terrainAnchorRequestStartedMs.get(slot);
+        if (startedMs == null
+                || SystemClock.elapsedRealtime() - startedMs >= TERRAIN_ANCHOR_REQUEST_TIMEOUT_MS) {
+            recordTerrainAnchorFailure(slot, "request timed out");
+        }
+    }
+
+    private boolean shouldUseGroundPlaneFallback(int slot) {
+        return terrainAnchorFailureCounts.getOrDefault(slot, 0)
+                >= MAX_TERRAIN_ANCHOR_FAILURES_BEFORE_PLANE_FALLBACK;
     }
 
     /**
@@ -1303,20 +1558,33 @@ public class ARActivity extends AppCompatActivity {
      * Must be called on the main thread.
      */
     private void spawnRelicNode(int coinIdx, Anchor anchor, ModelRenderable coinRenderable, String relicIdForThisCoin) {
+        spawnRelicNode(coinIdx, anchor, coinRenderable, relicIdForThisCoin, false);
+    }
+
+    private void spawnRelicNode(int coinIdx, Anchor anchor, ModelRenderable coinRenderable,
+            String relicIdForThisCoin, boolean floorAnchored) {
+        if (!activityResumed || isFinishing() || isDestroyed() || anchor == null) {
+            clearTerrainAnchorRequest(coinIdx);
+            if (anchor != null) {
+                try { anchor.detach(); } catch (Exception ignored) {}
+            }
+            return;
+        }
         // Guard: slot may have been collected while the async anchor was pending.
         if (coinSlotCollected != null && coinIdx < coinSlotCollected.length
                 && coinSlotCollected[coinIdx]) {
+            clearTerrainAnchorRequest(coinIdx);
             try { anchor.detach(); } catch (Exception ignored) {}
             return;
         }
         // Strong gate: async terrain callbacks are not allowed to surface a
         // relic unless the player is confirmed inside the spawn window for the
         // active slot right now.
-        if (!isWithinReliableRelicSpawnWindow(coinIdx)) {
+        if (!isWithinReliableRelicSpawnWindow(coinIdx, MAX_RESOLVED_ANCHOR_FIX_AGE_MS)) {
             Log.d(TAG, "spawnRelicNode: rejected slot=" + coinIdx
                     + " reached=" + isTargetReached
                     + " accuracy=" + lastUserAccuracyMeters);
-            terrainAnchorPending.remove(coinIdx);
+            clearTerrainAnchorRequest(coinIdx);
             try { anchor.detach(); } catch (Exception ignored) {}
             return;
         }
@@ -1324,26 +1592,46 @@ public class ARActivity extends AppCompatActivity {
         while (coinAnchorNodes.size() <= coinIdx) coinAnchorNodes.add(null);
         while (coinNodes.size() <= coinIdx) coinNodes.add(null);
         if (coinAnchorNodes.get(coinIdx) != null) {
+            clearTerrainAnchorRequest(coinIdx);
             try { anchor.detach(); } catch (Exception ignored) {}
             return;
         }
         try {
             AnchorNode anchorNode = new AnchorNode(anchor);
+            anchorNode.setSmoothed(false);
             anchorNode.setParent(arCam.getArSceneView().getScene());
 
             Node coinNode = new Node();
             coinNode.setParent(anchorNode);
             coinNode.setRenderable(coinRenderable);
-            float relicScale = scaleForRelic(relicIdForThisCoin);
-            coinNode.setLocalScale(new Vector3(relicScale, relicScale, relicScale));
+            RelicModelProfile.Transform relicTransform = RelicModelProfile.transformFor(relicIdForThisCoin);
+            applyRelicTransform(coinNode, relicTransform);
             coinNode.setOnTapListener(null);
             final int capturedIdx = coinIdx;
             final String capturedRelicId = relicIdForThisCoin;
 
             coinAnchorNodes.set(coinIdx, anchorNode);
             coinNodes.set(coinIdx, coinNode);
+            if (floorAnchored) {
+                floorAnchoredRelicSlots.add(coinIdx);
+            } else {
+                floorAnchoredRelicSlots.remove(coinIdx);
+            }
+            clearTerrainAnchorRequest(coinIdx);
+            terrainAnchorFailureCounts.remove(coinIdx);
+            geospatialWaitStartMs = 0L;
+            floorPlaneWaitStartMs = 0L;
             Log.e(TAG, "spawnRelicNode: spawned slot " + coinIdx
                     + " relic=" + relicIdForThisCoin
+                    + " scale=" + relicTransform.visualScale
+                    + " fullScale=" + relicTransform.fullScale
+                    + " distanceScale=" + relicTransform.distanceScale
+                    + " yOffset=" + relicTransform.localYOffset
+                    + " targetMaxM=" + relicTransform.targetMaxDimensionM
+                    + " bottomClearance=" + RelicModelProfile.BOTTOM_CLEARANCE_M
+                    + " rawMinY=" + relicTransform.rawMinY
+                    + " rawMaxDimension=" + relicTransform.rawMaxDimension
+                    + " floorAnchored=" + floorAnchored
                     + " geospatial=" + isGeospatialAvailable());
 
             if (relicIds != null) {
@@ -1372,7 +1660,7 @@ public class ARActivity extends AppCompatActivity {
             Log.w(TAG, "spawnRelicNode: failed for slot " + coinIdx + ": " + e.getMessage());
             // Reset the pending flag so the spawn loop retries on the next frame
             // rather than blocking permanently on a slot that failed to attach.
-            terrainAnchorPending.put(coinIdx, false);
+            recordTerrainAnchorFailure(coinIdx, "node attachment failed: " + e.getMessage());
         }
     }
 
@@ -1432,19 +1720,7 @@ public class ARActivity extends AppCompatActivity {
                 });
     }
 
-    private void showNFTUnlockedDialog() {
-        if (isFinishing() || isDestroyed())
-            return;
-        new AlertDialog.Builder(this)
-                .setTitle("Volver Heritage Souvenir Complete!")
-                .setMessage(
-                        "You have completed the Volver mission list. Return to the home screen to claim your heritage NFT.")
-                .setPositiveButton("Go to Home", (d, w) -> finish())
-                .setNegativeButton("Stay in AR", null)
-                .show();
-    }
-
-    // ──────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────
     // ──────────────────────────────────────────────────────────────────
     // Coin model preload
     // ──────────────────────────────────────────────────────────────────
@@ -1485,28 +1761,13 @@ public class ARActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * Display scale for each relic model. The coin was tuned at 0.25; the other
-     * artefact GLBs are modelled at a smaller native size and need a larger scale
-     * to be clearly visible to the user.
-     */
-    private float scaleForRelic(String relicId) {
-        if (relicId == null)
-            return COIN_SCALE;
-        switch (relicId) {
-            case "intramuros_coin":
-                return 0.25f;
-            case "peineta":
-                return 0.90f;
-            case "salakot_elite":
-                return 0.55f;
-            case "farol_de_aceite":
-                return 1.00f;
-            case "pocket_watch":
-                return 2.75f;
-            default:
-                return 0.50f;
+    private void applyRelicTransform(Node node, RelicModelProfile.Transform transform) {
+        if (node == null || transform == null) {
+            return;
         }
+        float s = transform.visualScale;
+        node.setLocalScale(new Vector3(s, s, s));
+        node.setLocalPosition(new Vector3(0f, transform.localYOffset, 0f));
     }
 
     /** Maps a relic id to its raw GLB resource. Returns null for unknown ids. */
@@ -1588,7 +1849,7 @@ public class ARActivity extends AppCompatActivity {
         if (index < coinMapMarkers.size() && coinMapMarkers.get(index) != null)
             return;
         Marker m = new Marker(minimap);
-        m.setPosition(new GeoPoint(relicLatitudes[index], relicLongitudes[index]));
+        m.setPosition(new GeoPoint(spawnLatitudeForSlot(index), spawnLongitudeForSlot(index)));
         m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER);
         m.setIcon(createDotDrawable(Color.parseColor("#E53935"), 18));
         m.setTitle("Relic " + (index + 1));
@@ -1603,6 +1864,10 @@ public class ARActivity extends AppCompatActivity {
 
     /** Swaps the minimap and compass overlay in the bottom-right slot. */
     private void toggleMapCompass() {
+        if (COMPASS_ONLY_MISSION_UI) {
+            showCompassOnlyMissionUi(false);
+            return;
+        }
         if (minimapContainer == null || compassOverlay == null)
             return;
         // Toggle the user's preference rather than reading current visibility —
@@ -1629,6 +1894,22 @@ public class ARActivity extends AppCompatActivity {
                 btnMapCompassToggle.bringToFront();
             if (tvMapCompassIcon != null)
                 tvMapCompassIcon.setText("🧭");
+        }
+    }
+
+    private void showCompassOnlyMissionUi(boolean hideForCollect) {
+        isCompassToggled = true;
+        if (minimapContainer != null)
+            minimapContainer.setVisibility(View.GONE);
+        if (btnMapCompassToggle != null)
+            btnMapCompassToggle.setVisibility(View.GONE);
+        if (compassOverlay != null) {
+            compassOverlay.setVisibility(hideForCollect ? View.GONE : View.VISIBLE);
+            if (!hideForCollect) {
+                setCompassMarginBottom(64);
+                compassOverlay.bringToFront();
+                updateCompassArrow();
+            }
         }
     }
 
@@ -1672,6 +1953,62 @@ public class ARActivity extends AppCompatActivity {
         return -1; // all done
     }
 
+    private void buildStableRelicSpawnCoordinates() {
+        if (relicLatitudes == null || relicLongitudes == null || relicLatitudes.length == 0) {
+            relicSpawnLatitudes = null;
+            relicSpawnLongitudes = null;
+            return;
+        }
+
+        relicSpawnLatitudes = new double[relicLatitudes.length];
+        relicSpawnLongitudes = new double[relicLatitudes.length];
+
+        for (int slot = 0; slot < relicLatitudes.length; slot++) {
+            double originalLat = relicLatitudes[slot];
+            double originalLng = slot < relicLongitudes.length ? relicLongitudes[slot] : targetLongitude;
+            relicSpawnLatitudes[slot] = originalLat;
+            relicSpawnLongitudes[slot] = originalLng;
+
+            if (slot >= relicLongitudes.length || !isUsableCoordinate(originalLat, originalLng)) {
+                relicLatitudes[slot] = targetLatitude;
+                relicLongitudes[slot] = targetLongitude;
+                relicSpawnLatitudes[slot] = targetLatitude;
+                relicSpawnLongitudes[slot] = targetLongitude;
+                Log.w(TAG, "Invalid relic coordinate at slot " + slot
+                        + "; using the mission coordinate");
+                continue;
+            }
+
+            relicSpawnLatitudes[slot] = originalLat;
+            relicSpawnLongitudes[slot] = originalLng;
+        }
+    }
+
+    private boolean isUsableCoordinate(double latitude, double longitude) {
+        return !Double.isNaN(latitude) && !Double.isInfinite(latitude)
+                && !Double.isNaN(longitude) && !Double.isInfinite(longitude);
+    }
+
+    private double spawnLatitudeForSlot(int slot) {
+        if (relicSpawnLatitudes != null && slot >= 0 && slot < relicSpawnLatitudes.length) {
+            return relicSpawnLatitudes[slot];
+        }
+        if (relicLatitudes != null && slot >= 0 && slot < relicLatitudes.length) {
+            return relicLatitudes[slot];
+        }
+        return targetLatitude;
+    }
+
+    private double spawnLongitudeForSlot(int slot) {
+        if (relicSpawnLongitudes != null && slot >= 0 && slot < relicSpawnLongitudes.length) {
+            return relicSpawnLongitudes[slot];
+        }
+        if (relicLongitudes != null && slot >= 0 && slot < relicLongitudes.length) {
+            return relicLongitudes[slot];
+        }
+        return targetLongitude;
+    }
+
     private void restoreSavedRelicProgress() {
         if (relicLatitudes == null || coinSlotCollected == null
                 || coinSlotCollected.length != relicLatitudes.length) {
@@ -1707,13 +2044,17 @@ public class ARActivity extends AppCompatActivity {
             runOnUiThread(() -> {
                 if (collectButtonContainer != null)
                     collectButtonContainer.setVisibility(View.GONE);
-                // Respect the user's map/compass toggle when all relics done.
-                if (minimapContainer != null)
-                    minimapContainer.setVisibility(isCompassToggled ? View.GONE : View.VISIBLE);
-                if (compassOverlay != null)
-                    compassOverlay.setVisibility(isCompassToggled ? View.VISIBLE : View.GONE);
-                if (btnMapCompassToggle != null)
-                    btnMapCompassToggle.setVisibility(View.VISIBLE);
+                if (COMPASS_ONLY_MISSION_UI) {
+                    showCompassOnlyMissionUi(false);
+                } else {
+                    // Respect the user's map/compass toggle when all relics done.
+                    if (minimapContainer != null)
+                        minimapContainer.setVisibility(isCompassToggled ? View.GONE : View.VISIBLE);
+                    if (compassOverlay != null)
+                        compassOverlay.setVisibility(isCompassToggled ? View.VISIBLE : View.GONE);
+                    if (btnMapCompassToggle != null)
+                        btnMapCompassToggle.setVisibility(View.VISIBLE);
+                }
             });
             return;
         }
@@ -1737,13 +2078,13 @@ public class ARActivity extends AppCompatActivity {
         } else {
             float[] d = new float[1];
             Location.distanceBetween(lastUserLat, lastUserLng,
-                    relicLatitudes[slot], relicLongitudes[slot], d);
+                    spawnLatitudeForSlot(slot), spawnLongitudeForSlot(slot), d);
             distMeters = d[0];
         }
         int meters = Math.round(distMeters);
         int oneBased = slot + 1;
-        // COLLECT button only appears when the user is genuinely close (5 m or less).
-        boolean withinCollectRange = relicSpawned && meters <= RELIC_COLLECT_BUTTON_M;
+        // COLLECT button only appears when the user is genuinely inside the AR radius.
+        boolean withinCollectRange = relicSpawned && distMeters <= RELIC_COLLECT_BUTTON_M;
         String suffix;
         if (withinCollectRange) {
             suffix = "press Collect";
@@ -1764,18 +2105,27 @@ public class ARActivity extends AppCompatActivity {
             }
             if (withinCollectRange) {
                 // Button is showing — hide both map/compass to keep the layout clean.
-                if (minimapContainer != null)
-                    minimapContainer.setVisibility(View.GONE);
-                if (compassOverlay != null)
-                    compassOverlay.setVisibility(View.GONE);
+                if (COMPASS_ONLY_MISSION_UI) {
+                    showCompassOnlyMissionUi(true);
+                } else {
+                    if (minimapContainer != null)
+                        minimapContainer.setVisibility(View.GONE);
+                    if (compassOverlay != null)
+                        compassOverlay.setVisibility(View.GONE);
+                }
             } else {
-                if (minimapContainer != null)
-                    minimapContainer.setVisibility(isCompassToggled ? View.GONE : View.VISIBLE);
-                if (compassOverlay != null)
-                    compassOverlay.setVisibility(isCompassToggled ? View.VISIBLE : View.GONE);
+                if (COMPASS_ONLY_MISSION_UI) {
+                    showCompassOnlyMissionUi(false);
+                } else {
+                    if (minimapContainer != null)
+                        minimapContainer.setVisibility(isCompassToggled ? View.GONE : View.VISIBLE);
+                    if (compassOverlay != null)
+                        compassOverlay.setVisibility(isCompassToggled ? View.VISIBLE : View.GONE);
+                }
             }
             if (btnMapCompassToggle != null)
-                btnMapCompassToggle.setVisibility(withinCollectRange ? View.GONE : View.VISIBLE);
+                btnMapCompassToggle.setVisibility(COMPASS_ONLY_MISSION_UI ? View.GONE
+                        : (withinCollectRange ? View.GONE : View.VISIBLE));
         });
     }
 
@@ -1960,10 +2310,16 @@ public class ARActivity extends AppCompatActivity {
         try { anchor.detach(); } catch (Exception ignored) {}
         coinAnchorNodes.set(slot, null);
         if (slot < coinNodes.size()) coinNodes.set(slot, null);
-        terrainAnchorPending.remove(slot); // allow a fresh terrain-anchor request
+        floorAnchoredRelicSlots.remove(slot);
+        floorPlaneWaitStartMs = 0L; // next spawn waits for real floor, not camera-height shortcut
+        clearTerrainAnchorRequest(slot); // allow a fresh terrain-anchor request
+        terrainAnchorFailureCounts.remove(slot);
         // Also discard any pre-resolved anchor for this slot — it came from the same
         // lost session state and cannot be trusted for re-spawn.
-        preResolvedAnchors.remove(slot);
+        Anchor stalePreResolved = preResolvedAnchors.remove(slot);
+        if (stalePreResolved != null) {
+            try { stalePreResolved.detach(); } catch (Exception ignored) {}
+        }
         nextSlotPreWarmPending.remove(slot);
         preResolvedRenderables.remove(slot);
         preResolvedRelicIds.remove(slot);
@@ -2010,6 +2366,29 @@ public class ARActivity extends AppCompatActivity {
     }
 
     /**
+     * Keeps the currently active relic and the next relic warming in the
+     * background so entering the spawn zone and collecting the current relic
+     * both have less AR setup work left to do.
+     */
+    private void preResolveActiveAndNextSlotAnchors() {
+        if (!isGeospatialAvailable()) return;
+        if (relicLatitudes == null) return;
+
+        int current = currentRelicSlot();
+        if (current < 0) return;
+
+        preResolveNextSlotAnchor(current);
+
+        int next = current + 1;
+        if (next < relicLatitudes.length
+                && (coinSlotCollected == null
+                || next >= coinSlotCollected.length
+                || !coinSlotCollected[next])) {
+            preResolveNextSlotAnchor(next);
+        }
+    }
+
+    /**
      * Calls preResolveNextSlotAnchor for every uncollected slot beyond the current one.
      * Called every frame from onSceneUpdate so failures are retried automatically and
      * ALL upcoming slots are pre-resolved concurrently (not just the next one).
@@ -2039,6 +2418,7 @@ public class ARActivity extends AppCompatActivity {
     private void preResolveNextSlotAnchor(int slot) {
         if (!isGeospatialAvailable()) return;
         if (relicLatitudes == null || slot >= relicLatitudes.length) return;
+        if (shouldUseGroundPlaneFallback(slot)) return;
         if (preResolvedAnchors.containsKey(slot)) return;             // already resolved
         if (Boolean.TRUE.equals(nextSlotPreWarmPending.get(slot))) return; // in-flight
         if (Boolean.TRUE.equals(terrainAnchorPending.get(slot))) return;   // spawn req in-flight
@@ -2055,24 +2435,57 @@ public class ARActivity extends AppCompatActivity {
         }
 
         Session session = arCam.getArSceneView().getSession();
+        if (session == null) {
+            nextSlotPreWarmPending.remove(slot);
+            preResolvedRenderables.remove(slot);
+            preResolvedRelicIds.remove(slot);
+            return;
+        }
         Earth earth = session.getEarth();
+        if (earth == null) {
+            nextSlotPreWarmPending.remove(slot);
+            preResolvedRenderables.remove(slot);
+            preResolvedRelicIds.remove(slot);
+            return;
+        }
         nextSlotPreWarmPending.put(slot, true);
         preResolvedRenderables.put(slot, renderable);
         preResolvedRelicIds.put(slot, relicId);
         Log.d(TAG, "preResolveNextSlotAnchor: firing for slot=" + slot);
         try {
             earth.resolveAnchorOnTerrainAsync(
-                    relicLatitudes[slot], relicLongitudes[slot],
-                    1.6, 0f, 0f, 0f, 1f,
+                    spawnLatitudeForSlot(slot), spawnLongitudeForSlot(slot),
+                    RELIC_TERRAIN_HEIGHT_M, 0f, 0f, 0f, 1f,
                     (anchor, state) -> {
-                        if (state == Anchor.TerrainAnchorState.SUCCESS) {
-                            preResolvedAnchors.put(slot, anchor);
-                            Log.d(TAG, "preResolveNextSlotAnchor: SUCCESS for slot=" + slot);
+                        if (isFinishing() || isDestroyed()) {
+                            if (anchor != null) {
+                                try { anchor.detach(); } catch (Exception ignored) {}
+                            }
+                            nextSlotPreWarmPending.remove(slot);
+                            preResolvedRenderables.remove(slot);
+                            preResolvedRelicIds.remove(slot);
+                        } else if (state == Anchor.TerrainAnchorState.SUCCESS && anchor != null) {
+                            nextSlotPreWarmPending.remove(slot);
+                            boolean slotCollected = coinSlotCollected != null
+                                    && slot < coinSlotCollected.length
+                                    && coinSlotCollected[slot];
+                            boolean slotAlreadySpawned = slot < coinAnchorNodes.size()
+                                    && coinAnchorNodes.get(slot) != null;
+                            if (slotCollected || slotAlreadySpawned) {
+                                try { anchor.detach(); } catch (Exception ignored) {}
+                                preResolvedRenderables.remove(slot);
+                                preResolvedRelicIds.remove(slot);
+                            } else {
+                                preResolvedAnchors.put(slot, anchor);
+                                terrainAnchorFailureCounts.remove(slot);
+                                Log.d(TAG, "preResolveNextSlotAnchor: SUCCESS for slot=" + slot);
+                            }
                         } else {
                             Log.w(TAG, "preResolveNextSlotAnchor: FAILED slot=" + slot + " state=" + state);
                             nextSlotPreWarmPending.put(slot, false);
                             preResolvedRenderables.remove(slot);
                             preResolvedRelicIds.remove(slot);
+                            incrementTerrainAnchorFailure(slot, "pre-resolve " + state);
                         }
                     });
         } catch (Exception e) {
@@ -2080,6 +2493,7 @@ public class ARActivity extends AppCompatActivity {
             nextSlotPreWarmPending.put(slot, false);
             preResolvedRenderables.remove(slot);
             preResolvedRelicIds.remove(slot);
+            incrementTerrainAnchorFailure(slot, "pre-resolve exception: " + e.getMessage());
         }
     }
 
@@ -2125,8 +2539,6 @@ public class ARActivity extends AppCompatActivity {
     // ──────────────────────────────────────────────────────────────────
 
     private void tryAutoSpawnCoins() {
-        if (resolvedCoinRenderable == null)
-            return;
         if (arCam == null || arCam.getArSceneView() == null)
             return;
 
@@ -2166,32 +2578,27 @@ public class ARActivity extends AppCompatActivity {
         // ── Spawn-radius gate (applies to ALL devices) ────────────────────────────
         // The relic only spawns once the user is within RELIC_SPAWN_RADIUS_M of
         // the configured GPS coordinate. Beyond that the HUD shows "walk closer".
-        if (!isWithinReliableRelicSpawnWindow(coinIdx))
+        if (!isWithinReliableRelicSpawnWindow(coinIdx)) {
+            geospatialWaitStartMs = 0L;
+            floorPlaneWaitStartMs = 0L;
             return;
-
-        // ── Routing ───────────────────────────────────────────────────────────────
-        // Strategy: place the relic AS CLOSE TO the configured GPS coordinate as
-        // possible. Two paths, both unconditional — we never block the user on
-        // VPS lock:
-        //   1. PREFERRED — terrain anchor (exact lat/lng). Used only when Earth
-        //      is TRACKING with horizontal accuracy ≤ 5 m. We also use a
-        //      pre-resolved anchor from the previous slot if one is ready.
-        //   2. FALLBACK — directional camera spawn. Project the configured
-        //      coordinate from the user's current GPS using the device heading,
-        //      and anchor that pose in the AR session. The relic ends up in
-        //      roughly the right direction at roughly the right distance, then
-        //      the compass + distance HUD read the anchor's actual world
-        //      position so the user can walk straight to it.
-        if (Boolean.TRUE.equals(terrainAnchorPending.get(coinIdx))) {
-            return; // a terrain-anchor request is in flight — its callback will spawn
         }
 
+        // ── Routing ───────────────────────────────────────────────────────────────
+        // GPS gates the spawn. If a ground plane is already available, use it;
+        // otherwise show the relic immediately with a fixed provisional anchor
+        // and correct it onto the floor later.
+        clearTerrainAnchorRequest(coinIdx);
         // Pick the right renderable: per-relic for staged missions, else default.
         ModelRenderable coinRenderable = null;
         String relicIdForThisCoin = (relicIds != null) ? relicIds[coinIdx] : null;
         if (relicIdForThisCoin != null) {
             CompletableFuture<ModelRenderable> fut = relicModelFutures.get(relicIdForThisCoin);
-            if (fut == null || !fut.isDone()) {
+            if (fut == null) {
+                Log.w(TAG, "No model mapping for relic " + relicIdForThisCoin
+                        + "; using the coin fallback");
+                coinRenderable = resolvedCoinRenderable;
+            } else if (!fut.isDone()) {
                 // Model still loading — wait for the correct model rather than
                 // falling back to coin. A fallback placed here would occupy the
                 // slot permanently, preventing the real relic from ever appearing.
@@ -2199,15 +2606,18 @@ public class ARActivity extends AppCompatActivity {
             }
             // Use the pre-resolved cached renderable — avoids blocking on get()
             // from the render thread which causes a visible camera freeze.
-            coinRenderable = resolvedRelicRenderables.get(relicIdForThisCoin);
-            if (coinRenderable == null) {
-                if (fut.isCompletedExceptionally()) {
+            if (fut != null) {
+                coinRenderable = resolvedRelicRenderables.get(relicIdForThisCoin);
+                if (coinRenderable == null) {
+                    if (fut.isCompletedExceptionally()) {
                     // Model failed — fall back to coin renderable
-                    Log.w(TAG, "Relic model failed to load for " + relicIdForThisCoin + ", using coin fallback");
-                    coinRenderable = resolvedCoinRenderable;
-                } else {
+                        Log.w(TAG, "Relic model failed to load for " + relicIdForThisCoin
+                                + ", using coin fallback");
+                        coinRenderable = resolvedCoinRenderable;
+                    } else {
                     // Future done but cache miss — shouldn't happen, guard anyway
-                    return;
+                        return;
+                    }
                 }
             }
         } else {
@@ -2220,99 +2630,195 @@ public class ARActivity extends AppCompatActivity {
         if (frame == null || frame.getCamera().getTrackingState() != TrackingState.TRACKING)
             return;
 
-        // ── Anchor: prefer pre-resolved terrain anchor → live terrain anchor → directional spawn ──
-        // Pre-resolved (exact lat/lng) — fastest and most accurate.
+        // ── 0. Standing-at-relic guard ────────────────────────────────────────────────
+        // If the user is already inside RELIC_AT_LOCATION_M of the GPS coordinate,
+        // a terrain anchor would place the relic directly beneath their feet.
+        // Force the camera-pose path by discarding any pre-resolved GPS anchor and
+        // marking the slot as "fallback only" (failure count ≥ threshold).
+        if (lastUserLat != 0 && relicLatitudes != null && coinIdx < relicLatitudes.length) {
+            float[] _d = new float[1];
+            Location.distanceBetween(lastUserLat, lastUserLng,
+                    relicLatitudes[coinIdx], relicLongitudes[coinIdx], _d);
+            if (_d[0] <= RELIC_AT_LOCATION_M) {
+                Anchor _stale = preResolvedAnchors.remove(coinIdx);
+                if (_stale != null) try { _stale.detach(); } catch (Exception ignored) {}
+                nextSlotPreWarmPending.remove(coinIdx);
+                preResolvedRenderables.remove(coinIdx);
+                preResolvedRelicIds.remove(coinIdx);
+                terrainAnchorFailureCounts.put(coinIdx, MAX_TERRAIN_ANCHOR_FAILURES_BEFORE_PLANE_FALLBACK);
+                clearTerrainAnchorRequest(coinIdx);
+                Log.i(TAG, "tryAutoSpawnCoins: user at relic location (d=" + _d[0]
+                        + " m) → camera-pose spawn slot=" + coinIdx);
+                // Fall through: section 1 finds no pre-resolved anchor, section 2 is
+                // gated by shouldUseGroundPlaneFallback → true, section 3 fires.
+            }
+        }
+
+        // ── 1. Consume a pre-resolved terrain anchor (placed at the GPS coordinate) ──
+        // preResolveActiveAndNextSlotAnchors() fires these in the background while the
+        // user walks so the relic is ready the instant they enter the spawn zone.
+        // This prevents the "16 m away on HUD but appears 2 m in front" jump.
         Anchor preResolved = preResolvedAnchors.remove(coinIdx);
         if (preResolved != null) {
             nextSlotPreWarmPending.remove(coinIdx);
             preResolvedRenderables.remove(coinIdx);
             preResolvedRelicIds.remove(coinIdx);
-            if (preResolved.getTrackingState() != TrackingState.STOPPED) {
-                Log.d(TAG, "tryAutoSpawnCoins: using pre-resolved anchor for slot=" + coinIdx);
-                spawnRelicNode(coinIdx, preResolved, coinRenderable, relicIdForThisCoin);
-                return;
-            }
-            try { preResolved.detach(); } catch (Exception ignored) {}
+            clearTerrainAnchorRequest(coinIdx);
+            Log.i(TAG, "tryAutoSpawnCoins: consuming pre-resolved terrain anchor slot=" + coinIdx);
+            // floorAnchored=true: terrain anchor is at ground level already.
+            spawnRelicNode(coinIdx, stabilizeTerrainAnchor(preResolved), coinRenderable, relicIdForThisCoin, true);
+            return;
         }
+        nextSlotPreWarmPending.remove(coinIdx);
+        preResolvedRenderables.remove(coinIdx);
+        preResolvedRelicIds.remove(coinIdx);
 
-        // Live terrain anchor only when Earth is TRACKING with usable accuracy.
-        boolean geoReady = false;
-        if (isDeviceGeospatialCompatible() && isGeospatialAvailable()) {
-            try {
-                Session s2 = arCam.getArSceneView().getSession();
-                Earth e2 = s2 != null ? s2.getEarth() : null;
-                if (e2 != null && e2.getCameraGeospatialPose().getHorizontalAccuracy() <= 5.0) {
-                    geoReady = true;
-                }
-            } catch (Exception ignored) {}
-        }
-        if (geoReady) {
+        // ── 2. Fire / await a terrain anchor request when geospatial is tracking ────
+        // Prefer the GPS-positioned anchor over a camera-relative one. The spawn loop
+        // will keep returning until the async callback fires (or the request times out
+        // and shouldUseGroundPlaneFallback() allows the floor/camera fallback below).
+        if (!shouldUseGroundPlaneFallback(coinIdx) && isGeospatialAvailable()) {
+            if (Boolean.TRUE.equals(terrainAnchorPending.get(coinIdx))) {
+                expireStaleTerrainAnchorRequest(coinIdx); // timeout → increments failure count
+                return; // still waiting for the async callback
+            }
             terrainAnchorPending.put(coinIdx, true);
             requestTerrainAnchorForSlot(coinIdx, coinRenderable, relicIdForThisCoin);
-            return; // spawnRelicNode() fires from the terrain anchor callback
+            return; // spawnRelicNode() will be called from the callback on success
         }
 
-        // Fallback: project the configured GPS coord from the user's current GPS
-        // using device heading, anchor it in the AR session at the resulting
-        // direction + distance. The relic appears "near" the configured coord —
-        // not pixel-perfect without VPS, but reliably in the correct direction
-        // and within walking range. Compass + HUD then track the actual anchor
-        // pose (see updateCompassArrow / updateRelicHud), so the user can walk
-        // straight to whatever lands and collect it.
+        // ── 3. Terrain anchors unavailable or repeatedly failed ────────────────────
+        // Spawn immediately. Use a floor-plane hit if ARCore already has one
+        // (GROUND_PLANE_MIN_CAMERA_DROP_M = 0.7 m filters out car-body panels),
+        // otherwise fall through to camera-pose height estimate. In either case
+        // the relic is permanently pinned: floorAnchored=true stops every
+        // post-spawn path from ever touching the anchor again.
+        clearTerrainAnchorRequest(coinIdx);
+        Anchor spawnAnchor = createTrackedGroundAnchor(frame);
+        if (spawnAnchor == null) {
+            spawnAnchor = createImmediateRelicAnchor(frame);
+        }
+        if (spawnAnchor == null) {
+            updateHint("Hold steady while AR places the relic.");
+            return;
+        }
+        Log.i(TAG, "tryAutoSpawnCoins: floor/camera fallback slot=" + coinIdx);
+        spawnRelicNode(coinIdx, spawnAnchor, coinRenderable, relicIdForThisCoin, true);
+    }
+
+    private Anchor createImmediateRelicAnchor(Frame frame) {
+        if (frame == null || arCam == null || arCam.getArSceneView() == null) {
+            return null;
+        }
+        Session session = arCam.getArSceneView().getSession();
+        if (session == null) {
+            return null;
+        }
         try {
-            Session sess = arCam.getArSceneView().getSession();
-            if (sess == null) return;
+            Pose cameraPose = frame.getCamera().getPose();
+            float[] zAxis = cameraPose.getZAxis();
+            float forwardX = -zAxis[0];
+            float forwardZ = -zAxis[2];
+            float horizontalLength = (float) Math.sqrt(forwardX * forwardX + forwardZ * forwardZ);
+            if (horizontalLength < 0.001f) {
+                forwardX = 0f;
+                forwardZ = -1f;
+            } else {
+                forwardX /= horizontalLength;
+                forwardZ /= horizontalLength;
+            }
 
-            // GPS bearing + distance from user to the configured coord.
-            float[] geo = new float[2];
-            Location.distanceBetween(lastUserLat, lastUserLng,
-                    relicLatitudes[coinIdx], relicLongitudes[coinIdx], geo);
-            float gpsDistance = geo[0];                  // metres
-            float gpsBearingDeg = geo[1];                // 0=N, +clockwise, range -180..180
-
-            // Heading the device believes is north. Geospatial heading (when
-            // Earth is at least horizontal-tracking) is more stable than the
-            // raw magnetometer; otherwise fall back to the smoothed compass.
-            float headingDeg = currentCompassHeadingDeg();
-            float relativeBearingDeg = gpsBearingDeg - headingDeg;
-            double relRad = Math.toRadians(relativeBearingDeg);
-
-            // Clamp distance: never spawn at the user's feet (< 2 m) and never
-            // beyond a comfortable visual range (4 m) so the relic is always
-            // visible AND reachable in tight courtyards / indoor spaces. The
-            // user may be inside a building with a wall a few metres ahead;
-            // capping at 4 m keeps the relic on the same side of typical walls.
-            float dist = Math.max(2.0f, Math.min(gpsDistance, 4.0f));
-
-            // Build a "yaw-only" pose at the camera's world position so the
-            // relic stays at chest height regardless of how the user is
-            // tilting the device.
-            Pose camPose = frame.getCamera().getPose();
-            float[] camT = camPose.getTranslation();
-            float[] q = camPose.getRotationQuaternion(); // x,y,z,w
-            double yaw = Math.atan2(2.0 * (q[3] * q[1] + q[0] * q[2]),
-                    1.0 - 2.0 * (q[1] * q[1] + q[2] * q[2]));
-            float[] yawQ = {0f, (float) Math.sin(yaw / 2.0), 0f, (float) Math.cos(yaw / 2.0)};
-            Pose flatPose = new Pose(camT, yawQ);
-
-            // Camera-local frame: +X right, +Y up, -Z forward. relativeBearing 0
-            // = straight ahead, +90 = right, -90 = left.
-            float dx = (float) (Math.sin(relRad) * dist);
-            float dz = (float) (-Math.cos(relRad) * dist);
-            // -1.3 m below the camera ≈ ground level (eye height ~1.6 m).
-            Pose spawnPose = flatPose.compose(Pose.makeTranslation(dx, -1.3f, dz));
-            Anchor anchor = sess.createAnchor(spawnPose);
-
-            Log.e(TAG, "tryAutoSpawnCoins: directional spawn slot=" + coinIdx
-                    + " gpsDist=" + gpsDistance + "m"
-                    + " gpsBearing=" + gpsBearingDeg
-                    + " heading=" + headingDeg
-                    + " rel=" + relativeBearingDeg
-                    + " usedDist=" + dist);
-            spawnRelicNode(coinIdx, anchor, coinRenderable, relicIdForThisCoin);
+            Pose spawnPose = Pose.makeTranslation(
+                    cameraPose.tx() + forwardX * IMMEDIATE_SPAWN_DISTANCE_M,
+                    cameraPose.ty() - ESTIMATED_CAMERA_HEIGHT_M,
+                    cameraPose.tz() + forwardZ * IMMEDIATE_SPAWN_DISTANCE_M);
+            return session.createAnchor(spawnPose);
         } catch (Exception e) {
-            Log.w(TAG, "tryAutoSpawnCoins: directional spawn failed slot " + coinIdx
-                    + ": " + e.getMessage());
+            Log.w(TAG, "createImmediateRelicAnchor: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private Anchor createTrackedGroundAnchor(Frame frame) {
+        if (frame == null || arCam == null || arCam.getArSceneView() == null) {
+            return null;
+        }
+        int width = arCam.getArSceneView().getWidth();
+        int height = arCam.getArSceneView().getHeight();
+        if (width <= 0 || height <= 0) {
+            return null;
+        }
+
+        float cameraY = frame.getCamera().getPose().ty();
+        HitResult bestHit = null;
+        float bestDrop = GROUND_PLANE_MIN_CAMERA_DROP_M;
+
+        float[] horizontalTargets = {0.5f, 0.35f, 0.65f, 0.2f, 0.8f};
+        float[] verticalTargets = {0.72f, 0.82f, 0.62f, 0.9f, 0.55f};
+        for (float yRatio : verticalTargets) {
+            float targetY = height * yRatio;
+            for (float xRatio : horizontalTargets) {
+                float targetX = width * xRatio;
+                for (HitResult hit : frame.hitTest(targetX, targetY)) {
+                    Trackable trackable = hit.getTrackable();
+                    if (!(trackable instanceof Plane)) {
+                        continue;
+                    }
+                    Plane plane = (Plane) trackable;
+                    if (plane.getTrackingState() == TrackingState.TRACKING
+                            && plane.getType() == Plane.Type.HORIZONTAL_UPWARD_FACING
+                            && plane.isPoseInPolygon(hit.getHitPose())) {
+                        float drop = cameraY - hit.getHitPose().ty();
+                        if (drop >= bestDrop) {
+                            bestDrop = drop;
+                            bestHit = hit;
+                        }
+                    }
+                }
+            }
+        }
+        return bestHit != null ? bestHit.createAnchor() : null;
+    }
+
+    private void correctActiveRelicToGroundAnchor() {
+        int slot = currentRelicSlot();
+        if (slot < 0 || floorAnchoredRelicSlots.contains(slot)) {
+            return;
+        }
+        if (slot >= coinAnchorNodes.size() || slot >= coinNodes.size()) {
+            return;
+        }
+        AnchorNode oldAnchorNode = coinAnchorNodes.get(slot);
+        Node relicNode = coinNodes.get(slot);
+        if (oldAnchorNode == null || relicNode == null || relicNode.getParent() == null
+                || arCam == null || arCam.getArSceneView() == null) {
+            return;
+        }
+        Frame frame = arCam.getArSceneView().getArFrame();
+        if (frame == null || frame.getCamera().getTrackingState() != TrackingState.TRACKING) {
+            return;
+        }
+        Anchor groundAnchor = createTrackedGroundAnchor(frame);
+        if (groundAnchor == null) {
+            return;
+        }
+        try {
+            AnchorNode newAnchorNode = new AnchorNode(groundAnchor);
+            newAnchorNode.setSmoothed(false);
+            newAnchorNode.setParent(arCam.getArSceneView().getScene());
+            relicNode.setParent(newAnchorNode);
+            coinAnchorNodes.set(slot, newAnchorNode);
+            floorAnchoredRelicSlots.add(slot);
+
+            oldAnchorNode.setParent(null);
+            Anchor oldAnchor = oldAnchorNode.getAnchor();
+            if (oldAnchor != null) {
+                try { oldAnchor.detach(); } catch (Exception ignored) {}
+            }
+            Log.i(TAG, "correctActiveRelicToGroundAnchor: slot=" + slot);
+        } catch (Exception e) {
+            try { groundAnchor.detach(); } catch (Exception ignored) {}
+            Log.w(TAG, "correctActiveRelicToGroundAnchor: " + e.getMessage());
         }
     }
 
@@ -2323,8 +2829,8 @@ public class ARActivity extends AppCompatActivity {
             Node node = coinNodes.get(i);
             if (node == null || node.getParent() == null)
                 continue;
-            // Slow rotation only — no vertical movement so the item stays
-            // at the exact world position where it was anchored.
+            // Slow rotation only. Scale, height, and anchor position stay fixed
+            // after spawn so mission mode matches demo mode.
             float angle = (coinRotationAngle + i * 36f) % 360f;
             node.setLocalRotation(Quaternion.axisAngle(new Vector3(0f, 1f, 0f), angle));
         }
@@ -2348,9 +2854,19 @@ public class ARActivity extends AppCompatActivity {
         Log.e(TAG, "collectCoin: collecting slot " + index + " relic=" + relicIdOverride);
         coinSlotCollected[index] = true;
 
-        // Reset geospatial + terrain-anchor wait state for the next slot.
+        // Reset geospatial + terrain-anchor + floor-plane wait state for the next slot.
         geospatialWaitStartMs = 0;
-        terrainAnchorPending.remove(index);
+        floorPlaneWaitStartMs = 0L;
+        clearTerrainAnchorRequest(index);
+        terrainAnchorFailureCounts.remove(index);
+        floorAnchoredRelicSlots.remove(index);
+        Anchor unusedPreResolved = preResolvedAnchors.remove(index);
+        if (unusedPreResolved != null) {
+            try { unusedPreResolved.detach(); } catch (Exception ignored) {}
+        }
+        nextSlotPreWarmPending.remove(index);
+        preResolvedRenderables.remove(index);
+        preResolvedRelicIds.remove(index);
 
         // Record collection time — prevents the next relic from spawning instantly
         // in the same spot before the user sees this one disappear.
@@ -2447,11 +2963,7 @@ public class ARActivity extends AppCompatActivity {
                 return;
             flushPendingCollectibleAwards();
             updateHint("Mission complete! Coin collected.");
-            if (allComplete) {
-                showNFTUnlockedDialog();
-            } else {
-                showMissionCompleteDialog(offline);
-            }
+            showStyledMissionCompleteDialog(offline);
         }), errorMessage -> runOnUiThread(() -> {
             if (isFinishing() || isDestroyed())
                 return;
@@ -2483,6 +2995,54 @@ public class ARActivity extends AppCompatActivity {
                 .show();
     }
 
+    private void showStyledMissionCompleteDialog(boolean offline) {
+        if (isFinishing() || isDestroyed())
+            return;
+
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCancelable(false);
+        dialog.setCanceledOnTouchOutside(false);
+        dialog.setContentView(R.layout.dialog_mission_complete);
+
+        TextView tvMission = dialog.findViewById(R.id.tvCompleteMission);
+        TextView tvOffline = dialog.findViewById(R.id.tvCompleteOffline);
+
+        int totalRelics = relicLatitudes != null && relicLatitudes.length > 0 ? relicLatitudes.length : 1;
+        if (tvMission != null) {
+            tvMission.setText(String.format(Locale.US,
+                    "%s\n%d relic%s recovered",
+                    missionName,
+                    totalRelics,
+                    totalRelics == 1 ? "" : "s"));
+        }
+        if (tvOffline != null) {
+            tvOffline.setVisibility(offline ? View.VISIBLE : View.GONE);
+        }
+
+        View btnReturnHome = dialog.findViewById(R.id.cardViewCompleteHome);
+        if (btnReturnHome != null) {
+            btnReturnHome.setOnClickListener(v -> {
+                dialog.dismiss();
+                finish();
+            });
+        }
+
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(android.graphics.Color.TRANSPARENT));
+            int dialogWidth = (int) Math.min(
+                    getResources().getDisplayMetrics().widthPixels * 0.9f,
+                    getResources().getDisplayMetrics().density * 420f);
+            window.setLayout(dialogWidth, LinearLayout.LayoutParams.WRAP_CONTENT);
+            WindowManager.LayoutParams wlp = window.getAttributes();
+            wlp.gravity = Gravity.CENTER;
+            window.setAttributes(wlp);
+        }
+
+        dialog.show();
+    }
+
     /** Retries the server-side completion write after a previous failure. */
     private void retryMissionCompletion() {
         updateHint("Saving your progress...");
@@ -2492,11 +3052,7 @@ public class ARActivity extends AppCompatActivity {
                 return;
             flushPendingCollectibleAwards();
             updateHint("Mission complete! Progress synced.");
-            if (allComplete) {
-                showNFTUnlockedDialog();
-            } else {
-                showMissionCompleteDialog(offline);
-            }
+            showStyledMissionCompleteDialog(offline);
         }), errorMessage -> runOnUiThread(() -> {
             if (isFinishing() || isDestroyed())
                 return;

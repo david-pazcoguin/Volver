@@ -121,9 +121,6 @@ public class HomeActivity extends AppCompatActivity {
 
     private static final String PREF_NFT_CLAIMED   = "nft_claimed";
     private static final String PREF_CHEST_DISMISS = "chest_dismissed";
-    private static final String PREF_MISSION_BYPASS_STATE = "mission_bypass_state";
-    private static final String BYPASS_STATE_COMPLETE = "complete";
-    private static final String BYPASS_STATE_RESET = "reset";
     private static final String STATE_SELECTED_TAB = "selected_tab";
     private static final long   CHEST_REVEAL_DELAY_MS = 1500L;
     private static final String LEADERBOARD_MODE_OVERALL = "overall";
@@ -919,35 +916,7 @@ public class HomeActivity extends AppCompatActivity {
     private void debugCompleteAllMissions() {
         if (!BuildConfig.DEBUG) return;
         Toast.makeText(this, "Debug: completing all 8 missions…", Toast.LENGTH_SHORT).show();
-        String[] ids = {
-                "fort_santiago",
-                "baluarte_san_diego",
-                "casa_manila",
-                "museo_intramuros",
-                "centro_turismo",
-                "san_agustin_church",
-                "manila_cathedral",
-                "lpu"
-        };
-        int[] remaining = {ids.length};
-        for (String id : ids) {
-            MissionCompletionHelper.completeMission(this, id,
-                    new MissionCompletionHelper.CompletionCallback() {
-                        @Override public void onSuccess() {
-                            if (--remaining[0] == 0) runOnUiThread(() -> {
-                                Toast.makeText(HomeActivity.this,
-                                        "All 8 missions complete!", Toast.LENGTH_LONG).show();
-                                loadMissionProgress();
-                            });
-                        }
-                        @Override public void onError(String message) {
-                            if (--remaining[0] == 0) runOnUiThread(() -> loadMissionProgress());
-                            runOnUiThread(() -> Toast.makeText(HomeActivity.this,
-                                    "Debug mission write failed: " + message,
-                                    Toast.LENGTH_SHORT).show());
-                        }
-                    });
-        }
+        setMissionBypassOnBackend(true);
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -989,28 +958,28 @@ public class HomeActivity extends AppCompatActivity {
                 repeatRelicCoordinates(14.585520, 14.585565),
                 repeatRelicCoordinates(120.975730, 120.975683),
                 buildTwoOfEachRelicIds()));
-        arHelpers.add(new ARHelper("Casa Manila", "", 14.589630881841018, 120.97515722599451,
+        arHelpers.add(new ARHelper("Casa Manila", "", 14.589567947089023, 120.97505877161824,
                 "casa_manila",
                 // 5 relic stages × 2 relics each, in order. The user must collect
                 // each relic pair before the next pair appears.
                 new double[]{
                     // Stage 1: Intramuros Coin
-                    14.589616244109674, 14.589658424566982,
+                    14.589646467643362, 14.589708115992844,
                     // Stage 2: Peineta
-                    14.589616244109674, 14.589658424566982,
+                    14.589800912949528, 14.589658148384853,
                     // Stage 3: Salakot Elite
-                    14.589616244109674, 14.589658424566982,
+                    14.58969254167486,  14.589490075435302,
                     // Stage 4: Farol de Aceite
-                    14.589616244109674, 14.589658424566982,
+                    14.589540043081717, 14.589713577458028,
                     // Stage 5: Antique Pocket Watch
-                    14.589616244109674, 14.589658424566982
+                    14.589652578040134, 14.589684375611148
                 },
                 new double[]{
-                    120.97522396558945, 120.97526755148382,
-                    120.97522396558945, 120.97526755148382,
-                    120.97522396558945, 120.97526755148382,
-                    120.97522396558945, 120.97526755148382,
-                    120.97522396558945, 120.97526755148382
+                    120.97497361148619, 120.97502323235054,
+                    120.97512381518362, 120.97524183238619,
+                    120.97528944159386, 120.97512247408933,
+                    120.97507084156832, 120.97527906840676,
+                    120.97526833957122, 120.97527370398899
                 },
                 new String[]{
                     "intramuros_coin", "intramuros_coin",
@@ -1029,15 +998,45 @@ public class HomeActivity extends AppCompatActivity {
                 repeatRelicCoordinates(14.590160, 14.590115),
                 repeatRelicCoordinates(120.973395, 120.973442),
                 buildTwoOfEachRelicIds()));
-        arHelpers.add(new ARHelper("San Agustin Church", "", 14.589179727259076, 120.97518225933517,
+        arHelpers.add(new ARHelper("San Agustin Church", "", 14.58928832136685, 120.97514108295765,
                 "san_agustin_church",
-                repeatRelicCoordinates(14.589154727259076, 14.589211727259076),
-                repeatRelicCoordinates(120.97514625933517, 120.97521825933517),
+                new double[]{
+                    // Stage 1: Intramuros Coin
+                    14.58952626689821,   14.589469070980408,
+                    // Stage 2: Peineta
+                    14.589476870424624,  14.589384576983727,
+                    // Stage 3: Salakot Elite
+                    14.589471670795168,  14.589343629881355,
+                    // Stage 4: Farol de Aceite
+                    14.58943917310836,   14.589384576983727,
+                    // Stage 5: Antique Pocket Watch
+                    14.589328030983218,  14.58923248770796
+                },
+                new double[]{
+                    120.9749638615895,  120.9748725227116,
+                    120.9750034865439,  120.97489737225928,
+                    120.97493968365124, 120.97493834043244,
+                    120.97504042506068, 120.97495580227677,
+                    120.97513848003256, 120.97505721529559
+                },
                 buildTwoOfEachRelicIds()));
-        arHelpers.add(new ARHelper("Manila Cathedral", "", 14.5917563125116, 120.97339841269124,
+        // Original Manila Cathedral mission center: 14.591741718049287, 120.97339129769252
+        arHelpers.add(new ARHelper("Manila Cathedral", "", 14.592216802173693, 120.97306956118595,
                 "manila_cathedral",
-                repeatRelicCoordinates(14.5917313125116, 14.5917833125116),
-                repeatRelicCoordinates(120.97336541269124, 120.97343241269124),
+                new double[]{
+                        14.592104895355526, 14.591988323942987,
+                        14.591899605835438, 14.591805729659429,
+                        14.592011019267085, 14.592111084986325,
+                        14.592208455408116, 14.592211051098229,
+                        14.592077370971822, 14.592253858496475
+                },
+                new double[]{
+                        120.9734739773243, 120.97337484027337,
+                        120.97326291134485, 120.97314671845714,
+                        120.97326397733464, 120.97315315645773,
+                        120.97314045298677, 120.97301036585591,
+                        120.97299624408325, 120.97302081400801
+                },
                 buildTwoOfEachRelicIds()));
         arHelpers.add(new ARHelper("Lyceum of the Philippines University", "", 14.591600276085643, 120.97778918301911,
                 "lpu",
@@ -1070,7 +1069,6 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     private void setupRecyclerView() {
-        recyclerView.setHasFixedSize(true);
         recyclerView.setItemViewCacheSize(arHelpers.size());
         arAdapter = new ARAdapter(arHelpers, this);
         recyclerView.setLayoutManager(
@@ -1083,7 +1081,8 @@ public class HomeActivity extends AppCompatActivity {
     // ──────────────────────────────────────────────────────────────
 
     private void loadMissionProgress() {
-        if (username.isEmpty()) return;
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) return;
         MissionCompletionHelper.getMissionProgress(this,
                 new MissionCompletionHelper.ProgressCallback() {
                     @Override public void onResult(Set<String> completedIds, boolean allComplete) {
@@ -1111,39 +1110,82 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     private void toggleMissionBypass() {
-        SharedPreferences sh = SecurePrefs.get(this);
-        String currentState = sh.getString(PREF_MISSION_BYPASS_STATE, "");
-        boolean completeNext = !BYPASS_STATE_COMPLETE.equals(currentState);
-
-        SharedPreferences.Editor editor = sh.edit();
+        String currentState = MissionBypassState.getState(this);
+        boolean completeNext = !MissionBypassState.BYPASS_STATE_COMPLETE.equals(currentState);
         if (completeNext) {
-            editor.putString(PREF_MISSION_BYPASS_STATE, BYPASS_STATE_COMPLETE);
-            editor.putBoolean(PREF_NFT_CLAIMED, false);
-            editor.putBoolean(PREF_CHEST_DISMISS, false);
-            applyCollectibleBypass(editor, true);
+            enableMissionBypass();
         } else {
-            editor.putString(PREF_MISSION_BYPASS_STATE, BYPASS_STATE_RESET);
-            editor.putBoolean(PREF_NFT_CLAIMED, false);
-            editor.putBoolean(PREF_CHEST_DISMISS, false);
-            applyCollectibleBypass(editor, false);
+            resetMissionBypass();
         }
-        editor.apply();
+    }
 
-        refreshCollectibleCounts();
-        loadMissionProgress();
-        Toast.makeText(this,
-                completeNext
-                        ? "Bypass enabled: all missions complete."
-                        : "Bypass reset: mission progress cleared.",
-                Toast.LENGTH_SHORT).show();
+    private void enableMissionBypass() {
+        Toast.makeText(this, "Bypass enabled: syncing all missions to the backend.", Toast.LENGTH_SHORT).show();
+        setMissionBypassOnBackend(true);
+    }
+
+    private void resetMissionBypass() {
+        Toast.makeText(this, "Resetting mission progress on the backend.", Toast.LENGTH_SHORT).show();
+        setMissionBypassOnBackend(false);
+    }
+
+    private void setMissionBypassOnBackend(boolean completed) {
+        MissionCompletionHelper.setMissionBypassState(
+                this, completed, new MissionCompletionHelper.ResetCallback() {
+            @Override public void onSuccess() {
+                runOnUiThread(() -> {
+                    SharedPreferences.Editor editor = SecurePrefs.get(HomeActivity.this).edit();
+                    editor.putBoolean(PREF_NFT_CLAIMED, false);
+                    editor.putBoolean(PREF_CHEST_DISMISS, false);
+                    applyCollectibleBypass(editor, completed);
+                    editor.apply();
+
+                    MissionBypassState.clearResetCompletedMissions(HomeActivity.this);
+                    MissionBypassState.setState(
+                            HomeActivity.this,
+                            completed
+                                    ? MissionBypassState.BYPASS_STATE_COMPLETE
+                                    : MissionBypassState.BYPASS_STATE_RESET);
+                    refreshCollectibleCounts();
+                    loadMissionProgress();
+                    Toast.makeText(HomeActivity.this,
+                            completed
+                                    ? "All 8 missions synced to the backend."
+                                    : "Mission progress cleared on the backend.",
+                            Toast.LENGTH_SHORT).show();
+                });
+            }
+
+            @Override public void onError(String message) {
+                runOnUiThread(() -> Toast.makeText(HomeActivity.this,
+                        message != null ? message : "Couldn't update mission bypass.",
+                        Toast.LENGTH_LONG).show());
+            }
+        });
     }
 
     private void applyCollectibleBypass(SharedPreferences.Editor editor, boolean completed) {
-        if (editor == null || collectibleItems == null) return;
-        for (CollectibleItem item : collectibleItems) {
-            UserProgressStore.putCollectibleCount(
-                    this, editor, item.getId(), completed ? item.getMaxCount() : 0);
+        if (editor == null) return;
+
+        if (collectibleItems != null && !collectibleItems.isEmpty()) {
+            for (CollectibleItem item : collectibleItems) {
+                UserProgressStore.putCollectibleCount(
+                        this, editor, item.getId(), completed ? item.getMaxCount() : 0);
+            }
+        } else {
+            String[] collectibleIds = {
+                    "intramuros_coin",
+                    "peineta",
+                    "salakot_elite",
+                    "farol_de_aceite",
+                    "pocket_watch"
+            };
+            for (String collectibleId : collectibleIds) {
+                UserProgressStore.putCollectibleCount(
+                        this, editor, collectibleId, completed ? 16 : 0);
+            }
         }
+
         if (!completed && arHelpers != null) {
             for (ARHelper helper : arHelpers) {
                 if (helper != null) {
@@ -1154,13 +1196,15 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     private MissionProgressState resolveMissionProgressState(Set<String> completedIds, boolean allComplete) {
-        SharedPreferences sh = SecurePrefs.get(this);
-        String bypassState = sh.getString(PREF_MISSION_BYPASS_STATE, "");
-        if (BYPASS_STATE_COMPLETE.equals(bypassState)) {
+        String bypassState = MissionBypassState.getState(this);
+        if (MissionBypassState.BYPASS_STATE_COMPLETE.equals(bypassState)) {
             return new MissionProgressState(buildVisibleMissionIds(), true);
         }
-        if (BYPASS_STATE_RESET.equals(bypassState)) {
-            return new MissionProgressState(new java.util.HashSet<>(), false);
+        if (MissionBypassState.BYPASS_STATE_RESET.equals(bypassState)) {
+            Set<String> resetCompletedIds = MissionBypassState.getResetCompletedIds(this);
+            boolean resetAllComplete = resetCompletedIds.size() >= buildVisibleMissionIds().size()
+                    && !resetCompletedIds.isEmpty();
+            return new MissionProgressState(resetCompletedIds, resetAllComplete);
         }
         if (completedIds == null) {
             return null;

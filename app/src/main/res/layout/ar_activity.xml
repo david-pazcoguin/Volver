@@ -297,7 +297,6 @@
             android:includeFontPadding="false" />
     </FrameLayout>
 
-    <!-- Collected feedback — floats up and fades when a relic is collected -->
     <TextView
         android:id="@+id/tvCollectedFeedback"
         android:layout_width="match_parent"
@@ -348,7 +347,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="72dp"
+        android:layout_marginTop="88dp"
         android:layout_marginStart="16dp"
         android:layout_marginEnd="16dp"
         android:background="@drawable/bg_hint_pill"
