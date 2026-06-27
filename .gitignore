@@ -18,6 +18,9 @@
 .gradle/
 build/
 
+# Firebase CLI cache
+.firebase/
+
 # Local configuration properties (sdk path, etc)
 local.properties
 
