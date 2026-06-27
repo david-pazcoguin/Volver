@@ -1,6 +1,6 @@
 # Volver — AR Tour Guide for Intramuros, Manila
 
-Volver is an Android augmented-reality tour guide app for exploring **Intramuros, the Walled City of Manila**. Users log in, browse 5 location-based AR missions, walk to each historic landmark, and interact with 3D character models in the real world. Completing all 5 missions unlocks a **Polygon ERC-721 NFT souvenir** — a permanent on-chain record of the journey, minted gaslessly by the app on the user's behalf, minted gaslessly by the app on the user's behalf.
+Volver is an Android augmented-reality tour guide app for exploring **Intramuros, the Walled City of Manila**. Users log in, browse 5 location-based AR missions, walk to each historic landmark, and interact with 3D character models in the real world. Completing all 5 missions unlocks a **Polygon ERC-721 NFT souvenir** — a permanent on-chain record of the journey, minted gaslessly by the app on the user's behalf.
 
 ---
 
@@ -21,8 +21,9 @@ Volver is an Android augmented-reality tour guide app for exploring **Intramuros
 13. [Adding New 3D Models](#adding-new-3d-models)
 14. [Deployment Checklist](#deployment-checklist)
 15. [Troubleshooting](#troubleshooting)
-16. [Further Documentation](#further-documentation)
-17. [License](#license)
+16. [Future Roadmap](#future-roadmap)
+17. [Further Documentation](#further-documentation)
+18. [License](#license)
 
 ---
 
@@ -43,46 +44,38 @@ Volver is an Android augmented-reality tour guide app for exploring **Intramuros
 | Gasless NFT minting | `mintSouvenir` Cloud Function signs and broadcasts `adminMintTo(userAddress)` — user pays zero gas |
 | Android 15 edge-to-edge | `VolverApplication` applies `WindowInsetsCompat` padding on every non-AR activity |
 | Debug testing helper | Long-press greeting in DEBUG builds auto-completes 4 of 5 missions |
-| Wallet setup | In-app embedded keypair (AES-256-GCM encrypted, BouncyCastle-registered) or external wallet via QR scan |
-| Gasless NFT minting | `mintSouvenir` Cloud Function signs and broadcasts `adminMintTo(userAddress)` — user pays zero gas |
-| Android 15 edge-to-edge | `VolverApplication` applies `WindowInsetsCompat` padding on every non-AR activity |
-| Debug testing helper | Long-press greeting in DEBUG builds auto-completes 4 of 5 missions |
 
 ---
 
 ## Architecture Overview
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                        Android App                           │
-│       │           AccountSetting        │                    │
-│       │                              Firestore               │
-│       │                                                      │
-│  WalletSetupActivity ──► NFTClaimActivity                    │
-│       │                        │                             │
+┌───────────────────────────────────────────────────────────────┐
+│                          Android App                          │
+│                                                               │
+│  LoginActivity ──► HomeActivity ──► ARActivity                │
+│                         │                                     │
+│                         ▼                                     │
+│  WalletSetupActivity ──► NFTClaimActivity                     │
+│       │                        │                              │
 │  WalletManager           (calls mintSouvenir CF)             │
-│  (AES-256-GCM +          via FirebaseFunctions               │
-│   BouncyCastle)                                              │
-└──────────────────┬───────────────────┬───────────────────────┘
+│  (AES-256-GCM +          via FirebaseFunctions                │
+│   BouncyCastle)                                               │
+└──────────────────┬───────────────────┬────────────────────────┘
                    │                   │
-         ┌─────────▼──────────┐  ┌─────▼──────────────┐
-         │   Firebase Cloud    │  │  Polygon Blockchain │
-         │                     │  │                     │
-         │  Auth (email/pwd)   │  │  IntramurosSouvenir │
-         │  Firestore (data)   │──│  (ERC-721 NFT)      │
-         │  Cloud Functions    │  │  adminMintTo()      │
-         │  (mintSouvenir)     │  │                     │
-         └─────────────────────┘  └─────────────────────┘
+         ┌─────────▼──────────┐  ┌─────▼───────────────┐
+         │   Firebase Cloud   │  │  Polygon Blockchain │
+         │                    │  │                     │
+         │  Auth (email/pwd)  │  │  IntramurosSouvenir │
+         │  Firestore (data)  │──│  (ERC-721 NFT)      │
+         │  Cloud Functions   │  │  adminMintTo()      │
+         │  (mintSouvenir)    │  │                     │
+         └────────────────────┘  └─────────────────────┘
 ```
 
 ### User Flow
 
 1. **Login/Register** — Firebase Auth signs user in; first name cached in SecurePrefs so the personalized greeting on Home renders instantly.
-2. **Home** — Displays 5 missions with progress counter. Completed missions appear desaturated with a green ✓ badge. Dashboard opens Settings/About.
-3. **AR Mission** — User walks to the landmark. ARCore Geospatial API checks proximity (≤ 50 m). User taps a detected plane to place the character model. Tapping the model triggers TTS dialogue. After the mission is recorded in Firestore, the Congratulations dialog offers **Return to Home** and the activity finishes automatically.
-4. **All 5 Complete** — A treasure chest reveal appears on HomeActivity with a pulse animation.
-5. **Wallet Setup** — User either connects an external Polygon wallet (paste/scan QR) or generates an embedded keypair (encrypted with AES-256-GCM via Android Keystore; BouncyCastle provider registered at runtime so key generation works on all Android ROMs).
-6. **NFT Claim** — NFTClaimActivity invokes the `mintSouvenir` Cloud Function. The server-side owner wallet verifies 5 missions in Firestore, calls `adminMintTo(userAddress)` on the contract, and pays all gas. The user pays nothing and never submits a transaction
 2. **Home** — Displays 5 missions with progress counter. Completed missions appear desaturated with a green ✓ badge. Dashboard opens Settings/About.
 3. **AR Mission** — User walks to the landmark. ARCore Geospatial API checks proximity (≤ 50 m). User taps a detected plane to place the character model. Tapping the model triggers TTS dialogue. After the mission is recorded in Firestore, the Congratulations dialog offers **Return to Home** and the activity finishes automatically.
 4. **All 5 Complete** — A treasure chest reveal appears on HomeActivity with a pulse animation.
@@ -98,9 +91,7 @@ Volver is an Android augmented-reality tour guide app for exploring **Intramuros
 | Language | Java | 11 |
 | Build | Gradle | 9.1.0 |
 | Android Gradle Plugin | AGP | 9.0.0 |
-| Target SDK | Android | 35 (min 24) | ERC-721 + Ownable) | ^0.8.20 |
-| Deployed Contract | Polygon Amoy testnet | `0xd8b934580fcE35a11B58C6D73aDeE468a2833fa8` |
-| Embedded Wallet Crypto | BouncyCastle (bcprov-jdk18on, via Web3j) | 1.79
+| Target SDK | Android | 35 (min 24) |
 | AR Runtime | ARCore | 1.44.0 |
 | 3D Rendering | Sceneform + Filament | 1.32.0 |
 | Auth & Database | Firebase BOM | 34.11.0 |
@@ -155,20 +146,20 @@ Volver/
 ├── contracts/                    # Solidity smart contract
 │   └── IntramurosNFT.sol         # ERC-721 NFT (OpenZeppelin)
 ├── functions/                    # Firebase Cloud Functions
-│   ├── index.js                  # whitelistWallet callable function
+│   ├── index.js                  # mintSouvenir callable function
 │   └── package.json              # Node.js 24, ethers 6.16, firebase-admin 13.6
 ├── firestore.rules               # Firestore security rules
 ├── firebase.json                 # Firebase project config
 ├── sceneformsrc/                 # Sceneform runtime module (Filament/GLB)
 ├── sceneformux/                  # Sceneform UX module (ArFragment, TransformableNode)
-├── ai-workflows/                  # AI workflow folders (domain-specific docs)
-│   ├── 01-ar-camera/              # Camera pipeline, Filament, rendering
-│   ├── 02-arcore-geospatial/      # Location, AR session, model placement
-│   ├── 03-firebase/               # Auth, Firestore, Cloud Functions, security
-│   ├── 04-blockchain-nft/         # Smart contract, Web3j, wallets, minting
-│   ├── 05-android-ui/             # Activities, navigation, layouts
-│   └── 06-build-deploy/           # Build, deploy, ProGuard, debugging
-└── .gitignore                     # Excludes secrets, build artifacts, google-services.json
+├── ai-workflows/                 # AI workflow folders (domain-specific docs)
+│   ├── 01-ar-camera/             # Camera pipeline, Filament, rendering
+│   ├── 02-arcore-geospatial/     # Location, AR session, model placement
+│   ├── 03-firebase/              # Auth, Firestore, Cloud Functions, security
+│   ├── 04-blockchain-nft/        # Smart contract, Web3j, wallets, minting
+│   ├── 05-android-ui/            # Activities, navigation, layouts
+│   └── 06-build-deploy/          # Build, deploy, ProGuard, debugging
+└── .gitignore                    # Excludes secrets, build artifacts, google-services.json
 ```
 
 ### Java Source Files — Quick Reference
@@ -176,12 +167,10 @@ Volver/
 | Class | Purpose | Key Dependencies |
 |-------|---------|-----------------|
 | `LoginActivity` | App entry; Firebase email/password auth | FirebaseAuth, SharedPreferences |
-| `RegisterActivity` | Calls `mintSouvenir` Cloud Function; shows tx result | FirebaseFunctions, WalletManager, SecurePrefs |
-| `WalletManager` | Singleton; generates/stores/encrypts wallet keypairs; registers BouncyCastle provider | Android Keystore, Web3j ECKeyPair, BouncyCastle |
-| `PolygonService` | Blockchain config + explorer URL helpers (BuildConfig consumer) | Web3j, BuildConfig |
-| `MissionCompletionHelper` | Firestore CRUD for missions and wallet address | FirebaseFirestore, FirebaseFunctions |
-| `VolverApplication` | Firebase init + Android 15 edge-to-edge insets via ActivityLifecycleCallbacks | FirebaseApp, WindowInsetsCompat |
-| `SecurePrefs` | Thin wrapper over SharedPreferences for cached first name, chest/NFT flags | SharedPreference
+| `RegisterActivity` | User registration + Firestore profile | FirebaseAuth, FirebaseFirestore |
+| `HomeActivity` | Mission list + progress + NFT banner | FirebaseFirestore, ARAdapter, SecurePrefs |
+| `ARActivity` | AR session, geospatial, model placement, TTS | ARCore, Sceneform, TextToSpeech |
+| `ARHelper` | Mission data transfer object | — |
 | `ARAdapter` | RecyclerView adapter with stable IDs and mission images | ShapeableImageView, RecyclerView.Adapter |
 | `SettingActivity` | User settings, logout | FirebaseAuth, FirebaseFirestore |
 | `AccountSettingActivity` | Edit name and password | FirebaseAuth, FirebaseFirestore |
@@ -255,28 +244,18 @@ Open the root `Volver/` folder in Android Studio. Let Gradle sync complete.
 
 ### Step 3 — Deploy Firebase Services
 
-```bash (owner wallet pays gas for every mint):
+Deploy the rules and Cloud Function, then set the Cloud Function config (the owner wallet pays gas for every mint):
 
 ```bash
+firebase deploy --only firestore:rules,functions
+
 firebase functions:config:set \
   polygon.owner_key="0xYOUR_OWNER_PRIVATE_KEY" \
   polygon.contract_address="0xd8b934580fcE35a11B58C6D73aDeE468a2833fa8" \
   polygon.rpc_url="https://rpc-amoy.polygon.technology"
 ```
 
-Set build properties in `gradle.properties` (or as environment variables):
-
-```properties
-NFT_CONTRACT_ADDRESS=0xd8b934580fcE35a11B58C6D73aDeE468a2833fa8
-POLYGON_RPC_URL=https://rpc-amoy.polygon.technology
-POLYGON_CHAIN_ID=80002L
-MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
-
-# Reserved for Path B (Thirdweb In-App Wallet migration — not yet consumed):
-THIRDWEB_CLIENT_ID=14483272c69d9087fc22542a79294900VATE_KEY" \
-  polygon.contract_address="0xd8b934580fcE35a11B58C6D73aDeE468a2833fa8" \
-  polygon.rpc_url="https://rpc-amoy.polygon.technology"
-```
+### Step 4 — Configure Build Properties
 
 Set build properties in `gradle.properties` (or as environment variables):
 
@@ -294,10 +273,9 @@ THIRDWEB_CLIENT_ID=14483272c69d9087fc22542a79294900
 
 See [ai-workflows/04-blockchain-nft/context.md](ai-workflows/04-blockchain-nft/context.md) for the complete deployment guide covering MetaMask setup, Polygon Amoy testnet, Remix IDE deployment, IPFS metadata upload, and mainnet migration.
 
-### Step 6 — Build and Rund8b934580fcE35a11B58C6D73aDeE468a2833fa8` (Amoy) |
-| Polygon RPC URL | `gradle.properties` → `POLYGON_RPC_URL` | `https://rpc-amoy.polygon.technology` |
-| Polygon chain ID | `gradle.properties` → `POLYGON_CHAIN_ID` | `80002L` (Amoy testnet) |
-| Thirdweb Client ID (Path B) | `gradle.properties` → `THIRDWEB_CLIENT_ID` | `14483272c69d9087fc22542a79294900`
+### Step 6 — Build and Run
+
+```bash
 ./gradlew :app:assembleDebug
 # or
 ./gradlew :app:installDebug
@@ -315,7 +293,15 @@ See [ai-workflows/04-blockchain-nft/context.md](ai-workflows/04-blockchain-nft/c
 | Thirdweb Client ID (Path B) | `gradle.properties` → `THIRDWEB_CLIENT_ID` | `14483272c69d9087fc22542a79294900` |
 | Google Maps API key | `gradle.properties` → `MAPS_API_KEY` | `""` |
 | Activation radius | `ARActivity.java` → `ACTIVATION_RADIUS_METERS` | `50.0f` meters |
-| Location check in : string        ← 3–30 chars, alphanumeric + underscore
+| Total landmarks | `MissionCompletionHelper.java` → `TOTAL_LANDMARKS` | `5` |
+
+---
+
+## Firestore Data Model
+
+```
+users/{uid}
+├── username        : string        ← 3–30 chars, alphanumeric + underscore
 ├── firstName       : string
 ├── lastName        : string
 ├── email           : string        ← Immutable after creation
@@ -331,24 +317,6 @@ See [ai-workflows/04-blockchain-nft/context.md](ai-workflows/04-blockchain-nft/c
     ├── completed    : boolean      ← Always true (append-only)
     ├── completedAt  : timestamp    ← Server timestamp, validated in rules
     └── missionId    : string       ← Matches document ID
-
-Mission IDs: fort_santiago, baluarte_san_diego, casa_manila,
-             museo_intramuros, centro_turismo
-```
-
-### Firestore Rules Summary
-
-| Path | Read | Create | Update | Delete |
-|------|------|--------|--------|--------|
-| `users/{uid}` | Owner only | Owner + type validation | Owner + field allowlist | Denied |
-| `users/{uid}/missions/{id}` | Owner only | Owner + schema validation | Denied | Denied |
-| Everything else | Denied | Denied | Denied | Denied |
-
-**Key rule behaviors:**
-- `email` and `createdAt` are immutable (excluded from update allowlist)
-- Mission creates require `completed == true`, `missionId is string`, `completedAt is timestamp`, and `missionId` is one of the 5 known landmarks
-- Client updates are restricted to: `username`, `firstName`, `lastName`, `walletAddress`, `allComplete`
-- Souvenir fields (`souvenirMinted`, `souvenirTxHash`, `souvenirTokenId`, `souvenirMintedAt`) are written **server-side only** by `mintSouvenir` via the admin SDK, which bypasses rules. They are deliberately absent from the client update allowlist.
 
 Mission IDs: fort_santiago, baluarte_san_diego, casa_manila,
              museo_intramuros, centro_turismo
@@ -384,7 +352,9 @@ All security measures applied to this project:
 - Username validation: regex `^[a-zA-Z0-9_]{3,30}$` enforced on both Login and Register
 - Password minimum: 6 characters (Firebase Auth minimum)
 - Name fields: max 50 characters
-- Session stored in SharedP (`mintSouvenir`)
+- Session stored in SharedPreferences
+
+### Cloud Function (`mintSouvenir`)
 - Requires Firebase Auth (`context.auth` check)
 - UID mismatch check (`data.uid !== context.auth.uid`)
 - Wallet address validated via `ethers.isAddress()` on both the submitted value and the Firestore-stored value
@@ -392,6 +362,8 @@ All security measures applied to this project:
 - Triple verification before on-chain call: `allComplete == true` AND mission subcollection count ≥ 5 AND `souvenirMinted != true`
 - Owner private key stored in Firebase functions config / secrets (never in source)
 - Error responses sanitized — internal exception details only go to server logs + Crashlytics
+
+### Client / App Hardening
 - Handler leak prevented: clipboard runnable is a class field, canceled in `onDestroy()`
 - **Button debounce** (2 s cooldown) on wallet confirm and NFT mint buttons
 - **Web3j HTTP timeouts**: 15 s connect / 30 s read+write to prevent hung transactions
@@ -401,16 +373,7 @@ All security measures applied to this project:
 - Type validation on create (string lengths, required fields)
 - Field-level allowlist on update via `diff().affectedKeys().hasOnly()`
 - Immutable fields: `email`, `createdAt`
-- Append-only missions (no adminMintTo()` and `setTokenUri()` — only the server wallet can mint or change metadata
-- Server-side double check: `mintSouvenir` Cloud Function verifies Firestore `allComplete` AND queries the mission subcollection count AND rejects if `souvenirMinted == true` — three independent gates before any on-chain call
-- Minimal attack surface: contract has no public mint, no whitelist mapping, no claim function — less surface to audit
-- Requires Firebase Auth (`context.auth` check)
-- UID mismatch check (`data.uid !== context.auth.uid`)
-- Wallet address validated via `ethers.isAddress()` on both the submitted value and the Firestore-stored value
-- Uses the **server-side stored wallet**, not the client-supplied one — client cannot redirect the mint to another address
-- Triple verification before on-chain call: `allComplete == true` AND mission subcollection count ≥ 5 AND `souvenirMinted != true`
-- Owner private key stored in Firebase functions config / secrets (never in source)
-- Error responses sanitized — internal exception details only go to server logs + Crashlytics
+- Append-only missions (no updates or deletes)
 
 ### Build & Release
 - **R8 minification** enabled for release builds (`minifyEnabled true`, `shrinkResources true`)
@@ -456,7 +419,6 @@ All performance optimizations applied to this project. For detailed explanations
 - `WalletManager.getInstance()` is `synchronized` for thread-safe lazy initialization
 
 ### RecyclerView
-- `setHasFixedSize(true)` — layout size doesn't change with adapter content
 - `setItemViewCacheSize(arHelpers.size())` — caches all 5 items (avoids rebinding)
 - `setHasStableIds(true)` + `getItemId()` per mission — enables efficient item animations
 
@@ -583,34 +545,22 @@ Download humanoid characters with idle animations from [Mixamo](https://mixamo.c
 Option A — Online: Use an FBX-to-GLB converter such as Aspose 3D conversion.
 
 Option B — Blender: File → Import FBX → File → Export glTF 2.0 → Format: glTF Binary (.glb)
-Upload final souvenir artwork to IPFS (Pinata/NFT.Storage) and note the metadata CID
+
+### Place the Model
+
+Drop the exported `.glb` into `app/src/main/res/raw/`, using the exact filename referenced by the mission's `modelFileName` (lowercase, no extension in code). The app loads a fallback model if the file is missing, so verify the filename matches before building.
+
+---
+
+## Deployment Checklist
+
+### Mainnet / Production Release
+
+- [ ] Upload final souvenir artwork to IPFS (Pinata/NFT.Storage) and note the metadata CID
 - [ ] Call `setTokenUri("ipfs://<cid>")` on the deployed contract (owner-only, from Remix or a script) to swap the placeholder for real metadata
 - [ ] Deploy a fresh `IntramurosSouvenir` to **Polygon Mainnet** (chain 137) using the same `IntramurosNFT.sol`
 - [ ] Transfer ownership of the mainnet contract to a dedicated mint-only wallet (not your personal MetaMask)
 - [ ] Fund the mint-only owner wallet with enough POL for expected mint volume (~0.01 POL per mint at current gas)
-- [ ] Update `gradle.properties`:
-  ```
-  NFT_CONTRACT_ADDRESS=0xMainnetContractAddress
-  POLYGON_RPC_URL=https://polygon-rpc.com
-  POLYGON_CHAIN_ID=137L
-  ```
-- [ ] Update Cloud Function config for mainnet:
-  ```bash
-  firebase functions:config:set \
-    polygon.contract_address="0xMainnetAddress" \
-    polygon.rpc_url="https://polygon-rpc.com" \
-    polygon.owner_key="0xMainnetOwnerKey"
-  firebase deploy --only functions
-  ```
-- [ ] Verify `google-services.json` is NOT committed (check `.gitignore`)
-- [ ] Verify `local.properties` is NOT committed
-- [ ] Verify `gradle.properties` owner keys / client secrets are NOT committed (only the Thirdweb Client ID is safe to commit — it's a public identifier)
-- [ ] Run release build:
-  ```bash
-  ./gradlew :app:assembleRelease
-  ```
-- [ ] Verify R8 is stripping `Log.d()` / `Log.v()` (check ProGuard mapping)
-- [ ] Test full flow: register → 5 missions → wallet setup → mint souvenir (gasless)nt volume (~0.01 POL per mint at current gas)
 - [ ] Update `gradle.properties`:
   ```
   NFT_CONTRACT_ADDRESS=0xMainnetContractAddress
@@ -645,18 +595,15 @@ firebase deploy --only firestore:rules
 firebase deploy --only functions
 
 # Both
-firebase deploy --only firestore:rules,functions. Ensure the owner wallet has enough POL for gas |
-| `mintSouvenir` returns `already-exists` | Wallet already minted. `souvenirMinted == true` in Firestore and contract holds a token — expected for replays |
-| `mintSouvenir` returns `failed-precondition` | Either `allComplete != true`, fewer than 5 mission docs, or wallet mismatch between submitted address and Firestore `walletAddress` |
-| "Failed to generate wallet" | Old issue fixed by registering BouncyCastle provider in `WalletManager.generateEmbeddedWallet()`. Rebuild + reinstall if regressed |
-| Top UI clipped under status bar on Android 15 | `VolverApplication` applies `WindowInsetsCompat` automatically. If regressed, ensure the activity isn't excluded from the lifecycle callback allowlist
+firebase deploy --only firestore:rules,functions
+```
+
 ---
 
 ## Troubleshooting
 
-### Bomplete 4 of 5 missions fast**: In DEBUG builds, long-press the greeting on HomeActivity to mark 4 missions complete, then walk/drive to finish Casa Manila (or whichever you left out)
-- **Check Firestore data**: Firebase Console → Firestore → `users/{uid}/missions/` should show 5 documents; `souvenirMinted` should flip to `true` after a successful mint
-- **Check on-chain mint**: Search the deployed contract on [amoy.polygonscan.com](https://amoy.polygonscan.com/address/0xd8b934580fcE35a11B58C6D73aDeE468a2833fa8) → Events tab → `SouvenirMin
+### Build Issues
+
 | Symptom | Solution |
 |---------|----------|
 | `Unresolved reference: sceneform` | Ensure `sceneformsrc/` and `sceneformux/` exist and `settings.gradle` includes them |
@@ -677,78 +624,23 @@ firebase deploy --only firestore:rules,functions. Ensure the owner wallet has en
 | "Failed to generate wallet" | Old issue fixed by registering BouncyCastle provider in `WalletManager.generateEmbeddedWallet()`. Rebuild + reinstall if regressed |
 | Top UI clipped under status bar on Android 15 | `VolverApplication` applies `WindowInsetsCompat` automatically. If regressed, ensure the activity isn't excluded from the lifecycle callback allowlist |
 
-### Testing Tips
-
-- **Skip location requirement**: Temporarily set `ACTIVATION_RADIUS_METERS = 50000.0f` in `ARActivity.java` to test AR anywhere
-- **Complete 4 of 5 missions fast**: In DEBUG builds, long-press the greeting on HomeActivity to mark 4 missions complete, then walk/drive to finish Casa Manila (or whichever you left out)
-- **Check Firestore data**: Firebase Console → Firestore → `users/{uid}/missions/` should show 5 documents; `souvenirMinted` should flip to `true` after a successful mint
-- **Check on-chain mint**: Search the deployed contract on [amoy.polygonscan.com](https://amoy.polygonscan.com/address/0xd8b934580fcE35a11B58C6D73aDeE468a2833fa8) → Events tab → `SouvenirMinted`
-
 ### AR Camera Issues
 
 | Symptom | Solution |
 |---------|----------|
-| Camera shows black screen | Do NOT return `true` from `onBeginFrame()`. Check that the 
-
----
-
-## Future Roadmap
-
-The current shipping architecture (**Path A**) keeps Firebase email/password auth and a locally-generated embedded wallet, and mints gaslessly via the `mintSouvenir` Cloud Function. It is production-ready for a pilot tour. Two tracks are already staged for future versions:
-
-### Path B — Thirdweb In-App Wallet (planned v2)
-
-Replace the email/password + embedded wallet flow with **Thirdweb In-App Wallet** so tourists can sign in with Google or email OTP and never see a seed phrase or wallet UI.
-
-- Client ID is already saved in `gradle.properties` as `THIRDWEB_CLIENT_ID` but not yet consumed.
-- Gas Sponsorship is already enabled on the Thirdweb dashboard for the owner project — all policy toggles are permissive while we're on Amoy.
-- Migration will:
-  - Add the `com.thirdweb:android` SDK to `app/build.gradle`
-  - Replace `LoginActivity` / `RegisterActivity` with a Thirdweb connect screen (Google + email OTP recommended for tourist audience)
-  - Retire `WalletManager.generateEmbeddedWallet` and Step 2b of `WalletSetupActivity`
-  - Optionally route mint calls through Thirdweb Engine instead of the direct Cloud Function path so Thirdweb's paymaster, not our owner wallet, absorbs gas
-  - Migrate existing Firebase user docs by keying them to the Thirdweb user identifier while preserving `missions` subcollections and personalization data
-
-### Path C — Mainnet cutover
-
-- Deploy `IntramurosSouvenir` to Polygon mainnet (chain 137)
-- Flip `gradle.properties` chain values
-- Repoint Cloud Function config to mainnet RPC and a dedicated owner wallet
-- Apply the mainnet certificate pin in `network_security_config.xml`
-- Publish Play Store release build
-
-### Smaller follow-ups already considered
-
-- Move `allComplete` to server-managed (harden rules so the client can't toggle it — current Cloud Function triple-check already compensates)
-- Optional biometric gate before revealing the embedded wallet private key
-- BIP-39 mnemonic + mandatory backup verification for the embedded wallet path (only relevant if Path B is deferred)
-- Rate limiting on `mintSouvenir` (e.g. App Check + Cloud Armor) once public release is near`renderOnly` flag is working. See [ai-workflows/01-ar-camera/context.md](ai-workflows/01-ar-camera/context.md) |
+| Camera shows black screen | Do NOT return `true` from `onBeginFrame()`. Check that the `renderOnly` flag is working. See [ai-workflows/01-ar-camera/context.md](ai-workflows/01-ar-camera/context.md) |
 | Camera renders at ~30fps (judder) | The `renderOnly` flag may not be working. Check `SceneView.doFrameNoRepost()` has the `else if (renderOnly)` branch |
 | Material fails to load | Recompile `.matc` with matching Filament version. See [ai-workflows/06-build-deploy/context.md](ai-workflows/06-build-deploy/context.md) |
 | App crashes on `setExternalImage()` | This API was removed in Filament 1.32. Use `importTexture()` instead |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | Uninstall the old APK first: `adb uninstall com.wheic.arapp` |
 | Log.d() not visible in logcat | Some ROMs (Oppo ColorOS) suppress user-app `Log.d()`/`Log.w()`. Use `Log.e()` for debugging |
 
----
+### Testing Tips
 
-## Further Documentation
-
-All detailed documentation lives in `ai-workflows/`, organized by domain:
-
-| Domain | Folder | What's Inside |
-|--------|--------|---------------|
-| AR Camera & Filament | [ai-workflows/01-ar-camera/](ai-workflows/01-ar-camera/) | Camera pipeline, ExternalTexture, renderOnly flag, material compilation, performance settings |
-| ARCore & Geospatial | [ai-workflows/02-arcore-geospatial/](ai-workflows/02-arcore-geospatial/) | Location activation, model placement, landmark coordinates, TTS |
-| Firebase | [ai-workflows/03-firebase/](ai-workflows/03-firebase/) | Auth, Firestore data model, security rules, Cloud Functions, deployment |
-| Blockchain & NFT | [ai-workflows/04-blockchain-nft/](ai-workflows/04-blockchain-nft/) | Smart contract deployment, Web3j, wallet encryption, IPFS metadata, minting flow |
-| Android UI | [ai-workflows/05-android-ui/](ai-workflows/05-android-ui/) | Activities, navigation flow, layouts, form validation, naming conventions |
-| Build & Deploy | [ai-workflows/06-build-deploy/](ai-workflows/06-build-deploy/) | Build commands, ADB, material compilation, ProGuard, deployment checklist |
-
-Each folder contains `role.md` (AI persona), `context.md` (architecture & constraints), and `checklist.md` (step-by-step procedures).
-
-Additional references:
-- [intramuros_3d_character.md](intramuros_3d_character.md) — Character definitions for the 5 AR missions
-- [ai-workflows/TODO_FIXES.md](ai-workflows/TODO_FIXES.md) — Remaining manual setup tasks
+- **Skip location requirement**: Temporarily set `ACTIVATION_RADIUS_METERS = 50000.0f` in `ARActivity.java` to test AR anywhere
+- **Complete 4 of 5 missions fast**: In DEBUG builds, long-press the greeting on HomeActivity to mark 4 missions complete, then walk/drive to finish Casa Manila (or whichever you left out)
+- **Check Firestore data**: Firebase Console → Firestore → `users/{uid}/missions/` should show 5 documents; `souvenirMinted` should flip to `true` after a successful mint
+- **Check on-chain mint**: Search the deployed contract on [amoy.polygonscan.com](https://amoy.polygonscan.com/address/0xd8b934580fcE35a11B58C6D73aDeE468a2833fa8) → Events tab → `SouvenirMinted`
 
 ---
 
@@ -783,6 +675,27 @@ Replace the email/password + embedded wallet flow with **Thirdweb In-App Wallet*
 - Optional biometric gate before revealing the embedded wallet private key
 - BIP-39 mnemonic + mandatory backup verification for the embedded wallet path (only relevant if Path B is deferred)
 - Rate limiting on `mintSouvenir` (e.g. App Check + Cloud Armor) once public release is near
+
+---
+
+## Further Documentation
+
+All detailed documentation lives in `ai-workflows/`, organized by domain:
+
+| Domain | Folder | What's Inside |
+|--------|--------|---------------|
+| AR Camera & Filament | [ai-workflows/01-ar-camera/](ai-workflows/01-ar-camera/) | Camera pipeline, ExternalTexture, renderOnly flag, material compilation, performance settings |
+| ARCore & Geospatial | [ai-workflows/02-arcore-geospatial/](ai-workflows/02-arcore-geospatial/) | Location activation, model placement, landmark coordinates, TTS |
+| Firebase | [ai-workflows/03-firebase/](ai-workflows/03-firebase/) | Auth, Firestore data model, security rules, Cloud Functions, deployment |
+| Blockchain & NFT | [ai-workflows/04-blockchain-nft/](ai-workflows/04-blockchain-nft/) | Smart contract deployment, Web3j, wallet encryption, IPFS metadata, minting flow |
+| Android UI | [ai-workflows/05-android-ui/](ai-workflows/05-android-ui/) | Activities, navigation flow, layouts, form validation, naming conventions |
+| Build & Deploy | [ai-workflows/06-build-deploy/](ai-workflows/06-build-deploy/) | Build commands, ADB, material compilation, ProGuard, deployment checklist |
+
+Each folder contains `role.md` (AI persona), `context.md` (architecture & constraints), and `checklist.md` (step-by-step procedures).
+
+Additional references:
+- [intramuros_3d_character.md](intramuros_3d_character.md) — Character definitions for the 5 AR missions
+- [ai-workflows/TODO_FIXES.md](ai-workflows/TODO_FIXES.md) — Remaining manual setup tasks
 
 ---
 
