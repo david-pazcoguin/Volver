@@ -61,6 +61,10 @@ ehthumbs.db
 *.hprof
 .externalNativeBuild/
 .out/
+.vscode/
+
+# Local tool state
+.firebase/
 
 # Gradle Wrapper
 !/gradle/wrapper/gradle-wrapper.jar
