@@ -81,4 +81,4 @@ Built as a capstone project at **Lyceum of the Philippines University** by
 
 ## License
 
-[MIT](LICENSE)
+All rights reserved — see [LICENSE](LICENSE). The source is published for portfolio review and educational reference; contact the authors for any other use.
