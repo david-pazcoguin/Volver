@@ -1,5 +1,12 @@
 # Volver — AR Heritage Tourism for Intramuros, Manila
 
+<p>
+  <img src="https://img.shields.io/badge/Android-Java%2011-3DDC84?logo=android&logoColor=white" alt="Android" />
+  <img src="https://img.shields.io/badge/ARCore-Geospatial%20API-4285F4?logo=google&logoColor=white" alt="ARCore Geospatial" />
+  <img src="https://img.shields.io/badge/Firebase-Auth%20%C2%B7%20Firestore%20%C2%B7%20Functions-FFCA28?logo=firebase&logoColor=black" alt="Firebase" />
+  <img src="https://img.shields.io/badge/Polygon-ERC--721-8247E5?logo=polygon&logoColor=white" alt="Polygon" />
+</p>
+
 **An Android augmented-reality tour guide for Intramuros, the Walled City of Manila.** Walk to historic landmarks with turn-by-turn guidance, hunt Intramuros coins and period relics anchored to real-world locations via the ARCore Geospatial API — and finish the journey with an on-chain NFT souvenir, minted gaslessly on Polygon.
 
 <p align="center">
