@@ -898,7 +898,7 @@ public class ARActivity extends AppCompatActivity {
 
     /**
      * Called the first time the user enters the 50 m activation radius.
-     * Automatically greets them with the character dialogue via TTS.
+     * Hides the navigation UI and begins the on-site AR collect phase.
      */
     private void onTargetReached() {
         if (isTargetReached)

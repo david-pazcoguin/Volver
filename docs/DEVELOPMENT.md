@@ -39,21 +39,21 @@ arHelpers.add(new ARHelper(
     14.589000,                    // Latitude of the landmark
     120.975000,                   // Longitude of the landmark
     "unique_mission_id",          // Firestore document ID (snake_case)
-    "Character Name",             // Shown in AR overlay
-    "Character's spoken dialogue. Read aloud by TTS.",
-    "model_filename"              // Must match a .glb file in res/raw/
+    new double[]{14.589100},      // Relic spawn latitudes (one per relic slot)
+    new double[]{120.975100},     // Relic spawn longitudes (must match exactly)
+    "collectible_id"              // Collectible awarded for this mission
 ));
 ```
 
 2. **Add the mission image**: place a JPEG/PNG in `app/src/main/res/drawable/` and add a case in `ARAdapter.getMissionImageResource()`.
-3. **Add the 3D model**: place the GLB in `app/src/main/res/raw/` named exactly as `modelFileName`.
+3. **Add the relic model**: place the GLB in `app/src/main/res/raw/` and register its scale/placement profile in `RelicModelProfile.profileFor()`.
 4. **Update the mission count**: `MissionCompletionHelper.TOTAL_LANDMARKS` and `REQUIRED_MISSIONS` in `functions/index.js`, then `firebase deploy --only functions`.
 
 ## Adding New 3D Models
 
-- Download humanoid characters with idle animations from [Mixamo](https://mixamo.com) (free with an Adobe account). Export as FBX.
-- Convert FBX → GLB via Blender (File → Import FBX → Export glTF 2.0 → glTF Binary) or an online converter.
-- Relic/prop models are authored in Blender (source `.blend` files live in `3d-assets/` where applicable).
+- Relic/prop models are authored in Blender — source `.blend` files live in `3d-assets/`.
+- Export as glTF Binary (`.glb`): File → Export → glTF 2.0 → Format: glTF Binary.
+- Keep meshes mobile-friendly (low poly count, baked textures) — models render on mid-range devices through the modified Sceneform/Filament pipeline.
 
 ## Deployment Checklist
 

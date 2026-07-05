@@ -7,7 +7,7 @@
 │                        Android App                           │
 │                                                              │
 │  LoginActivity ──► HomeActivity ──► ARActivity               │
-│                        │   (missions, relics, TTS dialogue)  │
+│                        │   (missions, coins, relics)         │
 │                        │                                     │
 │  WalletSetupActivity ──► NFTClaimActivity                    │
 │       │                        │                             │
@@ -31,7 +31,7 @@
 
 1. **Login/Register** — Firebase Auth signs the user in; the first name is cached in `SecurePrefs` so the personalized greeting on Home renders instantly.
 2. **Home** — Displays the AR missions with a progress counter. Completed missions appear desaturated with a green ✓ badge. The dashboard opens Settings, About, and the Hall of Explorers leaderboard.
-3. **AR Mission** — The user walks to the landmark; turn-by-turn walking directions are provided via OSRM routing (`NavigationDirectionManager`). The ARCore Geospatial API checks proximity, then the user places the historical character model on a detected plane. Tapping the character triggers TTS dialogue. Relic collectibles (period artifacts such as the farol de aceite, peineta, pocket watch, and salakot) spawn at fixed GPS positions for the user to collect in AR.
+3. **AR Mission** — The user walks to the landmark; turn-by-turn walking directions are provided via OSRM routing (`NavigationDirectionManager`). The ARCore Geospatial API checks proximity, then Intramuros coins and relic collectibles (period artifacts such as the farol de aceite, peineta, pocket watch, and salakot) spawn at fixed GPS positions for the user to find and collect through the AR camera. Collected relics can be inspected in a 3D viewer with spin, pinch-to-resize, and model-switch controls.
 4. **All Missions Complete** — A treasure chest reveal appears on `HomeActivity` with a pulse animation.
 5. **Wallet Setup** — The user either connects an external Polygon wallet (paste/scan QR) or generates an embedded keypair (encrypted with AES-256-GCM via Android Keystore; the BouncyCastle provider is registered at runtime so key generation works on all Android ROMs).
 6. **NFT Claim** — `NFTClaimActivity` invokes the `mintSouvenir` Cloud Function. The server-side owner wallet verifies mission completion in Firestore, calls `adminMintTo(userAddress)` on the contract, and pays all gas. The user pays nothing and never submits a transaction.
@@ -50,7 +50,7 @@ Volver/
 │       └── res/
 │           ├── layout/           # XML layouts
 │           ├── drawable/         # Mission images, icons, logos
-│           ├── raw/              # GLB 3D models (characters + relics)
+│           ├── raw/              # GLB 3D models (relics, coins)
 │           ├── font/             # Montserrat, Aclonica, BalooiBhai, Cabin
 │           ├── values/           # colors.xml, strings.xml, themes.xml
 │           └── xml/              # network_security_config.xml
@@ -75,7 +75,7 @@ Volver/
 | `LoginActivity` | App entry; Firebase email/password auth | FirebaseAuth, SecurePrefs |
 | `RegisterActivity` | User registration + Firestore profile | FirebaseAuth, FirebaseFirestore |
 | `HomeActivity` | Mission list + progress + NFT banner + chest reveal | MissionCompletionHelper, ARAdapter |
-| `ARActivity` | AR session, geospatial anchoring, model placement, relic spawns, TTS | ARCore, Sceneform, TextToSpeech |
+| `ARActivity` | AR session, geospatial anchoring, coin/relic spawns and collection | ARCore, Sceneform |
 | `ARHelper` | Mission data transfer object | — |
 | `ARAdapter` | RecyclerView adapter with stable IDs and mission images | RecyclerView |
 | `DemoARActivity` / `DemoArFragment` | Try-AR-anywhere demo mode (no location gate) | Sceneform |

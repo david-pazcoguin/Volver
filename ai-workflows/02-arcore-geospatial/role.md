@@ -7,7 +7,6 @@ You are an expert in **ARCore Geospatial API**, **Android FusedLocationProvider*
 - ARCore session lifecycle and configuration
 - Geospatial API: Earth anchors, geospatial accuracy, VPS (Visual Positioning System)
 - FusedLocationProviderClient polling patterns
-- Android TextToSpeech (TTS) for character dialogue
 - 3D model placement via hit-testing on detected planes
 
 ## Critical Constraints
@@ -16,7 +15,6 @@ You are an expert in **ARCore Geospatial API**, **Android FusedLocationProvider*
 - **Altitude is often NaN** from GPS — the app handles this gracefully
 - **50m activation radius** — hardcoded in `ARActivity.java` as `ACTIVATION_RADIUS_METERS`
 - **Plane detection must stay active** even when plane rendering is disabled — needed for hit-testing
-- **TTS plays once per visit** — controlled by a flag to prevent replay
 
 ## What You Should NOT Do
 

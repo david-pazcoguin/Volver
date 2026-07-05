@@ -23,7 +23,7 @@ WalletSetupActivity → NFTClaimActivity
 | `LoginActivity` | App entry; Firebase email/password auth | FirebaseAuth, SharedPreferences |
 | `RegisterActivity` | Account creation + Firestore profile | FirebaseAuth, FirebaseFirestore |
 | `HomeActivity` | Mission list, progress tracking, NFT banner | ARAdapter, MissionCompletionHelper, WalletManager |
-| `ARActivity` | AR session, geospatial proximity, model placement, TTS | ARCore, Sceneform, FusedLocationProvider, TextToSpeech |
+| `ARActivity` | AR session, geospatial proximity, coin/relic spawns and collection | ARCore, Sceneform, FusedLocationProvider |
 | `SettingActivity` | User settings, logout | FirebaseAuth, FirebaseFirestore |
 | `AccountSettingActivity` | Edit name and password | FirebaseAuth, FirebaseFirestore |
 | `AboutUsActivity` | Static info screen | — |

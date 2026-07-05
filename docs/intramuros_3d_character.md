@@ -1,5 +1,7 @@
 # Intramuros Passport - 3D Historical Figures for AR Game
 
+> **Status: deferred design concept.** This character roster was the original vision for the AR missions. Rigging, animating, and optimizing humanoid models for mobile AR proved too heavy for the project timeline, so the shipped app uses period **relic collectibles and coin hunts** instead (see the [README](../README.md)). Kept as a reference and a candidate for a future version.
+
 ## Site | Historical Figure | Why This Figure? | Game Character Role
 
 | **Site** | **Historical Figure** | **Why This Figure?** | **Game Character Role** |

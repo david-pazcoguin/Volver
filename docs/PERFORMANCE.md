@@ -15,7 +15,6 @@ For detailed explanations, see [ai-workflows/01-ar-camera/context.md](../ai-work
 
 - `ARActivity` reuses a `float[] distanceResults` class field instead of allocating per location check
 - `ARActivity` location polling stops (`Handler.removeCallbacks`) once the target is reached, and the handler is cleaned up in `onDestroy()`
-- `ARActivity` TTS `onInit()` guarded by an `isDestroyed()` check — prevents use-after-destroy crashes
 - `ARActivity` validates latitude/longitude bounds on intent extras
 - `WalletManager` uses `getApplicationContext()` to prevent activity context leaks
 - `WalletSetupActivity` clipboard Handler extracted to a class field, cleaned up in `onDestroy()`

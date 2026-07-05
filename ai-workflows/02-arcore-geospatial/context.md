@@ -17,8 +17,8 @@
 1. User taps a mission in `HomeActivity` → `ARActivity` launches with intent extras
 2. `ArFragment` creates the ARCore session with the configuration from `getSessionConfiguration()`
 3. The session runs, detecting horizontal planes
-4. User taps a detected plane → character model is placed as an Earth Anchor
-5. User taps the character → TTS reads the historical dialogue
+4. Coins and relic collectibles spawn as Earth Anchors at their configured GPS positions
+5. The user walks close and collects them through the AR camera; collected relics open in the 3D viewer (spin, pinch-to-resize)
 6. Mission is recorded in Firestore via `MissionCompletionHelper`
 
 ## Configuration (ArFragment)

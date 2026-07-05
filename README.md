@@ -1,6 +1,6 @@
 # Volver — AR Heritage Tourism for Intramuros, Manila
 
-**An Android augmented-reality tour guide for Intramuros, the Walled City of Manila.** Walk to historic landmarks, meet 3D historical characters anchored in the real world via the ARCore Geospatial API, collect period relics in AR — and finish the journey with an on-chain NFT souvenir, minted gaslessly on Polygon.
+**An Android augmented-reality tour guide for Intramuros, the Walled City of Manila.** Walk to historic landmarks with turn-by-turn guidance, hunt Intramuros coins and period relics anchored to real-world locations via the ARCore Geospatial API — and finish the journey with an on-chain NFT souvenir, minted gaslessly on Polygon.
 
 <p align="center">
   <img src="docs/media/ar-coin-hunt.jpg" width="24%" alt="AR coin hunt at Manila Cathedral" />
@@ -12,8 +12,8 @@
 ## Features
 
 - **Location-gated AR missions** at 8 sites — Fort Santiago, Baluarte de San Diego, Casa Manila, Museo de Intramuros, Centro de Turismo, San Agustin Church, Manila Cathedral, and an on-campus test site — activated by proximity via the **ARCore Geospatial API**
-- **3D historical characters** placed on real-world planes (Sceneform + Filament), with narration read aloud through Android TextToSpeech
-- **Collectible relics** — period artifacts (farol de aceite, peineta, pocket watch, salakot) spawn at fixed GPS positions for players to find and collect in AR
+- **AR coin hunts** — Intramuros coins spawn at real GPS positions around each landmark; walk close and collect them through the camera
+- **Collectible relics** — period artifacts (farol de aceite, peineta, pocket watch, salakot) spawn at fixed GPS positions, rendered with Sceneform + Filament; inspect them up close with spin and pinch-to-resize controls
 - **Turn-by-turn walking navigation** to each landmark using OSRM routing
 - **Hall of Explorers** — a Firestore-backed leaderboard aggregated by Cloud Functions
 - **Gasless NFT souvenir** — completing all missions unlocks an ERC-721 mint on Polygon; a Cloud Function signs and pays for the transaction, so users never touch gas or seed phrases
