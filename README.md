@@ -10,10 +10,14 @@
 **An Android augmented-reality tour guide for Intramuros, the Walled City of Manila.** Walk to historic landmarks with turn-by-turn guidance, hunt Intramuros coins and period relics anchored to real-world locations via the ARCore Geospatial API — and finish the journey with an on-chain NFT souvenir, minted gaslessly on Polygon.
 
 <p align="center">
-  <img src="docs/media/ar-coin-hunt.jpg" width="24%" alt="AR coin hunt at Manila Cathedral" />
-  <img src="docs/media/ar-relic.jpg" width="24%" alt="Farol de Aceite relic collectible in AR" />
-  <img src="docs/media/ar-navigation.jpg" width="24%" alt="Turn-by-turn AR navigation to a landmark" />
-  <img src="docs/media/nft-minted.jpg" width="24%" alt="Volver Heritage Souvenir NFT minted on Polygon" />
+  <img src="docs/media/home.jpg" width="32%" alt="Home dashboard with mission and relic progress" />
+  <img src="docs/media/missions.jpg" width="32%" alt="Mission list of Intramuros landmarks" />
+  <img src="docs/media/ar-coin-hunt.jpg" width="32%" alt="AR coin hunt at Manila Cathedral" />
+</p>
+<p align="center">
+  <img src="docs/media/ar-relic.jpg" width="32%" alt="Farol de Aceite relic collectible in AR" />
+  <img src="docs/media/ar-navigation.jpg" width="32%" alt="Turn-by-turn AR navigation to a landmark" />
+  <img src="docs/media/nft-minted.jpg" width="32%" alt="Volver Heritage Souvenir NFT minted on Polygon" />
 </p>
 
 ## Features
